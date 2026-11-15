@@ -39,7 +39,13 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   const navBox = el('section', { 'data-testid': 'nav-panel' });
   const queueBox = el('section', { 'data-testid': 'work-queue' });
   const sceneBox = el('section', { 'data-testid': 'scene' });
-  const actBox = el('section', { 'data-testid': 'activity' });
+  const actBattleBox = el('div');
+  const strategySel = el('select', { 'data-testid': 'strategy' });
+  for (const st of STRATEGIES) strategySel.append(el('option', { value: st.id }, st.label));
+  strategySel.addEventListener('change', () => perform({ kind: 'STRATEGY', strategy: strategySel.value as BattleStrategy, label: `戰鬥策略：${strategySel.value}` }));
+  const strategyRow = el('div', { class: 'row' }, el('span', { class: 'k' }, '戰鬥策略'), strategySel, el('span', { class: 'muted' }, '（手動＝外掛不自動出手）'));
+  const actBodyBox = el('div');
+  const actBox = el('section', { 'data-testid': 'activity' }, actBattleBox, strategyRow, actBodyBox);
   const inputErr = el('div', { class: 'err', 'data-testid': 'input-error' });
   const input = el('input', { type: 'text', placeholder: '例如：前往 村長、採集 青銅礦 2、小石 採集 青銅礦 2', 'data-testid': 'cmd-input', autocomplete: 'off' });
   const form = el('form', {}, input, el('button', { class: 'item', type: 'submit' }, '送出'));
@@ -203,7 +209,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   }
 
   function renderActivity(s: FamilyState, aux: UiAux, running: boolean) {
-    actBox.replaceChildren();
+    actBattleBox.replaceChildren();
     // 戰鬥
     if (s.battle || s.battleResult) {
       const box = el('div', { 'data-testid': 'battle-panel' }, el('h2', {}, '戰鬥'));
@@ -225,14 +231,13 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
         box.append(el('div', { 'data-testid': 'battle-result' }, win ? '勝利！結算視窗開著' : '敗北，結算視窗開著'),
           act(win ? '返回地圖' : '送回醫院', cmdAction({ type: 'CHOOSE_DIALOG_OPTION', optionId: win ? 'RETURN_TO_MAP' : 'DEFEAT_RESCUE' }, win ? '關閉勝利視窗' : '敗北：送回醫院'), 'battle-result-option', running));
       }
-      actBox.append(box);
+      actBattleBox.append(box);
     }
-    // 戰鬥策略（永遠可見）
-    const sel = el('select', { 'data-testid': 'strategy' });
-    for (const st of STRATEGIES) { const o = el('option', { value: st.id }, st.label); if (st.id === aux.strategy) o.selected = true; sel.append(o); }
-    sel.addEventListener('change', () => perform({ kind: 'STRATEGY', strategy: sel.value as BattleStrategy, label: `戰鬥策略：${sel.value}` }));
-    actBox.append(el('div', { class: 'row' }, el('span', { class: 'k' }, '戰鬥策略'), sel, el('span', { class: 'muted' }, '（手動＝外掛不自動出手）')));
+    // 戰鬥策略（靜態元素：快照重繪不重建 <select>，避免展開選單被關閉）
+    const activeEl = root.ownerDocument?.activeElement ?? document.activeElement;
+    if (activeEl !== strategySel && strategySel.value !== aux.strategy) strategySel.value = aux.strategy;
 
+    actBodyBox.replaceChildren();
     // 對話
     if (s.dialog) {
       const box = el('div', { class: 'dialog', 'data-testid': 'dialog' }, el('b', {}, `${s.dialog.npcName}：`), ...s.dialog.lines.slice(0, 3).map(l => el('div', {}, l)));
@@ -240,7 +245,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
       if (!s.dialog.options.length) opts.append(el('span', { class: 'muted' }, '（宿主沒有提供選項）'));
       for (const o of s.dialog.options) opts.append(act(o.label, cmdAction({ type: 'CHOOSE_DIALOG_OPTION', optionId: o.id }, `對話選項：${o.label}`), 'dialog-option', running, { 'data-option-id': o.id }));
       box.append(opts);
-      actBox.append(box);
+      actBodyBox.append(box);
     }
     // 商店
     if (s.shop) {
@@ -256,10 +261,10 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
       for (const i of s.inventory) sell.append(act(`賣 ${i.name ?? `#${i.itemId}`}`, cmdAction({ type: 'SELL_ITEM', itemId: i.itemId, count: 1 }, `賣 ${i.name ?? i.itemId} ×1`), 'shop-sell', running, { 'data-item-id': String(i.itemId) }));
       box.append(el('div', { class: 'row' }, el('span', { class: 'k' }, '購買'), buy), el('div', { class: 'row' }, el('span', { class: 'k' }, '賣出'), sell),
         act('離開商店', cmdAction({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '離開商店'), 'shop-close', running));
-      actBox.append(box);
+      actBodyBox.append(box);
     }
     // 背包
-    actBox.append(el('div', { class: 'muted', 'data-testid': 'inventory' }, `背包：${s.inventory.length ? s.inventory.map(i => `${i.name ?? `#${i.itemId}`}×${i.count}`).join('、') : '（空）'}`));
+    actBodyBox.append(el('div', { class: 'muted', 'data-testid': 'inventory' }, `背包：${s.inventory.length ? s.inventory.map(i => `${i.name ?? `#${i.itemId}`}×${i.count}`).join('、') : '（空）'}`));
   }
 
   function render(s: FamilyState, conn: 'RUNNING' | 'STOPPED', aux: UiAux = NO_AUX) {

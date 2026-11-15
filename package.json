@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts",
+    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts && tsx test/ui_strategy.test.ts",
     "sync-protocol": "node scripts/sync-protocol.mjs",
     "check-protocol": "node scripts/sync-protocol.mjs --check"
   },
