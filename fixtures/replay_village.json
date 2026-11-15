@@ -1,0 +1,1470 @@
+{
+ "format": "fairyland-replay/1",
+ "description": "吉恩村→市鎮中心的示範序列：走路、阿爾對話、一場戰鬥、金錢道具、換圖、村長對話。快照來自真實地圖資料；事件順序為手排。",
+ "protocolVersion": 1,
+ "characterId": "replay-char-1",
+ "steps": [
+  {
+   "at": 0,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 1,
+    "event": {
+     "type": "GAME_STARTED",
+     "sessionId": "replay-session"
+    }
+   }
+  },
+  {
+   "at": 60,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 2,
+    "event": {
+     "type": "LOCATION_CHANGED",
+     "mapId": "10001",
+     "mapName": "吉恩村",
+     "fromMapId": null,
+     "x": 3880,
+     "y": 3740,
+     "cause": "LOAD"
+    }
+   }
+  },
+  {
+   "at": 120,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "snapshot",
+    "seq": 3,
+    "reason": "STARTED",
+    "snapshot": {
+     "schema": "scene-snapshot",
+     "mapId": "10001",
+     "mapName": "吉恩村",
+     "character": {
+      "name": "阿草",
+      "level": 5,
+      "hp": 90,
+      "maxHp": 136,
+      "mp": 40,
+      "maxMp": 75,
+      "gold": 1200,
+      "x": 3880,
+      "y": 3740,
+      "dir": 2,
+      "inBattle": false
+     },
+     "npcs": [
+      {
+       "id": "npc_10001_00_阿爾",
+       "name": "阿爾",
+       "x": 3880,
+       "y": 3740,
+       "gridX": 48,
+       "gridY": 187,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_01_收破爛阿利",
+       "name": "收破爛阿利",
+       "x": 3280,
+       "y": 3880,
+       "gridX": 41,
+       "gridY": 194,
+       "role": "SHOP",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": true
+      },
+      {
+       "id": "npc_10001_02_佛洛",
+       "name": "佛洛",
+       "x": 3880,
+       "y": 4260,
+       "gridX": 48,
+       "gridY": 213,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_03_林達",
+       "name": "林達",
+       "x": 3400,
+       "y": 2060,
+       "gridX": 42,
+       "gridY": 103,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_04_肯安",
+       "name": "肯安",
+       "x": 2600,
+       "y": 2060,
+       "gridX": 32,
+       "gridY": 103,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_05_伯德",
+       "name": "伯德",
+       "x": 3240,
+       "y": 2740,
+       "gridX": 40,
+       "gridY": 137,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_06_伯恩",
+       "name": "伯恩",
+       "x": 3960,
+       "y": 4300,
+       "gridX": 49,
+       "gridY": 215,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_07_怪老頭",
+       "name": "怪老頭",
+       "x": 2360,
+       "y": 5580,
+       "gridX": 29,
+       "gridY": 279,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_08_詭異的老婆婆",
+       "name": "詭異的老婆婆",
+       "x": 6760,
+       "y": 940,
+       "gridX": 84,
+       "gridY": 47,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_09_芬妮",
+       "name": "芬妮",
+       "x": 4480,
+       "y": 3720,
+       "gridX": 56,
+       "gridY": 186,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_10_斯坦",
+       "name": "斯坦",
+       "x": 2800,
+       "y": 3960,
+       "gridX": 35,
+       "gridY": 198,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_11_格蒂",
+       "name": "格蒂",
+       "x": 4200,
+       "y": 3300,
+       "gridX": 52,
+       "gridY": 165,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_12_羅布",
+       "name": "羅布",
+       "x": 3960,
+       "y": 1060,
+       "gridX": 49,
+       "gridY": 53,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_13_愛美",
+       "name": "愛美",
+       "x": 4160,
+       "y": 2160,
+       "gridX": 52,
+       "gridY": 108,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_14_拉斯",
+       "name": "拉斯",
+       "x": 1240,
+       "y": 540,
+       "gridX": 15,
+       "gridY": 27,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_15_賽布",
+       "name": "賽布",
+       "x": 2440,
+       "y": 5180,
+       "gridX": 30,
+       "gridY": 259,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_16_柯克",
+       "name": "柯克",
+       "x": 2840,
+       "y": 7500,
+       "gridX": 35,
+       "gridY": 375,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_17_山姆",
+       "name": "山姆",
+       "x": 4200,
+       "y": 6540,
+       "gridX": 52,
+       "gridY": 327,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_18_凱茲",
+       "name": "凱茲",
+       "x": 5360,
+       "y": 3800,
+       "gridX": 67,
+       "gridY": 190,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_19_馬克",
+       "name": "馬克",
+       "x": 3720,
+       "y": 3340,
+       "gridX": 46,
+       "gridY": 167,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_20_安吉",
+       "name": "安吉",
+       "x": 3880,
+       "y": 5500,
+       "gridX": 48,
+       "gridY": 275,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_21_美拉妮",
+       "name": "美拉妮",
+       "x": 5560,
+       "y": 5140,
+       "gridX": 69,
+       "gridY": 257,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_22_賽司",
+       "name": "賽司",
+       "x": 5000,
+       "y": 4820,
+       "gridX": 62,
+       "gridY": 241,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_23_阿格達",
+       "name": "阿格達",
+       "x": 5560,
+       "y": 5660,
+       "gridX": 69,
+       "gridY": 283,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_24_吉恩村守衛",
+       "name": "吉恩村守衛",
+       "x": 7520,
+       "y": 7440,
+       "gridX": 94,
+       "gridY": 372,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_25_小黃貓",
+       "name": "小黃貓",
+       "x": 3600,
+       "y": 4000,
+       "gridX": 45,
+       "gridY": 200,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_26_小黑貓",
+       "name": "小黑貓",
+       "x": 5000,
+       "y": 5580,
+       "gridX": 62,
+       "gridY": 279,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_27_羊咩咩",
+       "name": "羊咩咩",
+       "x": 1880,
+       "y": 1900,
+       "gridX": 23,
+       "gridY": 95,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_28_乳牛",
+       "name": "乳牛",
+       "x": 2040,
+       "y": 1740,
+       "gridX": 25,
+       "gridY": 87,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_29_雞",
+       "name": "雞",
+       "x": 2000,
+       "y": 2080,
+       "gridX": 25,
+       "gridY": 104,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_30_雞",
+       "name": "雞",
+       "x": 2320,
+       "y": 1720,
+       "gridX": 29,
+       "gridY": 86,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_31_牛",
+       "name": "牛",
+       "x": 2280,
+       "y": 1900,
+       "gridX": 28,
+       "gridY": 95,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_32_羊咩咩",
+       "name": "羊咩咩",
+       "x": 1880,
+       "y": 2060,
+       "gridX": 23,
+       "gridY": 103,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_33_小黃",
+       "name": "小黃",
+       "x": 3960,
+       "y": 2260,
+       "gridX": 49,
+       "gridY": 113,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_34_小黑",
+       "name": "小黑",
+       "x": 3360,
+       "y": 4680,
+       "gridX": 42,
+       "gridY": 234,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_35_克拉亞妮",
+       "name": "克拉亞妮",
+       "x": 5240,
+       "y": 3900,
+       "gridX": 65,
+       "gridY": 195,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_36_波波",
+       "name": "波波",
+       "x": 5960,
+       "y": 4500,
+       "gridX": 74,
+       "gridY": 225,
+       "role": "ANIMAL",
+       "talkable": true,
+       "isAnimal": true,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_37_摩爾",
+       "name": "摩爾",
+       "x": 1440,
+       "y": 960,
+       "gridX": 18,
+       "gridY": 48,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_38_銀婆婆",
+       "name": "銀婆婆",
+       "x": 4840,
+       "y": 5540,
+       "gridX": 60,
+       "gridY": 277,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_39_布拉克斯",
+       "name": "布拉克斯",
+       "x": 3120,
+       "y": 3880,
+       "gridX": 39,
+       "gridY": 194,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_40_貝貝",
+       "name": "貝貝",
+       "x": 3200,
+       "y": 4360,
+       "gridX": 40,
+       "gridY": 218,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_41_貝貝的幻獸",
+       "name": "貝貝的幻獸",
+       "x": 3120,
+       "y": 4400,
+       "gridX": 39,
+       "gridY": 220,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_42_貝伯港大使",
+       "name": "貝伯港大使",
+       "x": 6960,
+       "y": 360,
+       "gridX": 87,
+       "gridY": 18,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_10001_43_夢想仙子",
+       "name": "夢想仙子",
+       "x": 1160,
+       "y": 980,
+       "gridX": 14,
+       "gridY": 49,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      }
+     ],
+     "exits": [
+      {
+       "id": "portal_0",
+       "name": "雜貨店",
+       "x": 1760,
+       "y": 3880,
+       "targetMapId": "20001",
+       "targetMapName": "雜貨店"
+      },
+      {
+       "id": "portal_1",
+       "name": "吉恩村市鎮中心",
+       "x": 2800,
+       "y": 3880,
+       "targetMapId": "20010",
+       "targetMapName": "吉恩村市鎮中心"
+      },
+      {
+       "id": "portal_2",
+       "name": "醫院",
+       "x": 5560,
+       "y": 3860,
+       "targetMapId": "20007",
+       "targetMapName": "醫院"
+      },
+      {
+       "id": "portal_5",
+       "name": "打鐵舖",
+       "x": 3240,
+       "y": 5340,
+       "targetMapId": "20009",
+       "targetMapName": "打鐵舖"
+      },
+      {
+       "id": "portal_14",
+       "name": "往北綠野",
+       "x": 880,
+       "y": 360,
+       "targetMapId": "FIELD_MEADOW",
+       "targetMapName": null
+      },
+      {
+       "id": "portal_15",
+       "name": "往南綠野",
+       "x": 2600,
+       "y": 7580,
+       "targetMapId": "FIELD_MEADOW",
+       "targetMapName": null
+      },
+      {
+       "id": "portal_17",
+       "name": "往雜貨店",
+       "x": 3720,
+       "y": 3860,
+       "targetMapId": "20001",
+       "targetMapName": "雜貨店"
+      },
+      {
+       "id": "portal_18",
+       "name": "西北方往打鐵舖、裝備店；東北方往魚貨店",
+       "x": 4160,
+       "y": 5880,
+       "targetMapId": "20009",
+       "targetMapName": "打鐵舖"
+      },
+      {
+       "id": "portal_21",
+       "name": "往食品店、醫院",
+       "x": 4400,
+       "y": 4080,
+       "targetMapId": "20007",
+       "targetMapName": "醫院"
+      }
+     ],
+     "gatherPoints": {
+      "status": "UNAVAILABLE",
+      "reason": "FX6_NOT_EXTRACTED",
+      "points": []
+     },
+     "shops": [
+      {
+       "npcId": "npc_10001_01_收破爛阿利",
+       "npcName": "收破爛阿利",
+       "goodsStatus": "RECONSTRUCTED_DEMO",
+       "goods": [
+        {
+         "itemId": 50001,
+         "name": "恢復劑",
+         "price": 150,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 50002,
+         "name": "強力恢復劑",
+         "price": 450,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 50011,
+         "name": "童話黑麥麵包",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 50111,
+         "name": "一級封印石",
+         "price": 800,
+         "category": "SEAL"
+        },
+        {
+         "itemId": 100000,
+         "name": "新鮮草藥",
+         "price": 60,
+         "category": "MATERIAL"
+        },
+        {
+         "itemId": 100003,
+         "name": "棉織線捲",
+         "price": 65,
+         "category": "MATERIAL"
+        },
+        {
+         "itemId": 1001,
+         "name": "新手銅劍",
+         "price": 400,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 2001,
+         "name": "旅行布帽",
+         "price": 350,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 3001,
+         "name": "旅行者布衣",
+         "price": 450,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 4001,
+         "name": "旅人布鞋",
+         "price": 350,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 5001,
+         "name": "吉恩守護符",
+         "price": 900,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 6001,
+         "name": "新手皮手套",
+         "price": 1200,
+         "category": "GEAR"
+        },
+        {
+         "itemId": 7001,
+         "name": "旅人圓木盾",
+         "price": 1600,
+         "category": "GEAR"
+        }
+       ]
+      }
+     ],
+     "nav": {
+      "status": "AVAILABLE",
+      "reachableMaps": [
+       {
+        "mapId": "20001",
+        "name": "雜貨店",
+        "hops": 1
+       },
+       {
+        "mapId": "20007",
+        "name": "醫院",
+        "hops": 1
+       },
+       {
+        "mapId": "20009",
+        "name": "打鐵舖",
+        "hops": 1
+       },
+       {
+        "mapId": "20010",
+        "name": "吉恩村市鎮中心",
+        "hops": 1
+       },
+       {
+        "mapId": "FIELD_MEADOW",
+        "name": null,
+        "hops": 1
+       }
+      ],
+      "pixelWidth": 8000,
+      "pixelHeight": 8000
+     }
+    }
+   }
+  },
+  {
+   "at": 2000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 4,
+    "event": {
+     "type": "MOVED",
+     "mapId": "10001",
+     "x": 3700,
+     "y": 3700,
+     "dir": 2
+    }
+   }
+  },
+  {
+   "at": 2600,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 5,
+    "event": {
+     "type": "MOVED",
+     "mapId": "10001",
+     "x": 3500,
+     "y": 3650,
+     "dir": 2
+    }
+   }
+  },
+  {
+   "at": 3200,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 6,
+    "event": {
+     "type": "MOVED",
+     "mapId": "10001",
+     "x": 3300,
+     "y": 3600,
+     "dir": 2
+    }
+   }
+  },
+  {
+   "at": 4500,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 7,
+    "event": {
+     "type": "DIALOG_OPENED",
+     "npcId": "npc_10001_00_阿爾",
+     "npcName": "阿爾",
+     "role": "VILLAGER",
+     "lines": [
+      "阿爾：離開村子後，往西北方或是正南方走去，就可以到綠野了。",
+      "阿爾：凡事多問，是學習的不二法門。",
+      "阿爾：村長好像有煩惱，不知道誰可以幫幫他。",
+      "阿爾：聽說市鎮中心的地下室有幾個箱子，裡面有很適合初級冒險者的裝備跟武器。"
+     ],
+     "options": [],
+     "optionsAvailable": false
+    }
+   }
+  },
+  {
+   "at": 7000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 8,
+    "event": {
+     "type": "DIALOG_CLOSED",
+     "npcId": "npc_10001_00_阿爾"
+    }
+   }
+  },
+  {
+   "at": 8000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 9,
+    "event": {
+     "type": "BATTLE_STARTED",
+     "battleId": 1,
+     "mapId": "10001",
+     "enemies": [
+      {
+       "id": "e1",
+       "name": "土來姆",
+       "level": 2
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 8100,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 10,
+    "event": {
+     "type": "BATTLE_TURN_READY",
+     "battleId": 1,
+     "round": 1
+    }
+   }
+  },
+  {
+   "at": 10000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 11,
+    "event": {
+     "type": "BATTLE_TURN_READY",
+     "battleId": 1,
+     "round": 2
+    }
+   }
+  },
+  {
+   "at": 12000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 12,
+    "event": {
+     "type": "BATTLE_ENDED",
+     "battleId": 1,
+     "outcome": "WIN"
+    }
+   }
+  },
+  {
+   "at": 12500,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 13,
+    "event": {
+     "type": "GOLD_CHANGED",
+     "gold": 1350,
+     "delta": 150
+    }
+   }
+  },
+  {
+   "at": 12600,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 14,
+    "event": {
+     "type": "INVENTORY_CHANGED",
+     "changes": [
+      {
+       "itemId": 100000,
+       "delta": 2,
+       "count": 2
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 15000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 15,
+    "event": {
+     "type": "LOCATION_CHANGED",
+     "mapId": "20010",
+     "mapName": "吉恩村市鎮中心",
+     "fromMapId": "10001",
+     "x": 880,
+     "y": 1040,
+     "cause": "MAP_CHANGE"
+    }
+   }
+  },
+  {
+   "at": 15400,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "snapshot",
+    "seq": 16,
+    "reason": "MAP_CHANGED",
+    "snapshot": {
+     "schema": "scene-snapshot",
+     "mapId": "20010",
+     "mapName": "市鎮中心",
+     "character": {
+      "name": "阿草",
+      "level": 5,
+      "hp": 90,
+      "maxHp": 136,
+      "mp": 40,
+      "maxMp": 75,
+      "gold": 1200,
+      "x": 880,
+      "y": 1040,
+      "dir": 2,
+      "inBattle": false
+     },
+     "npcs": [
+      {
+       "id": "npc_20010_00_卡彭",
+       "name": "卡彭",
+       "x": 1320,
+       "y": 500,
+       "gridX": 16,
+       "gridY": 25,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_20010_01_村長傑夫",
+       "name": "村長傑夫",
+       "x": 1080,
+       "y": 700,
+       "gridX": 13,
+       "gridY": 35,
+       "role": "CHIEF",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_20010_02_守衛",
+       "name": "守衛",
+       "x": 1920,
+       "y": 480,
+       "gridX": 24,
+       "gridY": 24,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_20010_03_威利",
+       "name": "威利",
+       "x": 720,
+       "y": 640,
+       "gridX": 9,
+       "gridY": 32,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_20010_04_接待員沃俐",
+       "name": "接待員沃俐",
+       "x": 880,
+       "y": 440,
+       "gridX": 11,
+       "gridY": 22,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      },
+      {
+       "id": "npc_20010_05_基地活動負責人",
+       "name": "基地活動負責人",
+       "x": 1040,
+       "y": 520,
+       "gridX": 13,
+       "gridY": 26,
+       "role": "VILLAGER",
+       "talkable": true,
+       "isAnimal": false,
+       "isShop": false
+      }
+     ],
+     "exits": [
+      {
+       "id": "portal_0",
+       "name": "雜貨店",
+       "x": 1760,
+       "y": 3880,
+       "targetMapId": "20001",
+       "targetMapName": "雜貨店"
+      },
+      {
+       "id": "portal_2",
+       "name": "醫院",
+       "x": 5560,
+       "y": 3860,
+       "targetMapId": "20007",
+       "targetMapName": "醫院"
+      },
+      {
+       "id": "portal_3",
+       "name": "食品店",
+       "x": 4880,
+       "y": 3880,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_4",
+       "name": "裝備店",
+       "x": 2760,
+       "y": 5060,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_5",
+       "name": "打鐵舖",
+       "x": 3240,
+       "y": 5340,
+       "targetMapId": "20009",
+       "targetMapName": "打鐵舖"
+      },
+      {
+       "id": "portal_6",
+       "name": "魚貨店",
+       "x": 5720,
+       "y": 5220,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_7",
+       "name": "木工店",
+       "x": 2680,
+       "y": 4660,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_8",
+       "name": "肉品店",
+       "x": 4320,
+       "y": 1960,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_9",
+       "name": "農家",
+       "x": 4800,
+       "y": 2240,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_10",
+       "name": "裁縫店",
+       "x": 5280,
+       "y": 2440,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_11",
+       "name": "酒館",
+       "x": 3400,
+       "y": 2780,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_12",
+       "name": "整修中...",
+       "x": 4640,
+       "y": 5600,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_13",
+       "name": "牧場",
+       "x": 3040,
+       "y": 1960,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_14",
+       "name": "往北綠野",
+       "x": 880,
+       "y": 360,
+       "targetMapId": "FIELD_MEADOW",
+       "targetMapName": null
+      },
+      {
+       "id": "portal_15",
+       "name": "往南綠野",
+       "x": 2600,
+       "y": 7580,
+       "targetMapId": "FIELD_MEADOW",
+       "targetMapName": null
+      },
+      {
+       "id": "portal_16",
+       "name": "往青蛙沼澤",
+       "x": 7240,
+       "y": 7380,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_17",
+       "name": "往雜貨店",
+       "x": 3720,
+       "y": 3860,
+       "targetMapId": "20001",
+       "targetMapName": "雜貨店"
+      },
+      {
+       "id": "portal_18",
+       "name": "西北方往打鐵舖、裝備店；東北方往魚貨店",
+       "x": 4160,
+       "y": 5880,
+       "targetMapId": "20009",
+       "targetMapName": "打鐵舖"
+      },
+      {
+       "id": "portal_19",
+       "name": "往酒館",
+       "x": 4160,
+       "y": 3440,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_20",
+       "name": "往裁縫店",
+       "x": 4160,
+       "y": 3000,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_21",
+       "name": "往食品店、醫院",
+       "x": 4400,
+       "y": 4080,
+       "targetMapId": "20007",
+       "targetMapName": "醫院"
+      },
+      {
+       "id": "portal_22",
+       "name": "阿米的家",
+       "x": 2560,
+       "y": 1920,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_23",
+       "name": "雲兒的家",
+       "x": 3640,
+       "y": 2140,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_24",
+       "name": "可蜜的家",
+       "x": 2760,
+       "y": 2740,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_25",
+       "name": "卡卡路的家",
+       "x": 5760,
+       "y": 2640,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_26",
+       "name": "拉斐的家",
+       "x": 6320,
+       "y": 3800,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_27",
+       "name": "賽司的家",
+       "x": 4800,
+       "y": 4760,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_28",
+       "name": "特爾凱的家",
+       "x": 6200,
+       "y": 4620,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_29",
+       "name": "排行榜",
+       "x": 3680,
+       "y": 4600,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_30",
+       "name": "心情留言版",
+       "x": 3520,
+       "y": 3560,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      },
+      {
+       "id": "portal_31",
+       "name": "天空小屋",
+       "x": 400,
+       "y": 2960,
+       "targetMapId": "TOWN_GIEN",
+       "targetMapName": "吉恩村"
+      }
+     ],
+     "gatherPoints": {
+      "status": "UNAVAILABLE",
+      "reason": "FX6_NOT_EXTRACTED",
+      "points": []
+     },
+     "shops": [],
+     "nav": {
+      "status": "AVAILABLE",
+      "reachableMaps": [
+       {
+        "mapId": "10001",
+        "name": "吉恩村",
+        "hops": 1
+       },
+       {
+        "mapId": "20001",
+        "name": "雜貨店",
+        "hops": 1
+       },
+       {
+        "mapId": "20007",
+        "name": "醫院",
+        "hops": 1
+       },
+       {
+        "mapId": "20009",
+        "name": "打鐵舖",
+        "hops": 1
+       },
+       {
+        "mapId": "FIELD_MEADOW",
+        "name": null,
+        "hops": 1
+       }
+      ],
+      "pixelWidth": 3200,
+      "pixelHeight": 2400
+     }
+    }
+   }
+  },
+  {
+   "at": 17000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 17,
+    "event": {
+     "type": "MOVED",
+     "mapId": "20010",
+     "x": 1000,
+     "y": 900,
+     "dir": 1
+    }
+   }
+  },
+  {
+   "at": 18500,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 18,
+    "event": {
+     "type": "MOVED",
+     "mapId": "20010",
+     "x": 1060,
+     "y": 740,
+     "dir": 1
+    }
+   }
+  },
+  {
+   "at": 20000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 19,
+    "event": {
+     "type": "DIALOG_OPENED",
+     "npcId": "npc_20010_01_村長傑夫",
+     "npcName": "村長傑夫",
+     "role": "CHIEF",
+     "lines": [
+      "傑夫：有時候你可以從居民間的閒言閒語得知很多事情。",
+      "傑夫：在我們身上按右鍵就可以跟我們對話唷。",
+      "傑夫：我代表村民們歡迎大家。"
+     ],
+     "options": [],
+     "optionsAvailable": false
+    }
+   }
+  },
+  {
+   "at": 23000,
+   "message": {
+    "v": 1,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 20,
+    "event": {
+     "type": "DIALOG_CLOSED",
+     "npcId": "npc_20010_01_村長傑夫"
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,495 @@
+{
+  "_comment": "FX1 範例訊息。每個陣列元素都必須通過 guards.ts 對應的型別守衛；fairyland 與 fairyland-family 共用同一份。",
+  "heartbeat": {
+    "v": 1,
+    "characterId": "char-demo-1",
+    "ts": 1700000000000,
+    "kind": "heartbeat",
+    "sessionId": "sess-demo",
+    "seq": 12,
+    "mapId": "10001",
+    "phase": "PLAYING",
+    "inBattle": false
+  },
+  "snapshot": {
+    "v": 1,
+    "characterId": "char-demo-1",
+    "ts": 1700000000100,
+    "kind": "snapshot",
+    "seq": 1,
+    "reason": "REQUESTED",
+    "inReplyTo": "cmd-0001",
+    "snapshot": {
+      "schema": "scene-snapshot",
+      "mapId": "10001",
+      "mapName": "吉恩村",
+      "character": {
+        "name": "阿草",
+        "level": 5,
+        "hp": 90,
+        "maxHp": 136,
+        "mp": 40,
+        "maxMp": 75,
+        "gold": 1200,
+        "x": 3880,
+        "y": 3740,
+        "dir": 2,
+        "inBattle": false
+      },
+      "npcs": [
+        {
+          "id": "npc_10001_00_阿爾",
+          "name": "阿爾",
+          "x": 3880,
+          "y": 3740,
+          "gridX": 48,
+          "gridY": 187,
+          "role": "VILLAGER",
+          "talkable": true,
+          "isAnimal": false,
+          "isShop": false
+        },
+        {
+          "id": "npc_10001_01_收破爛阿利",
+          "name": "收破爛阿利",
+          "x": 3280,
+          "y": 3880,
+          "gridX": 41,
+          "gridY": 194,
+          "role": "SHOP",
+          "talkable": true,
+          "isAnimal": false,
+          "isShop": true
+        },
+        {
+          "id": "npc_10001_02_佛洛",
+          "name": "佛洛",
+          "x": 3880,
+          "y": 4260,
+          "gridX": 48,
+          "gridY": 213,
+          "role": "VILLAGER",
+          "talkable": true,
+          "isAnimal": false,
+          "isShop": false
+        }
+      ],
+      "exits": [
+        {
+          "id": "portal_0",
+          "name": "雜貨店",
+          "x": 1760,
+          "y": 3880,
+          "targetMapId": "20001",
+          "targetMapName": "雜貨店"
+        },
+        {
+          "id": "portal_1",
+          "name": "吉恩村市鎮中心",
+          "x": 2800,
+          "y": 3880,
+          "targetMapId": "20010",
+          "targetMapName": "吉恩村市鎮中心"
+        },
+        {
+          "id": "portal_2",
+          "name": "醫院",
+          "x": 5560,
+          "y": 3860,
+          "targetMapId": "20007",
+          "targetMapName": "醫院"
+        }
+      ],
+      "gatherPoints": {
+        "status": "UNAVAILABLE",
+        "reason": "FX6_NOT_EXTRACTED",
+        "points": []
+      },
+      "shops": [
+        {
+          "npcId": "npc_10001_01_收破爛阿利",
+          "npcName": "收破爛阿利",
+          "goodsStatus": "RECONSTRUCTED_DEMO",
+          "goods": [
+            {
+              "itemId": 50001,
+              "name": "恢復劑",
+              "price": 150,
+              "category": "SUPPLY"
+            },
+            {
+              "itemId": 50002,
+              "name": "強力恢復劑",
+              "price": 450,
+              "category": "SUPPLY"
+            }
+          ]
+        }
+      ],
+      "nav": {
+        "status": "AVAILABLE",
+        "reachableMaps": [
+          {
+            "mapId": "20001",
+            "name": "雜貨店",
+            "hops": 1
+          },
+          {
+            "mapId": "20007",
+            "name": "醫院",
+            "hops": 1
+          },
+          {
+            "mapId": "20009",
+            "name": null,
+            "hops": 1
+          }
+        ],
+        "pixelWidth": 8000,
+        "pixelHeight": 8000
+      }
+    }
+  },
+  "events": [
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001000,
+      "kind": "event",
+      "seq": 2,
+      "event": {
+        "type": "GAME_STARTED",
+        "sessionId": "sess-demo"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001100,
+      "kind": "event",
+      "seq": 3,
+      "event": {
+        "type": "LOCATION_CHANGED",
+        "mapId": "20010",
+        "mapName": "市鎮中心",
+        "fromMapId": "10001",
+        "x": 880,
+        "y": 1040,
+        "cause": "MAP_CHANGE"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001200,
+      "kind": "event",
+      "seq": 4,
+      "event": {
+        "type": "MOVED",
+        "mapId": "20010",
+        "x": 1000,
+        "y": 900,
+        "dir": 3
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001300,
+      "kind": "event",
+      "seq": 5,
+      "event": {
+        "type": "DIALOG_OPENED",
+        "npcId": "npc_20010_01_村長傑夫",
+        "npcName": "村長傑夫",
+        "role": "CHIEF",
+        "lines": [
+          "傑夫：我代表村民們歡迎大家。"
+        ],
+        "options": [],
+        "optionsAvailable": false
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001400,
+      "kind": "event",
+      "seq": 6,
+      "event": {
+        "type": "DIALOG_CLOSED",
+        "npcId": "npc_20010_01_村長傑夫"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001500,
+      "kind": "event",
+      "seq": 7,
+      "event": {
+        "type": "BATTLE_STARTED",
+        "battleId": 1,
+        "mapId": "10004",
+        "enemies": [
+          {
+            "id": "e1",
+            "name": "土來姆",
+            "level": 2
+          }
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001600,
+      "kind": "event",
+      "seq": 8,
+      "event": {
+        "type": "BATTLE_TURN_READY",
+        "battleId": 1,
+        "round": 1
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001700,
+      "kind": "event",
+      "seq": 9,
+      "event": {
+        "type": "BATTLE_ENDED",
+        "battleId": 1,
+        "outcome": "WIN"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001800,
+      "kind": "event",
+      "seq": 10,
+      "event": {
+        "type": "GOLD_CHANGED",
+        "gold": 1350,
+        "delta": 150
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000001900,
+      "kind": "event",
+      "seq": 11,
+      "event": {
+        "type": "INVENTORY_CHANGED",
+        "changes": [
+          {
+            "itemId": 50001,
+            "delta": 1,
+            "count": 4
+          }
+        ]
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002000,
+      "kind": "event",
+      "seq": 12,
+      "event": {
+        "type": "COMMAND_ACCEPTED",
+        "commandId": "cmd-0001"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002100,
+      "kind": "event",
+      "seq": 13,
+      "event": {
+        "type": "COMMAND_REJECTED",
+        "commandId": "cmd-0002",
+        "reasonCode": "NOT_IMPLEMENTED_P1",
+        "message": "P1 只支援 REQUEST_SNAPSHOT"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002200,
+      "kind": "event",
+      "seq": 14,
+      "event": {
+        "type": "GAME_STOPPED",
+        "sessionId": "sess-demo",
+        "reason": "PAGE_HIDE"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002000,
+      "kind": "command",
+      "commandId": "cmd-0001",
+      "command": {
+        "type": "REQUEST_SNAPSHOT"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002100,
+      "kind": "command",
+      "commandId": "cmd-0002",
+      "command": {
+        "type": "WALK_TO",
+        "mapId": "20010",
+        "x": 1080,
+        "y": 700
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002200,
+      "kind": "command",
+      "commandId": "cmd-0003",
+      "command": {
+        "type": "TALK_TO_NPC",
+        "npcId": "npc_20010_01_村長傑夫"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002300,
+      "kind": "command",
+      "commandId": "cmd-0004",
+      "command": {
+        "type": "CHOOSE_DIALOG_OPTION",
+        "optionId": "accept"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002400,
+      "kind": "command",
+      "commandId": "cmd-0005",
+      "command": {
+        "type": "ACCEPT_QUEST",
+        "questId": 1
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002500,
+      "kind": "command",
+      "commandId": "cmd-0006",
+      "command": {
+        "type": "BUY_ITEM",
+        "itemId": 50001,
+        "count": 2
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002600,
+      "kind": "command",
+      "commandId": "cmd-0007",
+      "command": {
+        "type": "SELL_ITEM",
+        "itemId": 100000,
+        "count": 1
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002700,
+      "kind": "command",
+      "commandId": "cmd-0008",
+      "command": {
+        "type": "WORK_ONCE",
+        "skillId": 4
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002800,
+      "kind": "command",
+      "commandId": "cmd-0009",
+      "command": {
+        "type": "BATTLE_ACTION",
+        "actions": {
+          "player": {
+            "type": "ATTACK",
+            "targetSlot": 0
+          }
+        }
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000002900,
+      "kind": "command",
+      "commandId": "cmd-0010",
+      "command": {
+        "type": "BATTLE_FLEE"
+      }
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000003000,
+      "kind": "command",
+      "commandId": "cmd-0011",
+      "command": {
+        "type": "GAME_COMMAND",
+        "command": {
+          "type": "HEAL_PARTY"
+        }
+      }
+    }
+  ],
+  "commandResults": [
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000003000,
+      "kind": "command-result",
+      "commandId": "cmd-0001",
+      "status": "ACCEPTED"
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000003100,
+      "kind": "command-result",
+      "commandId": "cmd-0002",
+      "status": "REJECTED",
+      "reasonCode": "NOT_IMPLEMENTED_P1",
+      "message": "P1 只支援 REQUEST_SNAPSHOT"
+    },
+    {
+      "v": 1,
+      "characterId": "char-demo-1",
+      "ts": 1700000003200,
+      "kind": "command-result",
+      "commandId": "cmd-0002",
+      "status": "REJECTED",
+      "reasonCode": "NOT_IMPLEMENTED_P1",
+      "duplicate": true
+    }
+  ]
+}

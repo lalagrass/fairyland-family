@@ -1,0 +1,32 @@
+:root { color-scheme: dark; --bg:#14181f; --panel:#1d232d; --line:#2e3846; --fg:#e4eaf3; --dim:#8b97a8; --ok:#5fd38d; --bad:#ff6b6b; --warn:#ffcb6b; --acc:#7cb7ff; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", sans-serif; }
+#app { max-width: 880px; margin: 0 auto; padding: 12px 16px 40px; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+h1 { font-size: 18px; margin: 0; }
+.pill { padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+.pill.run { background: rgba(95,211,141,.16); color: var(--ok); }
+.pill.stop { background: rgba(255,107,107,.16); color: var(--bad); }
+.pill.mode { background: rgba(124,183,255,.16); color: var(--acc); }
+.muted { color: var(--dim); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; padding: 10px 12px; }
+section h2 { font-size: 13px; margin: 0 0 6px; color: var(--dim); font-weight: 600; letter-spacing: .04em; }
+.char { display: flex; gap: 16px; flex-wrap: wrap; }
+.char b { color: var(--acc); }
+.row { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; flex-wrap: wrap; }
+.row .k { min-width: 64px; color: var(--dim); }
+.items { display: flex; gap: 6px; flex-wrap: wrap; }
+button.item { background: #263041; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; font: inherit; cursor: pointer; }
+button.item:hover:not(:disabled) { border-color: var(--acc); }
+button.item:disabled { opacity: .45; cursor: not-allowed; }
+button.item small { color: var(--dim); margin-left: 4px; }
+form { display: flex; gap: 8px; }
+input[type=text] { flex: 1; background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+.err { color: var(--bad); margin-top: 4px; min-height: 1em; }
+.dialog { border-left: 3px solid var(--warn); padding-left: 8px; margin-top: 6px; }
+#log { max-height: 340px; overflow-y: auto; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+#log div { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+#log .warn { color: var(--warn); } #log .error { color: var(--bad); }
+#log .tag { display: inline-block; min-width: 3em; color: var(--acc); }
+#log .cid { color: var(--dim); }
+details summary { cursor: pointer; color: var(--dim); }
