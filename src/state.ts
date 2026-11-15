@@ -12,6 +12,7 @@ import {
   type PluginCommand,
   type SceneSnapshot,
   type SnapshotCharacter,
+  type SnapshotFamilyMember,
   type SnapshotItem,
   type SnapshotShopGood,
 } from './protocol/index';
@@ -45,6 +46,19 @@ export interface FamilyState {
   /** 戰鬥後的勝敗結算視窗（要送 RETURN_TO_MAP／DEFEAT_RESCUE 才會關）。 */
   battleResult: 'VICTORY' | 'DEFEAT' | null;
   inventory: SnapshotItem[];
+  /** FX4+FX7：家族成員清單、目前觀察角色 ID 與家族共用倉庫。 */
+  members: SnapshotFamilyMember[];
+  activeCharacterId: string | null;
+  warehouse: { gold: number; cap: number; items: SnapshotItem[] } | null;
+  /** 最新事件推導出的即時欄位，用來在 compare-panel 與最近快照做雙向比對。 */
+  eventMirror: {
+    mapId: string | null;
+    mapName: string | null;
+    gold: number | null;
+    x: number | null;
+    y: number | null;
+    inventoryCount: number | null;
+  };
   /** 已送出、還沒收到結果的指令。 */
   pending: Record<string, { label: string; sentAt: number; expect?: string }>;
   /** 已被接受、等待 COMMAND_COMPLETED 的指令（記著「預期」，完成時與「實際」對照）。 */
@@ -59,6 +73,8 @@ export function initialState(): FamilyState {
   return {
     lastHeartbeatAt: null, sessionId: null, stoppedSessionId: null, phase: null, characterId: null, location: null,
     snapshot: null, snapshotAt: null, character: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [],
+    members: [], activeCharacterId: null, warehouse: null,
+    eventMirror: { mapId: null, mapName: null, gold: null, x: null, y: null, inventoryCount: null },
     pending: {}, inflight: {}, log: [], logSeq: 0,
   };
 }
@@ -117,6 +133,8 @@ export function describeEvent(e: GameEvent): string {
     case 'BATTLE_TURN_READY': return `戰鬥 #${e.battleId} 第 ${e.round} 回合就緒：${e.enemies.map(n => `${n.name}(${n.hp}/${n.maxHp})`).join('、')}${e.canFlee ? '' : '（不可逃跑）'}`;
     case 'INVENTORY_CHANGED': return `道具變動：${e.changes.map(c => `#${c.itemId} ${c.delta >= 0 ? '+' : ''}${c.delta}（共 ${c.count}）`).join('、')}`;
     case 'GOLD_CHANGED': return `金錢 ${e.delta >= 0 ? '+' : ''}${e.delta}，現有 ${e.gold}`;
+    case 'WAREHOUSE_CHANGED': return `家族倉庫：金錢 ${e.gold}，物品 ${e.items.length} 種`;
+    case 'ACTIVE_CHARACTER_CHANGED': return `切換視角角色：${e.characterId}`;
     case 'COMMAND_ACCEPTED': return '指令已接受';
     case 'COMMAND_REJECTED': return `指令被拒絕：${e.reasonCode}${e.message ? `（${e.message}）` : ''}`;
     case 'COMMAND_COMPLETED': return `指令完成：${e.outcome} ${e.code}${e.message ? `（${e.message}）` : ''}`;
@@ -145,9 +163,21 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
   }
   if (isSnapshotMessage(raw)) {
     let next = s.characterId !== null && s.characterId !== raw.characterId ? resetForNewCharacter(s, raw.characterId) : s;
+    const invCount = raw.snapshot.character.inventoryCount ?? raw.snapshot.inventory.reduce((sum, i) => sum + i.count, 0);
     next = {
       ...next, characterId: raw.characterId, snapshot: raw.snapshot, snapshotAt: now, character: raw.snapshot.character,
       location: { mapId: raw.snapshot.mapId, mapName: raw.snapshot.mapName },
+      members: raw.snapshot.family?.members ?? next.members,
+      activeCharacterId: raw.snapshot.family?.activeCharacterId ?? raw.characterId,
+      warehouse: raw.snapshot.family?.warehouse ?? next.warehouse,
+      eventMirror: {
+        mapId: raw.snapshot.mapId,
+        mapName: raw.snapshot.mapName,
+        gold: raw.snapshot.character.gold,
+        x: raw.snapshot.character.x,
+        y: raw.snapshot.character.y,
+        inventoryCount: invCount,
+      },
       ...fromActivity(raw.snapshot),
     };
     const why = { STARTED: '開機', MAP_CHANGED: '換圖', SCENE_RELOADED: '場景重載', REQUESTED: '應要求', PHASE_CHANGED: '階段改變' }[raw.reason];
@@ -165,7 +195,11 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
 }
 
 function resetForNewCharacter(s: FamilyState, characterId: string): FamilyState {
-  return { ...s, characterId, snapshot: null, snapshotAt: null, character: null, location: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [], inflight: {} };
+  return {
+    ...s, characterId, snapshot: null, snapshotAt: null, character: null, location: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [],
+    eventMirror: { mapId: null, mapName: null, gold: null, x: null, y: null, inventoryCount: null },
+    inflight: {},
+  };
 }
 
 /** 快照裡的進行中互動（重連時用它重建「現在正在對話／戰鬥」）與背包。 */
@@ -192,14 +226,21 @@ function applyInventory(inv: SnapshotItem[], changes: Array<{ itemId: number; de
 }
 
 function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: number): FamilyState {
-  let next: FamilyState = s.characterId !== null && s.characterId !== characterId ? resetForNewCharacter(s, characterId) : { ...s, characterId };
+  const isKnownMember = s.members.some(m => m.characterId === characterId);
+  const isBgEvent = isKnownMember && s.characterId !== null && s.characterId !== characterId && e.type !== 'ACTIVE_CHARACTER_CHANGED';
+  let next: FamilyState = isBgEvent
+    ? { ...s }
+    : s.characterId !== null && s.characterId !== characterId
+      ? resetForNewCharacter(s, characterId)
+      : { ...s, characterId };
+  const isViewed = !isBgEvent && (!next.activeCharacterId || characterId === next.activeCharacterId);
   const commandId = 'commandId' in e ? e.commandId : undefined;
   let level: LogEntry['level'] = 'info';
   switch (e.type) {
     case 'GAME_STARTED': next = { ...next, sessionId: e.sessionId, stoppedSessionId: null, dialog: null, shop: null, battle: null, battleResult: null, pending: {}, inflight: {} }; break;
     case 'GAME_STOPPED': next = { ...next, stoppedSessionId: e.sessionId, dialog: null, shop: null, battle: null, inflight: {} }; break;
-    case 'LOCATION_CHANGED': next = { ...next, location: { mapId: e.mapId, mapName: e.mapName }, character: next.character && { ...next.character, x: e.x, y: e.y }, dialog: null, shop: null }; break;
-    case 'MOVED': next = { ...next, character: next.character && { ...next.character, x: e.x, y: e.y, dir: e.dir } }; break;
+    case 'LOCATION_CHANGED': next = { ...next, location: { mapId: e.mapId, mapName: e.mapName }, character: next.character && { ...next.character, x: e.x, y: e.y }, eventMirror: { ...next.eventMirror, mapId: e.mapId, mapName: e.mapName, x: e.x, y: e.y }, dialog: null, shop: null }; break;
+    case 'MOVED': next = { ...next, character: next.character && { ...next.character, x: e.x, y: e.y, dir: e.dir }, eventMirror: { ...next.eventMirror, x: e.x, y: e.y } }; break;
     case 'DIALOG_OPENED': next = { ...next, dialog: { npcId: e.npcId, npcName: e.npcName, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_UPDATED': next = { ...next, dialog: next.dialog && { ...next.dialog, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_CLOSED': next = { ...next, dialog: null }; break;
@@ -208,8 +249,30 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
     case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name), enemyStates: [], canFlee: true, ready: false }, battleResult: null, character: next.character && { ...next.character, inBattle: true } }; break;
     case 'BATTLE_TURN_READY': next = { ...next, battle: { battleId: e.battleId, round: e.round, enemies: e.enemies.map(n => n.name), enemyStates: e.enemies, canFlee: e.canFlee, ready: true }, character: next.character && { ...next.character, inBattle: true } }; break;
     case 'BATTLE_ENDED': next = { ...next, battle: null, battleResult: e.outcome === 'WIN' ? 'VICTORY' : e.outcome === 'LOSE' ? 'DEFEAT' : null, character: next.character && { ...next.character, inBattle: false } }; break;
-    case 'INVENTORY_CHANGED': next = { ...next, inventory: applyInventory(next.inventory, e.changes) }; break;
-    case 'GOLD_CHANGED': next = { ...next, character: next.character && { ...next.character, gold: e.gold } }; break;
+    case 'INVENTORY_CHANGED': {
+      const members = next.members.map(m => {
+        if (m.characterId !== characterId) return m;
+        const inv = applyInventory(m.inventory, e.changes);
+        return { ...m, inventory: inv, inventoryCount: inv.reduce((sum, i) => sum + i.count, 0) };
+      });
+      if (isViewed) {
+        const updatedInv = applyInventory(next.inventory, e.changes);
+        const count = updatedInv.reduce((sum, i) => sum + i.count, 0);
+        next = { ...next, members, inventory: updatedInv, eventMirror: { ...next.eventMirror, inventoryCount: count } };
+      } else {
+        next = { ...next, members };
+      }
+      break;
+    }
+    case 'GOLD_CHANGED': {
+      const members = next.members.map(m => (m.characterId === characterId ? { ...m, gold: e.gold } : m));
+      next = isViewed
+        ? { ...next, members, character: next.character && { ...next.character, gold: e.gold }, eventMirror: { ...next.eventMirror, gold: e.gold } }
+        : { ...next, members };
+      break;
+    }
+    case 'WAREHOUSE_CHANGED': next = { ...next, warehouse: { gold: e.gold, cap: next.warehouse?.cap ?? 200, items: e.items } }; break;
+    case 'ACTIVE_CHARACTER_CHANGED': next = { ...next, activeCharacterId: e.characterId, characterId: e.characterId }; break;
     case 'COMMAND_REJECTED': level = 'warn'; break;
     case 'COMMAND_COMPLETED': {
       const sent = next.inflight[e.commandId];

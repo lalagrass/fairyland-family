@@ -26,8 +26,68 @@ assert(sec('animals').items.length > 0, 'animals listed separately');
 assert(sec('goto').items.length > 3 && sec('goto').items.every(i => i.action?.kind === 'NAV' && i.action.goal.kind === 'MAP'), '前往：出口 → 導航到目標地圖');
 const grocery = sec('goto').items.find(i => i.label === '雜貨店')!;
 assert(grocery.action?.kind === 'NAV' && grocery.action.goal.kind === 'MAP' && typeof grocery.action.goal.mapId === 'string', 'exit item targets the exit\'s destination map');
-assert(sec('gather').items.length === 0 && sec('gather').emptyText.includes('尚未提供'), '採集：資料不可得時明說，不當成「本區無」');
+assert(sec('gather').items.length === 0 && sec('gather').emptyText.includes('尚未提供'), '採集：舊回放快照 UNAVAILABLE 時仍明說');
 assert(sec('nearby').items.length === 0 && sec('nearby').emptyText.includes('尚未提供'), '附近可採：同上');
+
+const fx6Village: SceneSnapshot = {
+  ...village,
+  gatherPoints: {
+    status: 'AVAILABLE',
+    points: [
+      {
+        id: 'gather_10001_starter_mine',
+        name: '吉恩村 採礦點#1',
+        mapId: '10001',
+        mapName: '吉恩村',
+        x: 3560,
+        y: 3880,
+        skillId: 5,
+        skillName: '挖礦',
+        requiredToolItemId: 51005,
+        requiredToolName: '十字鎬',
+        materials: [{ itemId: 10201, name: '煤', reqLevel: 1 }, { itemId: 10234, name: '青銅礦', reqLevel: 5 }],
+      },
+    ],
+  },
+  nearbyGatherPoints: [
+    {
+      id: 'gather_10002_z1',
+      name: '北綠野 伐木點#1',
+      mapId: '10002',
+      mapName: '北綠野',
+      x: 500,
+      y: 500,
+      skillId: 1,
+      skillName: '伐木',
+      requiredToolItemId: 51001,
+      requiredToolName: '伐木斧',
+      materials: [{ itemId: 10103, name: '白楊木', reqLevel: 10 }],
+    },
+  ],
+  recipes: [
+    {
+      recipeId: 20901,
+      resultItemId: 20901,
+      name: '青銅塊',
+      skillId: 10,
+      skillName: '冶煉',
+      reqLevel: 1,
+      ingredients: [{ itemId: 10234, name: '青銅礦', count: 1, resolved: true }],
+      unresolvedIngredients: [],
+    },
+  ],
+};
+const fx6Menu = buildMenu(fx6Village, dir.knownElsewhere('10001'));
+assert(fx6Menu.find(m => m.key === 'gather')!.items.some(i => i.label.includes('青銅礦') && i.action?.kind === 'QUEUE_GATHER'), 'FX6 採集選單列出材料動作');
+assert(fx6Menu.find(m => m.key === 'nearby')!.items.some(i => i.label === '白楊木' && i.action?.kind === 'QUEUE_GATHER'), 'FX6 附近可採列出跨圖材料');
+const pg = parseInput('採集 青銅礦 2', fx6Village, ctx);
+assert(pg.ok && pg.action.kind === 'QUEUE_GATHER' && pg.action.targetItemId === 10234 && pg.action.count === 2, '採集 青銅礦 2 解析為 QUEUE_GATHER');
+const pfull = parseInput('挖礦 煤 到滿', fx6Village, ctx);
+assert(pfull.ok && pfull.action.kind === 'QUEUE_GATHER' && pfull.action.count === 'UNTIL_FULL', '挖礦 煤 到滿 解析為 UNTIL_FULL');
+const pc = parseInput('製作 青銅塊 2', fx6Village, ctx);
+assert(pc.ok && pc.action.kind === 'QUEUE_CRAFT' && pc.action.recipeId === 20901 && pc.action.count === 2, '製作 青銅塊 2 解析為 QUEUE_CRAFT');
+const ps = parseInput('停止工作', fx6Village, ctx);
+assert(ps.ok && ps.action.kind === 'QUEUE_STOP', '停止工作 解析為 QUEUE_STOP');
 assert(sec('known').items.some(i => i.label === '村長傑夫' && i.hint === '市鎮中心'), '已知地點：預設就知道村長傑夫在市鎮中心');
 assert(buildMenu(ex.snapshot.snapshot as SceneSnapshot).length === 6, 'example snapshot builds a menu too');
 dir.learn(town);

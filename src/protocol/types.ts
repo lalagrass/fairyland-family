@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 78f543e5ced425fdc37da21affb77b9b4b4ecc6b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 2949182bcc2c4e49fce9792cdac3213cf27855b0
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -42,8 +42,8 @@ export interface AcceptQuestCommand { type: 'ACCEPT_QUEST'; questId: number }
 export interface BuyItemCommand { type: 'BUY_ITEM'; itemId: number; count?: number }
 /** 對應 `GameCommand` 的 SELL_ITEM。 */
 export interface SellItemCommand { type: 'SELL_ITEM'; itemId: number; count?: number }
-/** 單次工作（採集／製作）。`skillId`＝採集技能；`recipeId`＝製作配方（二擇一）。 */
-export interface WorkOnceCommand { type: 'WORK_ONCE'; skillId?: number; recipeId?: number }
+/** 單次工作（採集／製作）。`skillId`＝採集技能（可帶 `targetItemId` 指定材料）；`recipeId`＝製作配方（二擇一）。 */
+export interface WorkOnceCommand { type: 'WORK_ONCE'; skillId?: number; recipeId?: number; targetItemId?: number }
 /** 單回合戰鬥動作（主人角色）；幻獸與其他單位由宿主既有的 AI 代出，與玩家在畫面上只點主人指令相同。 */
 export type BattleActionKind = 'ATTACK' | 'SKILL' | 'SPELL' | 'ITEM' | 'CAPTURE' | 'DEFEND';
 export const BATTLE_ACTION_KINDS: readonly BattleActionKind[] = ['ATTACK', 'SKILL', 'SPELL', 'ITEM', 'CAPTURE', 'DEFEND'];
@@ -63,6 +63,12 @@ export interface BattleActionCommand { type: 'BATTLE_ACTION'; battleId?: number;
 export interface BattleFleeCommand { type: 'BATTLE_FLEE'; battleId?: number }
 /** 要求宿主立刻廣播一份完整場景快照（P1 唯一會被執行的指令）。 */
 export interface RequestSnapshotCommand { type: 'REQUEST_SNAPSHOT' }
+/** 切換 2D 畫面目前觀察中的家族角色（FX4）。 */
+export interface SwitchViewCharacterCommand { type: 'SWITCH_VIEW_CHARACTER'; characterId: string }
+/** 將物品或金幣存入家族共用倉庫（FX7；以信封 `characterId` 決定操作者）。 */
+export interface WarehouseDepositCommand { type: 'WAREHOUSE_DEPOSIT'; itemId?: number; count?: number; gold?: number }
+/** 從家族共用倉庫取出物品或金幣到該角色背包（FX7）。 */
+export interface WarehouseWithdrawCommand { type: 'WAREHOUSE_WITHDRAW'; itemId?: number; count?: number; gold?: number }
 /**
  * 直通宿主既有 `GameCommand`（`game_core.ts`）的狀態指令；`command.type` 對應 `GameCommand['type']`。
  * 宿主端會再用 `GameCommand` 本身的檢核處理，所以這裡不重複列舉。
@@ -80,11 +86,15 @@ export type PluginCommand =
   | BattleActionCommand
   | BattleFleeCommand
   | RequestSnapshotCommand
+  | SwitchViewCharacterCommand
+  | WarehouseDepositCommand
+  | WarehouseWithdrawCommand
   | GameCommandPassthrough;
 
 export const PLUGIN_COMMAND_TYPES = [
   'WALK_TO', 'TALK_TO_NPC', 'CHOOSE_DIALOG_OPTION', 'ACCEPT_QUEST', 'BUY_ITEM', 'SELL_ITEM',
-  'WORK_ONCE', 'BATTLE_ACTION', 'BATTLE_FLEE', 'REQUEST_SNAPSHOT', 'GAME_COMMAND',
+  'WORK_ONCE', 'BATTLE_ACTION', 'BATTLE_FLEE', 'REQUEST_SNAPSHOT',
+  'SWITCH_VIEW_CHARACTER', 'WAREHOUSE_DEPOSIT', 'WAREHOUSE_WITHDRAW', 'GAME_COMMAND',
 ] as const;
 export type PluginCommandType = (typeof PLUGIN_COMMAND_TYPES)[number];
 
@@ -115,13 +125,28 @@ export type RejectReasonCode =
   /** 宿主核心（`dispatchGameCommand`）拒絕；`message` 帶核心的原因文字。 */
   | 'CORE_REJECTED'
   | 'BATTLE_NOT_READY'
-  | 'INVALID_BATTLE_ACTION';
+  | 'INVALID_BATTLE_ACTION'
+  | 'MISSING_TOOL'
+  | 'INSUFFICIENT_MATERIALS'
+  | 'INSUFFICIENT_GOLD'
+  | 'INSUFFICIENT_STAMINA'
+  | 'INVENTORY_FULL'
+  | 'SKILL_LEVEL_TOO_LOW'
+  | 'UNKNOWN_SKILL'
+  | 'UNKNOWN_RECIPE'
+  | 'INSUFFICIENT_WAREHOUSE_GOLD'
+  | 'INSUFFICIENT_WAREHOUSE_ITEMS'
+  | 'CHARACTER_NOT_FOUND'
+  | 'WAREHOUSE_FULL';
 
 export const REJECT_REASON_CODES: readonly RejectReasonCode[] = [
   'NOT_IMPLEMENTED', 'INVALID_COMMAND', 'UNKNOWN_COMMAND', 'WRONG_CHARACTER', 'PROTOCOL_VERSION_MISMATCH', 'GAME_NOT_READY',
   'GAME_BUSY', 'WRONG_MAP', 'TOO_FAR', 'NPC_NOT_FOUND', 'UNREACHABLE', 'IN_BATTLE', 'NOT_IN_BATTLE', 'STALE_BATTLE',
   'DIALOG_OPEN', 'NOT_IN_DIALOG', 'OPTION_NOT_FOUND', 'NOT_AT_SHOP', 'ITEM_NOT_IN_SHOP', 'COMMAND_NOT_ALLOWED',
   'CORE_REJECTED', 'BATTLE_NOT_READY', 'INVALID_BATTLE_ACTION',
+  'MISSING_TOOL', 'INSUFFICIENT_MATERIALS', 'INSUFFICIENT_GOLD', 'INSUFFICIENT_STAMINA', 'INVENTORY_FULL',
+  'SKILL_LEVEL_TOO_LOW', 'UNKNOWN_SKILL', 'UNKNOWN_RECIPE',
+  'INSUFFICIENT_WAREHOUSE_GOLD', 'INSUFFICIENT_WAREHOUSE_ITEMS', 'CHARACTER_NOT_FOUND', 'WAREHOUSE_FULL',
 ];
 
 /**
@@ -175,6 +200,16 @@ export interface SnapshotCharacter {
   y: number;
   dir: number;
   inBattle: boolean;
+  satiety?: number;
+  maxSatiety?: number;
+  inventoryCount?: number;
+  inventoryCap?: number;
+  workSkills?: Record<number, number>;
+  /** FX8：目前裝備武器系別、該系熟練等級、連擊等級與各系熟練等級。 */
+  weaponFamily?: string;
+  familyLevel?: number;
+  comboLevel?: number;
+  masteryLevels?: Record<string, number>;
 }
 
 export interface SnapshotItem {
@@ -215,13 +250,44 @@ export interface SnapshotExit {
   targetMapName: string | null;
 }
 
+export interface SnapshotGatherMaterial {
+  itemId: number;
+  name: string;
+  reqLevel: number;
+}
+
 export interface SnapshotGatherPoint {
   id: string;
   name: string;
+  mapId?: string;
+  mapName?: string | null;
   x: number;
   y: number;
   skillId: number | null;
+  skillName?: string;
   requiredToolItemId: number | null;
+  requiredToolName?: string | null;
+  materials?: SnapshotGatherMaterial[];
+  walkableVerified?: boolean;
+  source?: 'EXTRACTED' | 'CUSTOM_STARTER_LOOP';
+}
+
+export interface SnapshotWorkRecipeIngredient {
+  itemId: number | null;
+  name: string;
+  count: number;
+  resolved: boolean;
+}
+
+export interface SnapshotWorkRecipe {
+  recipeId: number;
+  resultItemId: number;
+  name: string;
+  skillId: number;
+  skillName: string;
+  reqLevel: number;
+  ingredients: SnapshotWorkRecipeIngredient[];
+  unresolvedIngredients: string[];
 }
 
 export interface SnapshotReachableMap {
@@ -256,15 +322,49 @@ export interface SnapshotActivity {
   command: { commandId: string; type: string } | null;
 }
 
+export interface SnapshotFamilyMember {
+  characterId: string;
+  name: string | null;
+  level: number;
+  mapId: string;
+  mapName: string | null;
+  x: number;
+  y: number;
+  gold: number;
+  satiety: number;
+  inventoryCount: number;
+  inventoryCap: number;
+  inBattle: boolean;
+  inventory: SnapshotItem[];
+  workSkills: Record<number, number>;
+}
+
+export interface SnapshotFamilyState {
+  activeCharacterId: string;
+  maxSlots: number;
+  members: SnapshotFamilyMember[];
+  warehouse: {
+    gold: number;
+    cap: number;
+    items: SnapshotItem[];
+  };
+}
+
 export interface SceneSnapshot {
   schema: 'scene-snapshot';
   mapId: string;
   mapName: string | null;
   character: SnapshotCharacter;
+  /** FX4+FX7：家族成員摘要、目前視角與家族共用倉庫。 */
+  family?: SnapshotFamilyState;
   npcs: SnapshotNpc[];
   exits: SnapshotExit[];
-  /** 採集點：P1 沒有可用資料（FX6 之後才有），`status` 會是 UNAVAILABLE。 */
+  /** 採集點（FX6：依 maps/*.adf 與 10001 新手採礦點提供本圖可走採集點）。 */
   gatherPoints: { status: DataAvailability; reason?: string; points: SnapshotGatherPoint[] };
+  /** 附近其他已匯入可達地圖的採集點（供外掛搜尋跨圖採集目標）。 */
+  nearbyGatherPoints?: SnapshotGatherPoint[];
+  /** FX6 工作製造／冶煉／鍛造配方目錄。 */
+  recipes?: SnapshotWorkRecipe[];
   shops: SnapshotShop[];
   /** 背包（含數量）；賣東西與戰鬥用道具要從這裡選。 */
   inventory: SnapshotItem[];
@@ -310,6 +410,8 @@ export type GameEvent =
   | { type: 'BATTLE_TURN_READY'; battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean }
   | { type: 'INVENTORY_CHANGED'; changes: Array<{ itemId: number; delta: number; count: number }> }
   | { type: 'GOLD_CHANGED'; gold: number; delta: number }
+  | { type: 'WAREHOUSE_CHANGED'; items: SnapshotItem[]; gold: number }
+  | { type: 'ACTIVE_CHARACTER_CHANGED'; characterId: string }
   | { type: 'COMMAND_ACCEPTED'; commandId: string }
   | { type: 'COMMAND_REJECTED'; commandId: string; reasonCode: RejectReasonCode; message?: string }
   | { type: 'COMMAND_COMPLETED'; commandId: string; outcome: CompletionOutcome; code: CompletionCode; message?: string };
@@ -317,6 +419,7 @@ export type GameEvent =
 export const GAME_EVENT_TYPES = [
   'GAME_STARTED', 'GAME_STOPPED', 'LOCATION_CHANGED', 'MOVED', 'DIALOG_OPENED', 'DIALOG_UPDATED', 'DIALOG_CLOSED',
   'SHOP_OPENED', 'SHOP_CLOSED', 'BATTLE_STARTED', 'BATTLE_ENDED', 'BATTLE_TURN_READY', 'INVENTORY_CHANGED', 'GOLD_CHANGED',
+  'WAREHOUSE_CHANGED', 'ACTIVE_CHARACTER_CHANGED',
   'COMMAND_ACCEPTED', 'COMMAND_REJECTED', 'COMMAND_COMPLETED',
 ] as const;
 export type GameEventType = (typeof GAME_EVENT_TYPES)[number];

@@ -42,6 +42,70 @@ export function buildMenu(snap: SceneSnapshot, known: DirNpc[] = []): MenuSectio
 
   const talk = (n: { name: string }, label: string): UiAction => ({ kind: 'NAV', goal: { kind: 'NPC', query: n.name, talk: true }, label });
 
+  const localGatherItems: MenuItem[] = [];
+  const seenLocal = new Set<string>();
+  for (const pt of snap.gatherPoints.points) {
+    const sid = pt.skillId ?? 5;
+    const sname = pt.skillName ?? '採集';
+    if (pt.materials && pt.materials.length > 0) {
+      for (const m of pt.materials) {
+        const key = `${sid}:${m.itemId}`;
+        if (seenLocal.has(key)) continue;
+        seenLocal.add(key);
+        localGatherItems.push({
+          label: `${sname}：${m.name}`,
+          hint: `Lv.${m.reqLevel}`,
+          action: {
+            kind: 'QUEUE_GATHER',
+            skillId: sid,
+            skillName: sname,
+            targetItemId: m.itemId,
+            targetName: m.name,
+            count: 1,
+            ...(pt.requiredToolItemId ? { requiredToolItemId: pt.requiredToolItemId } : {}),
+            ...(pt.requiredToolName ? { requiredToolName: pt.requiredToolName } : {}),
+            label: `${sname}：${m.name}`,
+          },
+        });
+      }
+    } else {
+      localGatherItems.push({
+        label: pt.name,
+        action: { kind: 'COMMAND', command: { type: 'WALK_TO', mapId: snap.mapId, x: pt.x, y: pt.y }, label: `走到採集點：${pt.name}` },
+      });
+    }
+  }
+
+  const nearbyGatherItems: MenuItem[] = [];
+  const seenNearby = new Set<string>();
+  for (const pt of snap.nearbyGatherPoints ?? []) {
+    const sid = pt.skillId ?? 5;
+    const sname = pt.skillName ?? '採集';
+    const mapLabel = pt.mapName ?? pt.mapId ?? '';
+    for (const m of pt.materials ?? []) {
+      const key = `${pt.mapId ?? ''}:${sid}:${m.itemId}`;
+      if (seenNearby.has(key)) continue;
+      seenNearby.add(key);
+      nearbyGatherItems.push({
+        label: m.name,
+        hint: `${mapLabel}・${sname}`,
+        action: {
+          kind: 'QUEUE_GATHER',
+          skillId: sid,
+          skillName: sname,
+          targetItemId: m.itemId,
+          targetName: m.name,
+          count: 1,
+          ...(pt.requiredToolItemId ? { requiredToolItemId: pt.requiredToolItemId } : {}),
+          ...(pt.requiredToolName ? { requiredToolName: pt.requiredToolName } : {}),
+          label: `前往採集：${m.name}`,
+        },
+      });
+      if (nearbyGatherItems.length >= 24) break;
+    }
+    if (nearbyGatherItems.length >= 24) break;
+  }
+
   return [
     {
       key: 'talk', label: '對話',
@@ -74,12 +138,12 @@ export function buildMenu(snap: SceneSnapshot, known: DirNpc[] = []): MenuSectio
     },
     {
       key: 'gather', label: '採集',
-      items: snap.gatherPoints.points.map(p => ({ label: p.name, action: { kind: 'COMMAND', command: { type: 'WALK_TO', mapId: snap.mapId, x: p.x, y: p.y }, label: `走到採集點：${p.name}` } as UiAction })),
+      items: localGatherItems,
       emptyText: gatherEmpty,
     },
     {
       key: 'nearby', label: '附近可採',
-      items: [],
+      items: nearbyGatherItems,
       emptyText: gatherUnavailable ? '（資料尚未提供，P3 才會有）' : '（無）',
     },
   ];

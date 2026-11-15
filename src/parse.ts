@@ -1,13 +1,27 @@
-import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotItem } from './protocol/index';
+import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotFamilyMember, SnapshotItem } from './protocol/index';
 import type { BattleStrategy } from './battler';
 import type { NavGoal } from './navigator';
 
 /** 選單與文字輸入共用的「動作」：同一份文字或同一顆按鈕，一定走到同一個動作。 */
 export type UiAction =
-  | { kind: 'COMMAND'; command: PluginCommand; label: string }
+  | { kind: 'COMMAND'; command: PluginCommand; label: string; targetCharacterId?: string }
   | { kind: 'NAV'; goal: NavGoal; label: string }
   | { kind: 'NAV_CANCEL'; label: string }
-  | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string };
+  | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string }
+  | {
+      kind: 'QUEUE_GATHER';
+      skillId: number;
+      skillName: string;
+      targetItemId?: number;
+      targetName: string;
+      count: number | 'UNTIL_FULL';
+      requiredToolItemId?: number;
+      requiredToolName?: string;
+      label: string;
+      targetCharacterId?: string;
+    }
+  | { kind: 'QUEUE_CRAFT'; recipeId: number; recipeName: string; count: number; label: string; targetCharacterId?: string }
+  | { kind: 'QUEUE_STOP'; label: string; targetCharacterId?: string };
 
 export type ParseResult =
   | { ok: true; action: UiAction }
@@ -21,16 +35,21 @@ export interface ParseContext {
   enemies?: BattleEnemyState[];
   battleId?: number | null;
   inventory?: SnapshotItem[];
+  members?: SnapshotFamilyMember[];
+  warehouse?: { gold: number; cap: number; items: SnapshotItem[] } | null;
   /** 已知（看過的）NPC／地圖，用來解析「前往 村長」這種不在目前地圖的目標。 */
   findNpc?: (q: string) => Array<{ name: string; mapId: string }>;
   findMap?: (q: string) => Array<{ mapId: string; name: string }>;
 }
 
 export const INPUT_HELP =
-  '可輸入：前往 村長｜對話 阿爾｜走到 1000 700｜選項 接受任務｜買 50001 [數量]｜賣 100000 [數量]｜攻擊 [目標]｜防禦｜逃跑｜策略 手動/普通攻擊/逃跑｜停止導航｜快照';
+  '可輸入：[角色名] 指令｜切換視角 <角色名>｜存倉 <物品> [數量] / <金額> 金｜取倉 <物品> [數量] / <金額> 金｜前往 村長｜採集 青銅礦 2｜製作 青銅塊 2｜停止工作｜快照';
 
 const fail = (error: string): ParseResult => ({ ok: false, error });
-const cmd = (command: PluginCommand, label: string): ParseResult => ({ ok: true, action: { kind: 'COMMAND', command, label } });
+const cmd = (command: PluginCommand, label: string, targetCharacterId?: string): ParseResult => ({
+  ok: true,
+  action: { kind: 'COMMAND', command, label, ...(targetCharacterId ? { targetCharacterId } : {}) },
+});
 const nav = (goal: NavGoal, label: string): ParseResult => ({ ok: true, action: { kind: 'NAV', goal, label } });
 
 function pick<T extends { name: string }>(items: T[], q: string): { hit?: T; error?: string } {
@@ -41,16 +60,85 @@ function pick<T extends { name: string }>(items: T[], q: string): { hit?: T; err
   return { error: `有多個符合「${q}」：${pool.slice(0, 6).map(p => p.name).join('、')}${pool.length > 6 ? '…' : ''}，請輸入更完整的名稱` };
 }
 
+function findFamilyMember(members: SnapshotFamilyMember[], query: string): SnapshotFamilyMember | undefined {
+  const clean = query.replace(/^@/, '').trim();
+  if (!clean) return undefined;
+  return members.find(m => m.characterId === clean || (m.name && m.name === clean))
+    ?? members.find(m => m.name && (m.name.includes(clean) || clean.includes(m.name)));
+}
+
 /** 把一行文字解析成和選單點擊相同的動作（「文字＝點滑鼠」）。 */
 export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseContext = {}): ParseResult {
-  const t = text.replace(/　/g, ' ').trim().replace(/\s+/g, ' ');
-  if (!t) return fail('請輸入指令。' + INPUT_HELP);
+  const raw = text.replace(/　/g, ' ').trim().replace(/\s+/g, ' ');
+  if (!raw) return fail('請輸入指令。' + INPUT_HELP);
+
+  const members = ctx.members ?? snap?.family?.members ?? [];
+  let targetCharacterId: string | undefined;
+  let t = raw;
+  const firstSplit = /^(\S+)\s+(.+)$/.exec(raw);
+  if (firstSplit && members.length > 0) {
+    const memberHit = findFamilyMember(members, firstSplit[1]);
+    if (memberHit) {
+      targetCharacterId = memberHit.characterId;
+      t = firstSplit[2].trim();
+    }
+  }
+  const targetMember = targetCharacterId ? members.find(m => m.characterId === targetCharacterId) : undefined;
+  const targetInv = targetMember?.inventory ?? ctx.inventory ?? snap?.inventory ?? [];
+  const labelPrefix = targetMember?.name ? `[${targetMember.name}] ` : '';
+
   const m = /^(\S+?)(?:\s+(.*))?$/.exec(t);
   const verb = m![1].toLowerCase();
   const rest = (m![2] ?? '').trim();
   const nums = rest.split(' ').filter(Boolean).map(Number);
 
   switch (verb) {
+    case '切換視角': case '視角': case 'switch': {
+      if (!rest) return fail('用法：切換視角 <角色名或ID>');
+      const hit = findFamilyMember(members, rest);
+      if (!hit) return fail(`找不到家族成員「${rest}」`);
+      return cmd({ type: 'SWITCH_VIEW_CHARACTER', characterId: hit.characterId }, `切換視角：${hit.name ?? hit.characterId}`);
+    }
+
+    case '存倉': case '取倉': case 'deposit': case 'withdraw': {
+      const isDeposit = verb === '存倉' || verb === 'deposit';
+      const cmdType = isDeposit ? 'WAREHOUSE_DEPOSIT' : 'WAREHOUSE_WITHDRAW';
+      if (!rest) return fail(`用法：${isDeposit ? '存倉' : '取倉'} <物品名或編號> [數量] 或 <金額> 金`);
+      const goldMatch = /^(\d+)\s*(?:金|可因|gold|g)$/i.exec(rest);
+      if (goldMatch) {
+        const gold = Number(goldMatch[1]);
+        if (!(gold > 0)) return fail('金額必須大於 0');
+        return cmd(
+          { type: cmdType, gold },
+          `${labelPrefix}${isDeposit ? '存倉' : '取倉'} ${gold} 可因`,
+          targetCharacterId
+        );
+      }
+      const parts = rest.split(' ').filter(Boolean);
+      let count = 1;
+      if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) {
+        count = Math.max(1, Number(parts.pop()));
+      }
+      const what = parts.join(' ').trim();
+      let itemId: number | null = /^\d+$/.test(what) ? Number(what) : null;
+      if (itemId === null) {
+        const sourceItems = isDeposit
+          ? targetInv
+          : (ctx.warehouse?.items ?? snap?.family?.warehouse?.items ?? []);
+        const pool = sourceItems.filter(i => i.name).map(i => ({ name: i.name as string, itemId: i.itemId }));
+        const hit = pick(pool, what);
+        if (hit.error) return fail(hit.error);
+        if (!hit.hit) {
+          return fail(`在${isDeposit ? '角色背包' : '家族倉庫'}找不到「${what}」，可改輸入道具編號`);
+        }
+        itemId = hit.hit.itemId;
+      }
+      return cmd(
+        { type: cmdType, itemId, count },
+        `${labelPrefix}${isDeposit ? '存倉' : '取倉'} #${itemId} ×${count}`,
+        targetCharacterId
+      );
+    }
     case '快照': case '刷新': case 'snapshot':
       return cmd({ type: 'REQUEST_SNAPSHOT' }, '要求快照');
 
@@ -94,7 +182,155 @@ export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseC
 
     case '工作': case 'work': {
       if (nums.length !== 1 || !Number.isInteger(nums[0])) return fail('用法：工作 <技能編號>');
-      return cmd({ type: 'WORK_ONCE', skillId: nums[0] }, `工作一次（技能 ${nums[0]}）`);
+      return cmd({ type: 'WORK_ONCE', skillId: nums[0] }, `${labelPrefix}工作一次（技能 ${nums[0]}）`, targetCharacterId);
+    }
+
+    case '停止工作': case 'stopwork':
+      return { ok: true, action: { kind: 'QUEUE_STOP', label: `${labelPrefix}停止工作佇列`, ...(targetCharacterId ? { targetCharacterId } : {}) } };
+
+    case '採集': case '挖礦': case '伐木': case '釣魚': case '狩獵': case '農事': case 'gather': {
+      if (!snap) return fail('還沒有場景快照（遊戲未執行或場景載入中）');
+      const skillVerbMap: Record<string, number> = { '伐木': 1, '釣魚': 3, '狩獵': 4, '挖礦': 5, '農事': 8 };
+      const forcedSkillId = skillVerbMap[verb];
+      const parts = rest.split(' ').filter(Boolean);
+      let count: number | 'UNTIL_FULL' = 1;
+      if (parts.length > 0) {
+        const last = parts[parts.length - 1];
+        if (last === '到滿' || last.toLowerCase() === 'full') {
+          count = 'UNTIL_FULL';
+          parts.pop();
+        } else if (/^\d+$/.test(last)) {
+          const n = Number(last);
+          if (n >= 1 && n <= 999) {
+            count = n;
+            parts.pop();
+          }
+        }
+      }
+      const query = parts.join(' ').trim();
+      const allPts = [...snap.gatherPoints.points, ...(snap.nearbyGatherPoints ?? [])];
+      const scopedPts = forcedSkillId !== undefined ? allPts.filter(p => p.skillId === forcedSkillId) : allPts;
+
+      if (!query) {
+        if (forcedSkillId !== undefined && scopedPts.length > 0) {
+          const pt = scopedPts[0];
+          const firstMat = pt.materials?.[0];
+          return {
+            ok: true,
+            action: {
+              kind: 'QUEUE_GATHER',
+              skillId: forcedSkillId,
+              skillName: pt.skillName ?? verb,
+              ...(firstMat ? { targetItemId: firstMat.itemId, targetName: firstMat.name } : { targetName: pt.skillName ?? verb }),
+              count,
+              ...(pt.requiredToolItemId ? { requiredToolItemId: pt.requiredToolItemId } : {}),
+              ...(pt.requiredToolName ? { requiredToolName: pt.requiredToolName } : {}),
+              label: `${labelPrefix}${pt.skillName ?? verb}`,
+              ...(targetCharacterId ? { targetCharacterId } : {}),
+            },
+          };
+        }
+        return fail('用法：採集 <材料名稱或技能> [數量|到滿]');
+      }
+
+      // 1) 依材料編號或名稱比對（先找本圖，再找鄰近地圖）
+      const candidates: Array<{
+        skillId: number; skillName: string; itemId: number; name: string;
+        toolId?: number; toolName?: string; local: boolean;
+      }> = [];
+      const seenMat = new Set<string>();
+      for (const pt of scopedPts) {
+        const local = pt.mapId === undefined || pt.mapId === snap.mapId;
+        for (const m of pt.materials ?? []) {
+          const k = `${pt.skillId}:${m.itemId}`;
+          if (seenMat.has(k)) continue;
+          seenMat.add(k);
+          candidates.push({
+            skillId: pt.skillId ?? 5,
+            skillName: pt.skillName ?? '採集',
+            itemId: m.itemId,
+            name: m.name,
+            toolId: pt.requiredToolItemId ?? undefined,
+            toolName: pt.requiredToolName ?? undefined,
+            local,
+          });
+        }
+      }
+      const isNumQuery = /^\d+$/.test(query);
+      const exact = candidates.filter(c => (isNumQuery ? c.itemId === Number(query) : c.name === query));
+      const matched = exact.length ? exact : candidates.filter(c => c.name.includes(query) || query.includes(c.name));
+      matched.sort((a, b) => Number(b.local) - Number(a.local));
+      if (matched.length > 0) {
+        const hit = matched[0];
+        const countLabel = count === 'UNTIL_FULL' ? '到滿' : `×${count}`;
+        return {
+          ok: true,
+          action: {
+            kind: 'QUEUE_GATHER',
+            skillId: hit.skillId,
+            skillName: hit.skillName,
+            targetItemId: hit.itemId,
+            targetName: hit.name,
+            count,
+            ...(hit.toolId ? { requiredToolItemId: hit.toolId } : {}),
+            ...(hit.toolName ? { requiredToolName: hit.toolName } : {}),
+            label: `${labelPrefix}${hit.skillName}：${hit.name} ${countLabel}`,
+            ...(targetCharacterId ? { targetCharacterId } : {}),
+          },
+        };
+      }
+
+      // 2) 依技能名稱比對（如：採集 挖礦 3）
+      const bySkill = scopedPts.find(p => (p.skillName ?? '') === query || (p.skillName ?? '').includes(query));
+      if (bySkill && bySkill.skillId !== null) {
+        const firstMat = bySkill.materials?.[0];
+        return {
+          ok: true,
+          action: {
+            kind: 'QUEUE_GATHER',
+            skillId: bySkill.skillId,
+            skillName: bySkill.skillName ?? query,
+            ...(firstMat ? { targetItemId: firstMat.itemId, targetName: firstMat.name } : { targetName: bySkill.skillName ?? query }),
+            count,
+            ...(bySkill.requiredToolItemId ? { requiredToolItemId: bySkill.requiredToolItemId } : {}),
+            ...(bySkill.requiredToolName ? { requiredToolName: bySkill.requiredToolName } : {}),
+            label: `${labelPrefix}${bySkill.skillName ?? query}`,
+            ...(targetCharacterId ? { targetCharacterId } : {}),
+          },
+        };
+      }
+      return fail(`找不到可採集的材料或技能「${query}」`);
+    }
+
+    case '製作': case '冶煉': case '鍛造': case '調配': case '料理': case 'craft': {
+      if (!snap) return fail('還沒有場景快照（遊戲未執行或場景載入中）');
+      const recipes = snap.recipes ?? [];
+      if (recipes.length === 0) return fail('目前快照沒有配方目錄');
+      const parts = rest.split(' ').filter(Boolean);
+      if (!parts.length) return fail(`用法：${verb} <配方名稱或編號> [數量]`);
+      let count = 1;
+      if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) {
+        count = Math.max(1, Number(parts.pop()));
+      }
+      const query = parts.join(' ').trim();
+      const byId = /^\d+$/.test(query) ? recipes.find(r => r.recipeId === Number(query) || r.resultItemId === Number(query)) : undefined;
+      if (byId) {
+        return { ok: true, action: { kind: 'QUEUE_CRAFT', recipeId: byId.recipeId, recipeName: byId.name, count, label: `${labelPrefix}製作：${byId.name} ×${count}`, ...(targetCharacterId ? { targetCharacterId } : {}) } };
+      }
+      const hit = pick(recipes, query);
+      if (hit.error) return fail(hit.error);
+      if (!hit.hit) return fail(`找不到製作配方「${query}」`);
+      return {
+        ok: true,
+        action: {
+          kind: 'QUEUE_CRAFT',
+          recipeId: hit.hit.recipeId,
+          recipeName: hit.hit.name,
+          count,
+          label: `${labelPrefix}製作：${hit.hit.name} ×${count}`,
+          ...(targetCharacterId ? { targetCharacterId } : {}),
+        },
+      };
     }
 
     case '選項': case 'option': {

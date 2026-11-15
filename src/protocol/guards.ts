@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 78f543e5ced425fdc37da21affb77b9b4b4ecc6b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 2949182bcc2c4e49fce9792cdac3213cf27855b0
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -48,7 +48,7 @@ export function isPluginCommand(x: unknown): x is PluginCommand {
     case 'ACCEPT_QUEST': return isNum(x.questId);
     case 'BUY_ITEM':
     case 'SELL_ITEM': return isNum(x.itemId) && optNum(x.count);
-    case 'WORK_ONCE': return optNum(x.skillId) && optNum(x.recipeId) && (x.skillId !== undefined || x.recipeId !== undefined);
+    case 'WORK_ONCE': return optNum(x.skillId) && optNum(x.recipeId) && optNum(x.targetItemId) && (x.skillId !== undefined || x.recipeId !== undefined);
     case 'BATTLE_ACTION': {
       const a = x.action;
       return optNum(x.battleId) && isRec(a) && (BATTLE_ACTION_KINDS as readonly string[]).includes(a.kind as string)
@@ -56,6 +56,10 @@ export function isPluginCommand(x: unknown): x is PluginCommand {
     }
     case 'BATTLE_FLEE': return optNum(x.battleId);
     case 'REQUEST_SNAPSHOT': return true;
+    case 'SWITCH_VIEW_CHARACTER': return isNonEmptyStr(x.characterId);
+    case 'WAREHOUSE_DEPOSIT':
+    case 'WAREHOUSE_WITHDRAW':
+      return optNum(x.itemId) && optNum(x.count) && optNum(x.gold) && (x.itemId !== undefined || x.gold !== undefined);
     case 'GAME_COMMAND': return isRec(x.command) && isNonEmptyStr(x.command.type);
     default: return false;
   }
@@ -89,6 +93,10 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'INVENTORY_CHANGED':
       return isArr(x.changes) && x.changes.every(c => isRec(c) && isNum(c.itemId) && isNum(c.delta) && isNum(c.count));
     case 'GOLD_CHANGED': return isNum(x.gold) && isNum(x.delta);
+    case 'WAREHOUSE_CHANGED':
+      return isArr(x.items) && x.items.every(i => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count)) && isNum(x.gold);
+    case 'ACTIVE_CHARACTER_CHANGED':
+      return isNonEmptyStr(x.characterId);
     case 'COMMAND_ACCEPTED': return isNonEmptyStr(x.commandId);
     case 'COMMAND_REJECTED':
       return isNonEmptyStr(x.commandId) && (REJECT_REASON_CODES as readonly string[]).includes(x.reasonCode as string)
@@ -102,19 +110,33 @@ export function isGameEvent(x: unknown): x is GameEvent {
 
 const AVAIL = ['AVAILABLE', 'UNAVAILABLE', 'RECONSTRUCTED_DEMO'];
 
+const isGatherPoint = (p: unknown): boolean =>
+  isRec(p) && isStr(p.id) && isStr(p.name) && isNum(p.x) && isNum(p.y) && numOrNull(p.skillId) && numOrNull(p.requiredToolItemId)
+  && (p.materials === undefined || (isArr(p.materials) && p.materials.every(m => isRec(m) && isNum(m.itemId) && isStr(m.name) && isNum(m.reqLevel))));
+
+const isWorkRecipe = (r: unknown): boolean =>
+  isRec(r) && isNum(r.recipeId) && isNum(r.resultItemId) && isStr(r.name) && isNum(r.skillId) && isNum(r.reqLevel)
+  && isArr(r.ingredients) && isArr(r.unresolvedIngredients);
+
 /** 場景快照內容。只檢核外掛會用到的結構，不做資料語意檢查。 */
 export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   if (!isRec(x) || x.schema !== 'scene-snapshot' || !isNonEmptyStr(x.mapId) || !strOrNull(x.mapName)) return false;
   const c = x.character;
   if (!isRec(c) || !strOrNull(c.name) || !isNum(c.level) || !numOrNull(c.hp) || !numOrNull(c.maxHp)
-    || !numOrNull(c.mp) || !numOrNull(c.maxMp) || !isNum(c.gold) || !isNum(c.x) || !isNum(c.y) || !isNum(c.dir) || !isBool(c.inBattle)) return false;
+    || !numOrNull(c.mp) || !numOrNull(c.maxMp) || !isNum(c.gold) || !isNum(c.x) || !isNum(c.y) || !isNum(c.dir) || !isBool(c.inBattle)
+    || !optNum(c.satiety) || !optNum(c.maxSatiety) || !optNum(c.inventoryCount) || !optNum(c.inventoryCap)
+    || (c.workSkills !== undefined && !isRec(c.workSkills))
+    || (c.weaponFamily !== undefined && !isStr(c.weaponFamily))
+    || !optNum(c.familyLevel) || !optNum(c.comboLevel)
+    || (c.masteryLevels !== undefined && !isRec(c.masteryLevels))) return false;
   if (!isArr(x.npcs) || !x.npcs.every(n => isRec(n) && isStr(n.id) && isStr(n.name) && isNum(n.x) && isNum(n.y)
     && isNum(n.gridX) && isNum(n.gridY) && strOrNull(n.role) && isBool(n.talkable) && isBool(n.isAnimal) && isBool(n.isShop))) return false;
   if (!isArr(x.exits) || !x.exits.every(e => isRec(e) && isStr(e.id) && isStr(e.name) && isNum(e.x) && isNum(e.y)
     && isNonEmptyStr(e.targetMapId) && strOrNull(e.targetMapName))) return false;
   const g = x.gatherPoints;
-  if (!isRec(g) || !AVAIL.includes(g.status as string) || !isArr(g.points)
-    || !g.points.every(p => isRec(p) && isStr(p.id) && isStr(p.name) && isNum(p.x) && isNum(p.y) && numOrNull(p.skillId) && numOrNull(p.requiredToolItemId))) return false;
+  if (!isRec(g) || !AVAIL.includes(g.status as string) || !isArr(g.points) || !g.points.every(isGatherPoint)) return false;
+  if (x.nearbyGatherPoints !== undefined && (!isArr(x.nearbyGatherPoints) || !x.nearbyGatherPoints.every(isGatherPoint))) return false;
+  if (x.recipes !== undefined && (!isArr(x.recipes) || !x.recipes.every(isWorkRecipe))) return false;
   if (!isArr(x.shops) || !x.shops.every(s => isRec(s) && isStr(s.npcId) && isStr(s.npcName) && AVAIL.includes(s.goodsStatus as string)
     && isArr(s.goods) && s.goods.every(w => isRec(w) && isNum(w.itemId) && strOrNull(w.name) && isNum(w.price)))) return false;
   const n = x.nav;
@@ -123,6 +145,19 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
     || !numOrNull(n.pixelWidth) || !numOrNull(n.pixelHeight)
     || !isArr(n.portalGraph) || !n.portalGraph.every(p => isRec(p) && isNonEmptyStr(p.mapId) && strOrNull(p.name) && isArr(p.targets) && p.targets.every(isStr))) return false;
   if (!isArr(x.inventory) || !x.inventory.every(i => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count))) return false;
+  if (x.family !== undefined) {
+    const f = x.family;
+    const isItem = (i: unknown): boolean => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count);
+    const isMember = (m: unknown): boolean =>
+      isRec(m) && isNonEmptyStr(m.characterId) && strOrNull(m.name) && isNum(m.level)
+      && isNonEmptyStr(m.mapId) && strOrNull(m.mapName) && isNum(m.x) && isNum(m.y)
+      && isNum(m.gold) && isNum(m.satiety) && isNum(m.inventoryCount) && isNum(m.inventoryCap)
+      && isBool(m.inBattle) && isArr(m.inventory) && m.inventory.every(isItem) && isRec(m.workSkills);
+    if (!isRec(f) || !isNonEmptyStr(f.activeCharacterId) || !isNum(f.maxSlots)
+      || !isArr(f.members) || !f.members.every(isMember)
+      || !isRec(f.warehouse) || !isNum(f.warehouse.gold) || !isNum(f.warehouse.cap)
+      || !isArr(f.warehouse.items) || !f.warehouse.items.every(isItem)) return false;
+  }
   const a = x.activity;
   if (!isRec(a)) return false;
   if (a.dialog !== null && !(isRec(a.dialog) && isStr(a.dialog.npcId) && isStr(a.dialog.npcName) && isArr(a.dialog.lines) && a.dialog.lines.every(isStr) && isArr(a.dialog.options) && a.dialog.options.every(isOption))) return false;

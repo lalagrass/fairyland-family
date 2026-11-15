@@ -456,6 +456,35 @@
         "sessionId": "sess-demo",
         "reason": "PAGE_HIDE"
       }
+    },
+    {
+      "v": 2,
+      "characterId": "char-demo-1",
+      "ts": 1700000002250,
+      "kind": "event",
+      "seq": 15,
+      "event": {
+        "type": "WAREHOUSE_CHANGED",
+        "gold": 2500,
+        "items": [
+          {
+            "itemId": 50001,
+            "name": "恢復劑",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "v": 2,
+      "characterId": "char-demo-1",
+      "ts": 1700000002260,
+      "kind": "event",
+      "seq": 16,
+      "event": {
+        "type": "ACTIVE_CHARACTER_CHANGED",
+        "characterId": "char_2"
+      }
     }
   ],
   "commands": [
@@ -597,6 +626,43 @@
       "command": {
         "type": "BATTLE_FLEE",
         "battleId": 7
+      }
+    },
+    {
+      "v": 2,
+      "characterId": "char-demo-1",
+      "ts": 1700000003100,
+      "kind": "command",
+      "commandId": "cmd-0012",
+      "command": {
+        "type": "SWITCH_VIEW_CHARACTER",
+        "characterId": "char_2"
+      }
+    },
+    {
+      "v": 2,
+      "characterId": "char-demo-1",
+      "ts": 1700000003200,
+      "kind": "command",
+      "commandId": "cmd-0013",
+      "command": {
+        "type": "WAREHOUSE_DEPOSIT",
+        "itemId": 50001,
+        "count": 2,
+        "gold": 500
+      }
+    },
+    {
+      "v": 2,
+      "characterId": "char-demo-1",
+      "ts": 1700000003300,
+      "kind": "command",
+      "commandId": "cmd-0014",
+      "command": {
+        "type": "WAREHOUSE_WITHDRAW",
+        "itemId": 50001,
+        "count": 1,
+        "gold": 200
       }
     }
   ],

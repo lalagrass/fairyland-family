@@ -178,7 +178,7 @@ export class AutoNavigator {
   }
 
   private step(token: number, talkNow = false): void {
-    if (token !== this.token || !this.status.goal) return;
+    if (token !== this.token || !this.status.goal || this.current) return;
     const goal = this.status.goal;
     const st = this.host.state();
     if (this.host.state().battle) { this.set({ ...this.status, phase: 'PAUSED_BATTLE', text: '導航：戰鬥中，暫停' }); return; }

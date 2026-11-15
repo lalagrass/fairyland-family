@@ -3,6 +3,7 @@ import { AutoBattler, type BattleStrategy } from './battler';
 import { Directory } from './directory';
 import { AutoNavigator, type NavStatus } from './navigator';
 import { parseInput, type UiAction } from './parse';
+import { WorkQueue, type QueueStatus } from './queue';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
 import type { Transport } from './transport/types';
 
@@ -26,6 +27,9 @@ export class FamilyController {
   readonly directory: Directory;
   readonly navigator: AutoNavigator;
   readonly battler: AutoBattler;
+  readonly queue: WorkQueue;
+  private queues = new Map<string, WorkQueue>();
+  private primaryCharacterId: string | null = null;
   private seq = 0;
   private readonly tag = Math.random().toString(36).slice(2, 7);
   private readonly now: () => number;
@@ -49,6 +53,43 @@ export class FamilyController {
     };
     this.navigator = new AutoNavigator({ ...host, dir: this.directory });
     this.battler = new AutoBattler(host, opts.storage ?? null);
+    const self = this;
+    this.queue = new WorkQueue({
+      ...host,
+      get characterId() { return self.primaryCharacterId ?? self.state.characterId ?? undefined; },
+      send: (c: PluginCommand, l: string, e?: string) => this.sendFor(this.primaryCharacterId ?? this.state.characterId, c, l, e),
+      navigator: this.navigator,
+    }, opts.storage ?? null);
+  }
+
+  private getOrCreateQueue(charId: string): WorkQueue {
+    if (!this.primaryCharacterId) this.primaryCharacterId = charId;
+    if (charId === this.primaryCharacterId) {
+      this.queues.set(charId, this.queue);
+      return this.queue;
+    }
+    let q = this.queues.get(charId);
+    if (!q) {
+      const storage = this.opts.storage ?? null;
+      q = new WorkQueue(
+        {
+          characterId: charId,
+          state: () => this.state,
+          send: (c: PluginCommand, l: string, e?: string) => this.sendFor(charId, c, l, e),
+          log: (t: string, level: 'info' | 'warn' | 'error' = 'info') => {
+            this.state = addLog(this.state, '系統', t, this.now(), { level });
+            this.emit();
+          },
+          after: (ms: number, fn: () => void) => this.after(ms, fn),
+          navigator: this.navigator,
+          onChange: () => this.emit(),
+        },
+        storage,
+        `family.queue.v1:${charId}`
+      );
+      this.queues.set(charId, q);
+    }
+    return q;
   }
 
   start(): void {
@@ -67,12 +108,24 @@ export class FamilyController {
 
   navStatus(): NavStatus { return this.navigator.getStatus(); }
   strategy(): BattleStrategy { return this.battler.getStrategy(); }
+  queueStatus(): QueueStatus {
+    const cid = this.state.characterId;
+    return (cid ? this.queues.get(cid) : undefined)?.getStatus() ?? this.queue.getStatus();
+  }
+  queueStatuses(): Record<string, QueueStatus> {
+    const out: Record<string, QueueStatus> = {};
+    for (const [cid, q] of this.queues) out[cid] = q.getStatus();
+    return out;
+  }
 
   private receive(raw: unknown): void {
     const now = this.now();
     this.state = applyMessage(this.state, raw, now);
     if (isPluginMessage(raw)) {
-      if (raw.kind === 'snapshot') this.directory.learn(raw.snapshot);
+      if (raw.kind === 'snapshot') {
+        this.directory.learn(raw.snapshot);
+        for (const m of raw.snapshot.family?.members ?? []) this.getOrCreateQueue(m.characterId);
+      }
       if (this.sendDepth > 0 || this.agentQueue.length) { this.agentQueue.push(raw); this.after(0, () => this.flushAgents()); }
       else this.dispatchToAgents(raw);
     }
@@ -85,9 +138,17 @@ export class FamilyController {
   }
 
   private dispatchToAgents(m: PluginMessage): void {
-    if (m.characterId !== this.state.characterId) return;
-    this.navigator.onMessage(m);
-    this.battler.onMessage(m);
+    if (m.characterId === this.state.characterId) {
+      this.navigator.onMessage(m);
+      this.battler.onMessage(m);
+    }
+    if (m.kind === 'snapshot' || m.kind === 'heartbeat') {
+      if (this.queues.size === 0) this.queue.onMessage(m);
+      else for (const q of this.queues.values()) q.onMessage(m);
+      return;
+    }
+    const q = this.queues.get(m.characterId) ?? (m.characterId === this.state.characterId ? this.queue : undefined);
+    q?.onMessage(m);
   }
 
   /** 定時呼叫：心跳逾時要靠時間才會變成「遊戲未執行」。 */
@@ -113,8 +174,12 @@ export class FamilyController {
 
   /** 送出指令；遊戲未執行時不送（藍圖：遊戲未執行不接受指令）。回傳 commandId 或 null。 */
   send(command: PluginCommand, label: string, expect?: string): string | null {
+    return this.sendFor(this.state.characterId, command, label, expect);
+  }
+
+  sendFor(targetCharId: string | null, command: PluginCommand, label: string, expect?: string): string | null {
     const now = this.now();
-    const characterId = this.state.characterId;
+    const characterId = targetCharId ?? this.state.characterId;
     if (!characterId || this.status() !== 'RUNNING') {
       this.state = addLog(this.state, '系統', `遊戲未執行，未送出：${label}`, now, { level: 'warn' });
       this.emit();
@@ -139,10 +204,41 @@ export class FamilyController {
   /** 選單按鈕與文字輸入共用的執行入口；回傳錯誤文字（無法執行）或 null。 */
   perform(action: UiAction): string | null {
     switch (action.kind) {
-      case 'COMMAND': this.send(action.command, action.label); return null;
+      case 'COMMAND':
+        this.sendFor(action.targetCharacterId ?? this.state.characterId, action.command, action.label);
+        return null;
       case 'NAV': return this.navigator.go(action.goal);
       case 'NAV_CANCEL': this.navigator.cancel(); return null;
       case 'STRATEGY': this.battler.setStrategy(action.strategy); return null;
+      case 'QUEUE_GATHER': {
+        const q = action.targetCharacterId ? this.getOrCreateQueue(action.targetCharacterId) : (this.state.characterId ? this.getOrCreateQueue(this.state.characterId) : this.queue);
+        q.enqueue({
+          kind: 'GATHER',
+          skillId: action.skillId,
+          skillName: action.skillName,
+          ...(action.targetItemId !== undefined ? { targetItemId: action.targetItemId } : {}),
+          targetName: action.targetName,
+          targetCount: action.count,
+          ...(action.requiredToolItemId !== undefined ? { requiredToolItemId: action.requiredToolItemId } : {}),
+          ...(action.requiredToolName ? { requiredToolName: action.requiredToolName } : {}),
+        });
+        return null;
+      }
+      case 'QUEUE_CRAFT': {
+        const q = action.targetCharacterId ? this.getOrCreateQueue(action.targetCharacterId) : (this.state.characterId ? this.getOrCreateQueue(this.state.characterId) : this.queue);
+        q.enqueue({
+          kind: 'CRAFT',
+          recipeId: action.recipeId,
+          recipeName: action.recipeName,
+          targetCount: action.count,
+        });
+        return null;
+      }
+      case 'QUEUE_STOP': {
+        const q = action.targetCharacterId ? this.getOrCreateQueue(action.targetCharacterId) : (this.state.characterId ? this.getOrCreateQueue(this.state.characterId) : this.queue);
+        q.stop('USER_STOPPED');
+        return null;
+      }
     }
   }
 
@@ -151,6 +247,7 @@ export class FamilyController {
     const s = this.state;
     const r = parseInput(text, s.snapshot, {
       mapId: s.location?.mapId, dialogOptions: s.dialog?.options, enemies: s.battle?.enemyStates, battleId: s.battle?.battleId ?? null, inventory: s.inventory,
+      members: s.members, warehouse: s.warehouse,
       findNpc: q => this.directory.findNpc(q), findMap: q => this.directory.findMap(q),
     });
     if (!r.ok) return r.error;
