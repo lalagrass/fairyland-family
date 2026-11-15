@@ -65,3 +65,28 @@
 先閱讀本檔、`AGENTS.md` 與藍圖，並在可存取來源 repo 的環境核對程式。若來源不在目前電腦／雲端環境，明確記錄缺少的依賴，不能假定本機絕對路徑在其他環境存在。
 
 第一項建議任務：整理藍圖 M0 的可重用模組與資料缺口、指令格式，以及 family 與 fairyland 之間指令／事件連線的驗證計畫。本輪僅修訂規劃文件；技術驗證與 M1 家族離線工作閉環實作，須在另行安排執行後才啟動，不由此接手說明自動開工。角色數不預設為五人，初始名額與解鎖流程依藍圖 9.5 節試驗後決定。未來實作交付時附啟動方式、已完成範圍、驗證結果與已知限制。
+
+## P1：與 fairyland 並排執行
+
+目前可執行的只有「遊戲 → 文字」的唯讀對照：family 顯示遊戲連線狀態、角色、場景選單（對話／前往／採集／商店）與事件日誌。點選單或輸入文字會送出原子指令，P1 的 fairyland 一律回 `NOT_IMPLEMENTED_P1`（日誌會顯示，屬預期）。
+
+```bash
+npm ci
+npm run build        # 輸出 dist，base 為 /family/
+npm test
+npm run check-protocol   # 與並排的 ../fairyland 協定副本比對（找不到 fairyland 時略過）
+npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔頭）
+```
+
+1. 在 `../fairyland` 執行 `npm run client`（它會把本 repo 的 `dist` 掛在同源 `/family/`；位置可用 `FL_FAMILY_DIST` 覆寫）。
+2. 開 `http://localhost:3000/?dev=1`（遊戲，並顯示收發紀錄）與 `http://localhost:3000/family/`（兩個分頁必須同源，BroadcastChannel 才通）。
+3. 不開遊戲時可用 `http://localhost:3000/family/?replay=1`（或 `npm run dev` 後開 `http://localhost:3100/family/?replay=1`）播放 `fixtures/replay_village.json`；`&speed=2`、`&loop=1` 可選。快照來自真實地圖，事件順序為手排（`scripts/make-replay-fixture.ts` 產生）。
+
+### P1 對照檢查表（人工）
+
+- [ ] family 顯示「遊戲執行中」；關閉遊戲分頁 3 秒內變「遊戲未執行」，重開後自動接上並取得快照。
+- [ ] 遊戲裡點地板走路 → 日誌出現「走到 (x, y)」，角色列位置與遊戲一致。
+- [ ] 遊戲裡點 NPC 對話 → 日誌與場景區出現該 NPC 與對白；關閉對話 → 「對話結束」。
+- [ ] 買東西 → 金錢與道具變動事件；走進傳送點 → 「移動到…（換圖）」且場景選單換成新地圖的 NPC／出口。
+- [ ] family 點「對話：某 NPC」或輸入 `前往 村長` → 日誌顯示送出與 `NOT_IMPLEMENTED_P1`，commandId 與遊戲 `?dev=1` 面板相同。
+
