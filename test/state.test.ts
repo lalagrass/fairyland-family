@@ -55,9 +55,9 @@ suite('commands: pending, results, log with commandId');
   const cmd = { ...B, ts: 5, kind: 'command' as const, commandId: 'fam-x-0001', command: { type: 'TALK_TO_NPC' as const, npcId: 'n1' } };
   s = applySent(s, cmd, '對話：阿爾', 5);
   assert(!!s.pending['fam-x-0001'] && s.log[s.log.length - 1].commandId === 'fam-x-0001', 'sent command is pending and logged with its commandId');
-  s = applyMessage(s, { ...B, ts: 6, kind: 'command-result', commandId: 'fam-x-0001', status: 'REJECTED', reasonCode: 'NOT_IMPLEMENTED_P1' }, 6);
+  s = applyMessage(s, { ...B, ts: 6, kind: 'command-result', commandId: 'fam-x-0001', status: 'REJECTED', reasonCode: 'WRONG_MAP' }, 6);
   const last = s.log[s.log.length - 1];
-  assert(!s.pending['fam-x-0001'] && last.tag === '結果' && last.level === 'warn' && last.text.includes('NOT_IMPLEMENTED_P1') && last.commandId === 'fam-x-0001', 'rejected result shown in the log and clears pending');
+  assert(!s.pending['fam-x-0001'] && last.tag === '結果' && last.level === 'warn' && last.text.includes('WRONG_MAP') && last.commandId === 'fam-x-0001', 'rejected result shown in the log and clears pending');
 }
 
 suite('controller refuses to send while the game is not running');
@@ -79,5 +79,42 @@ suite('controller refuses to send while the game is not running');
   c.tick();
   assert(c.status() === 'STOPPED' && c.state.log.some(l => l.text === '遊戲未執行'), 'heartbeat timeout -> 遊戲未執行');
   assert(c.send({ type: 'BATTLE_FLEE' }, '逃') === null && sent.length === 2, 'not sent after the game stopped');
+}
+
+suite('v2 state: dialog options, shop, inventory, battle, 預期 vs 實際');
+{
+  let s = applyMessage(initialState(), hb(), 0);
+  s = applyMessage(s, { ...ex.snapshot, characterId: 'c1' }, 10);
+  s = applyMessage(s, evt({ type: 'DIALOG_OPENED', npcId: 'n', npcName: '村長傑夫', role: 'CHIEF', lines: ['hi'], options: [{ id: 'ENABLE_DEMO_MODE', label: '啟用' }], optionsAvailable: true }), 20);
+  assert(s.dialog?.options[0].id === 'ENABLE_DEMO_MODE', 'dialog keeps its options');
+  s = applyMessage(s, evt({ type: 'DIALOG_UPDATED', npcId: 'n', lines: ['again'], options: [{ id: 'ACCEPT_QUEST:1', label: '接受' }] }), 21);
+  assert(s.dialog?.options[0].id === 'ACCEPT_QUEST:1' && s.dialog.lines[0] === 'again', 'DIALOG_UPDATED replaces lines and options');
+  s = applyMessage(s, evt({ type: 'SHOP_OPENED', npcId: 'n2', npcName: '阿利', goods: [{ itemId: 1, name: '藥', price: 5 }] }), 22);
+  assert(s.shop?.goods.length === 1, 'shop opened');
+  s = applyMessage(s, evt({ type: 'SHOP_CLOSED', npcId: 'n2' }), 23);
+  assert(s.shop === null, 'shop closed');
+  s = applyMessage(s, evt({ type: 'INVENTORY_CHANGED', changes: [{ itemId: 999, delta: 2, count: 2 }] }), 24);
+  assert(s.inventory.some(i => i.itemId === 999 && i.count === 2), 'INVENTORY_CHANGED adds a new stack');
+  s = applyMessage(s, evt({ type: 'INVENTORY_CHANGED', changes: [{ itemId: 999, delta: -2, count: 0 }] }), 25);
+  assert(!s.inventory.some(i => i.itemId === 999), 'a stack that reaches 0 is removed');
+  s = applyMessage(s, evt({ type: 'BATTLE_STARTED', battleId: 4, mapId: '10001', enemies: [{ id: 'a', name: '波姆', level: 1 }] }), 30);
+  s = applyMessage(s, evt({ type: 'BATTLE_TURN_READY', battleId: 4, round: 1, enemies: [{ slot: 1, id: 'a', name: '波姆', hp: 5, maxHp: 5 }], canFlee: true }), 31);
+  assert(s.battle?.ready === true && s.battle.enemyStates[0].slot === 1, 'turn ready exposes enemy slots');
+  const flee = { ...B, ts: 32, kind: 'command' as const, commandId: 'fam-x-0009', command: { type: 'BATTLE_FLEE' as const } };
+  s = applySent(s, flee, '逃跑', 32);
+  assert(s.battle?.ready === false && s.pending['fam-x-0009'].expect === 'FLED', 'sending a battle action closes the turn and records the expectation');
+  s = applyMessage(s, { ...B, ts: 33, kind: 'command-result', commandId: 'fam-x-0009', status: 'ACCEPTED' }, 33);
+  assert(!!s.inflight['fam-x-0009'], 'accepted command waits for completion');
+  s = applyMessage(s, evt({ type: 'COMMAND_COMPLETED', commandId: 'fam-x-0009', outcome: 'DONE', code: 'FLEE_FAILED' }), 34);
+  const done1 = s.log[s.log.length - 1];
+  assert(!s.inflight['fam-x-0009'] && done1.text.includes('預期 FLED') && done1.text.includes('實際 FLEE_FAILED') && done1.level === 'warn', 'mismatch between expected and actual is logged as a warning');
+  const walk = { ...B, ts: 40, kind: 'command' as const, commandId: 'fam-x-0010', command: { type: 'WALK_TO' as const, mapId: '10001', x: 1, y: 1 } };
+  s = applyMessage(applySent(s, walk, '走', 40), { ...B, ts: 41, kind: 'command-result', commandId: 'fam-x-0010', status: 'ACCEPTED' }, 41);
+  s = applyMessage(s, evt({ type: 'COMMAND_COMPLETED', commandId: 'fam-x-0010', outcome: 'DONE', code: 'ARRIVED' }), 42);
+  assert(s.log[s.log.length - 1].text.includes('✓') && s.log[s.log.length - 1].level === 'info', 'matching result is logged with a check mark');
+  s = applyMessage(s, evt({ type: 'BATTLE_ENDED', battleId: 4, outcome: 'WIN' }), 50);
+  assert(s.battleResult === 'VICTORY', 'WIN opens the victory result window');
+  const ret = { ...B, ts: 51, kind: 'command' as const, commandId: 'fam-x-0011', command: { type: 'CHOOSE_DIALOG_OPTION' as const, optionId: 'RETURN_TO_MAP' } };
+  assert(applySent(s, ret, '關窗', 51).battleResult === null, 'sending RETURN_TO_MAP closes the result window locally');
 }
 done();

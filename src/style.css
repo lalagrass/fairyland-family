@@ -30,3 +30,5 @@ input[type=text] { flex: 1; background: #10141a; color: var(--fg); border: 1px s
 #log .tag { display: inline-block; min-width: 3em; color: var(--acc); }
 #log .cid { color: var(--dim); }
 details summary { cursor: pointer; color: var(--dim); }
+select { background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: inherit; }
+#log .tag { min-width: 3em; }

@@ -20,8 +20,12 @@ async function createTransport(): Promise<{ transport: Transport; mode: string }
 
 const { transport, mode } = await createTransport();
 const root = document.getElementById('app')!;
-const ui = mountUi(root, mode, (command, label) => controller.send(command, label), text => controller.parseAndSend(text));
-const controller = new FamilyController(transport, { onChange: s => ui.render(s, controller.status()) });
+const storage = (() => { try { return window.localStorage; } catch { return null; } })();
+const ui = mountUi(root, mode, action => controller.perform(action), text => controller.parseAndSend(text));
+const controller = new FamilyController(transport, {
+  storage,
+  onChange: s => ui.render(s, controller.status(), { nav: controller.navStatus(), strategy: controller.strategy(), known: controller.directory.knownElsewhere(s.location?.mapId ?? null) }),
+});
 controller.start();
 setInterval(() => controller.tick(), 500);
 window.addEventListener('pagehide', () => controller.stop());

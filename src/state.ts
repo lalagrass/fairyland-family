@@ -7,8 +7,13 @@ import {
   isSnapshotMessage,
   type CommandMessage,
   type GameEvent,
+  type BattleEnemyState,
+  type DialogOption,
+  type PluginCommand,
   type SceneSnapshot,
   type SnapshotCharacter,
+  type SnapshotItem,
+  type SnapshotShopGood,
 } from './protocol/index';
 
 export type LogTag = '連線' | '事件' | '快照' | '送出' | '結果' | '系統';
@@ -34,10 +39,16 @@ export interface FamilyState {
   snapshot: SceneSnapshot | null;
   snapshotAt: number | null;
   character: SnapshotCharacter | null;
-  dialog: { npcId: string; npcName: string; lines: string[] } | null;
-  battle: { battleId: number; round: number | null; enemies: string[] } | null;
+  dialog: { npcId: string; npcName: string; lines: string[]; options: DialogOption[] } | null;
+  shop: { npcId: string; npcName: string; goods: SnapshotShopGood[] } | null;
+  battle: { battleId: number; round: number | null; enemies: string[]; enemyStates: BattleEnemyState[]; canFlee: boolean; ready: boolean } | null;
+  /** 戰鬥後的勝敗結算視窗（要送 RETURN_TO_MAP／DEFEAT_RESCUE 才會關）。 */
+  battleResult: 'VICTORY' | 'DEFEAT' | null;
+  inventory: SnapshotItem[];
   /** 已送出、還沒收到結果的指令。 */
-  pending: Record<string, { label: string; sentAt: number }>;
+  pending: Record<string, { label: string; sentAt: number; expect?: string }>;
+  /** 已被接受、等待 COMMAND_COMPLETED 的指令（記著「預期」，完成時與「實際」對照）。 */
+  inflight: Record<string, { label: string; sentAt: number; expect: string }>;
   log: LogEntry[];
   logSeq: number;
 }
@@ -47,7 +58,8 @@ const LOG_CAP = 300;
 export function initialState(): FamilyState {
   return {
     lastHeartbeatAt: null, sessionId: null, stoppedSessionId: null, phase: null, characterId: null, location: null,
-    snapshot: null, snapshotAt: null, character: null, dialog: null, battle: null, pending: {}, log: [], logSeq: 0,
+    snapshot: null, snapshotAt: null, character: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [],
+    pending: {}, inflight: {}, log: [], logSeq: 0,
   };
 }
 
@@ -66,9 +78,27 @@ export function addLog(s: FamilyState, tag: LogTag, text: string, now: number, e
 }
 
 /** 把「我送出了一個指令」記進狀態（日誌與待回覆表）。 */
-export function applySent(s: FamilyState, msg: CommandMessage, label: string, now: number): FamilyState {
-  const next = addLog(s, '送出', `${label}　${JSON.stringify(msg.command)}`, now, { commandId: msg.commandId });
-  return { ...next, pending: { ...next.pending, [msg.commandId]: { label, sentAt: now } } };
+export function applySent(s: FamilyState, msg: CommandMessage, label: string, now: number, expect?: string): FamilyState {
+  const exp = expect ?? expectedCode(msg.command);
+  const next = addLog(s, '送出', `${label}　${JSON.stringify(msg.command)}${exp ? `　（預期：${exp}）` : ''}`, now, { commandId: msg.commandId });
+  let out: FamilyState = { ...next, pending: { ...next.pending, [msg.commandId]: { label, sentAt: now, ...(exp ? { expect: exp } : {}) } } };
+  const c = msg.command;
+  // 送出戰鬥動作後，這一回合就不能再送；結算視窗選項送出後視窗視為關閉（下一份快照會校正）。
+  if ((c.type === 'BATTLE_ACTION' || c.type === 'BATTLE_FLEE') && out.battle) out = { ...out, battle: { ...out.battle, ready: false } };
+  if (c.type === 'CHOOSE_DIALOG_OPTION' && (c.optionId === 'RETURN_TO_MAP' || c.optionId === 'DEFEAT_RESCUE')) out = { ...out, battleResult: null };
+  return out;
+}
+
+/** 每種指令「正常情況下」會以哪個完成碼收場（導航走到出口時由呼叫端覆寫成 MAP_CHANGED）。 */
+export function expectedCode(c: PluginCommand): string | undefined {
+  switch (c.type) {
+    case 'WALK_TO': return 'ARRIVED';
+    case 'TALK_TO_NPC': return 'DIALOG_OPENED';
+    case 'CHOOSE_DIALOG_OPTION': case 'ACCEPT_QUEST': case 'BUY_ITEM': case 'SELL_ITEM': return 'DONE';
+    case 'BATTLE_ACTION': return 'TURN_SUBMITTED';
+    case 'BATTLE_FLEE': return 'FLED';
+    default: return undefined;
+  }
 }
 
 export function describeEvent(e: GameEvent): string {
@@ -77,15 +107,19 @@ export function describeEvent(e: GameEvent): string {
     case 'GAME_STOPPED': return `遊戲停止（${e.reason}）`;
     case 'LOCATION_CHANGED': return `移動到 ${e.mapName ?? e.mapId}（${e.cause === 'MAP_CHANGE' ? '換圖' : e.cause === 'WARP' ? '傳送' : '載入'}）(${e.x}, ${e.y})`;
     case 'MOVED': return `走到 (${e.x}, ${e.y})`;
-    case 'DIALOG_OPENED': return `與 ${e.npcName} 對話：${e.lines[0] ?? '（沒有對白）'}${e.optionsAvailable ? '' : '（選項未提供）'}`;
+    case 'DIALOG_OPENED': return `與 ${e.npcName} 對話：${e.lines[0] ?? '（沒有對白）'}${e.optionsAvailable ? `［選項：${e.options.map(o => o.label).join('／') || '無'}］` : '（選項未提供）'}`;
+    case 'DIALOG_UPDATED': return `對話更新：${e.lines[0] ?? ''}［選項：${e.options.map(o => o.label).join('／') || '無'}］`;
     case 'DIALOG_CLOSED': return '對話結束';
+    case 'SHOP_OPENED': return `商店開啟：${e.npcName}（${e.goods.length} 項商品）`;
+    case 'SHOP_CLOSED': return '商店關閉';
     case 'BATTLE_STARTED': return `遭遇戰鬥 #${e.battleId}：${e.enemies.map(n => n.name).join('、') || '？'}`;
     case 'BATTLE_ENDED': return `戰鬥 #${e.battleId} 結束：${e.outcome === 'WIN' ? '勝利' : e.outcome === 'LOSE' ? '落敗' : e.outcome === 'FLEE' ? '逃跑' : '未知'}`;
-    case 'BATTLE_TURN_READY': return `戰鬥 #${e.battleId} 第 ${e.round} 回合就緒`;
+    case 'BATTLE_TURN_READY': return `戰鬥 #${e.battleId} 第 ${e.round} 回合就緒：${e.enemies.map(n => `${n.name}(${n.hp}/${n.maxHp})`).join('、')}${e.canFlee ? '' : '（不可逃跑）'}`;
     case 'INVENTORY_CHANGED': return `道具變動：${e.changes.map(c => `#${c.itemId} ${c.delta >= 0 ? '+' : ''}${c.delta}（共 ${c.count}）`).join('、')}`;
     case 'GOLD_CHANGED': return `金錢 ${e.delta >= 0 ? '+' : ''}${e.delta}，現有 ${e.gold}`;
     case 'COMMAND_ACCEPTED': return '指令已接受';
     case 'COMMAND_REJECTED': return `指令被拒絕：${e.reasonCode}${e.message ? `（${e.message}）` : ''}`;
+    case 'COMMAND_COMPLETED': return `指令完成：${e.outcome} ${e.code}${e.message ? `（${e.message}）` : ''}`;
   }
 }
 
@@ -114,23 +148,47 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
     next = {
       ...next, characterId: raw.characterId, snapshot: raw.snapshot, snapshotAt: now, character: raw.snapshot.character,
       location: { mapId: raw.snapshot.mapId, mapName: raw.snapshot.mapName },
+      ...fromActivity(raw.snapshot),
     };
     const why = { STARTED: '開機', MAP_CHANGED: '換圖', SCENE_RELOADED: '場景重載', REQUESTED: '應要求', PHASE_CHANGED: '階段改變' }[raw.reason];
     return addLog(next, '快照', `${raw.snapshot.mapName ?? raw.snapshot.mapId}：NPC ${raw.snapshot.npcs.length}／出口 ${raw.snapshot.exits.length}（${why}）`, now, { commandId: raw.inReplyTo });
   }
   if (isEventMessage(raw)) return applyEvent(s, raw.characterId, raw.event, now);
   if (isCommandResultMessage(raw)) {
-    const { [raw.commandId]: _gone, ...rest } = s.pending;
-    void _gone;
+    const { [raw.commandId]: sent, ...rest } = s.pending;
     const ok = raw.status === 'ACCEPTED';
+    const inflight = ok && sent?.expect && !raw.duplicate ? { ...s.inflight, [raw.commandId]: { label: sent.label, sentAt: sent.sentAt, expect: sent.expect } } : s.inflight;
     const text = ok ? '結果：已接受' : `結果：被拒絕 ${raw.reasonCode ?? ''}${raw.message ? `（${raw.message}）` : ''}`;
-    return addLog({ ...s, pending: rest }, '結果', `${text}${raw.duplicate ? '（重送，沿用先前結果）' : ''}`, now, { commandId: raw.commandId, level: ok ? 'info' : 'warn' });
+    return addLog({ ...s, pending: rest, inflight }, '結果', `${text}${raw.duplicate ? '（重送，沿用先前結果）' : ''}`, now, { commandId: raw.commandId, level: ok ? 'info' : 'warn' });
   }
   return s; // 自己送出的指令回音或其他人的訊息：忽略
 }
 
 function resetForNewCharacter(s: FamilyState, characterId: string): FamilyState {
-  return { ...s, characterId, snapshot: null, snapshotAt: null, character: null, location: null, dialog: null, battle: null };
+  return { ...s, characterId, snapshot: null, snapshotAt: null, character: null, location: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [], inflight: {} };
+}
+
+/** 快照裡的進行中互動（重連時用它重建「現在正在對話／戰鬥」）與背包。 */
+function fromActivity(snap: SceneSnapshot): Pick<FamilyState, 'dialog' | 'shop' | 'battle' | 'battleResult' | 'inventory'> {
+  const a = snap.activity;
+  return {
+    dialog: a.dialog ? { npcId: a.dialog.npcId, npcName: a.dialog.npcName, lines: a.dialog.lines, options: a.dialog.options } : null,
+    shop: a.shop ? { npcId: a.shop.npcId, npcName: a.shop.npcName, goods: snap.shops.find(x => x.npcId === a.shop!.npcId)?.goods ?? [] } : null,
+    battle: a.battle ? { battleId: a.battle.battleId, round: a.battle.round, enemies: a.battle.enemies.map(e => e.name), enemyStates: a.battle.enemies, canFlee: a.battle.canFlee, ready: true } : null,
+    battleResult: a.battleResult,
+    inventory: snap.inventory,
+  };
+}
+
+function applyInventory(inv: SnapshotItem[], changes: Array<{ itemId: number; delta: number; count: number }>): SnapshotItem[] {
+  let out = inv;
+  for (const c of changes) {
+    const had = out.find(i => i.itemId === c.itemId);
+    out = c.count <= 0 ? out.filter(i => i.itemId !== c.itemId)
+      : had ? out.map(i => (i.itemId === c.itemId ? { ...i, count: c.count } : i))
+      : [...out, { itemId: c.itemId, name: null, count: c.count }];
+  }
+  return out;
 }
 
 function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: number): FamilyState {
@@ -138,17 +196,33 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
   const commandId = 'commandId' in e ? e.commandId : undefined;
   let level: LogEntry['level'] = 'info';
   switch (e.type) {
-    case 'GAME_STARTED': next = { ...next, sessionId: e.sessionId, stoppedSessionId: null, dialog: null, battle: null }; break;
-    case 'GAME_STOPPED': next = { ...next, stoppedSessionId: e.sessionId, dialog: null, battle: null }; break;
-    case 'LOCATION_CHANGED': next = { ...next, location: { mapId: e.mapId, mapName: e.mapName }, character: next.character && { ...next.character, x: e.x, y: e.y }, dialog: null }; break;
+    case 'GAME_STARTED': next = { ...next, sessionId: e.sessionId, stoppedSessionId: null, dialog: null, shop: null, battle: null, battleResult: null, pending: {}, inflight: {} }; break;
+    case 'GAME_STOPPED': next = { ...next, stoppedSessionId: e.sessionId, dialog: null, shop: null, battle: null, inflight: {} }; break;
+    case 'LOCATION_CHANGED': next = { ...next, location: { mapId: e.mapId, mapName: e.mapName }, character: next.character && { ...next.character, x: e.x, y: e.y }, dialog: null, shop: null }; break;
     case 'MOVED': next = { ...next, character: next.character && { ...next.character, x: e.x, y: e.y, dir: e.dir } }; break;
-    case 'DIALOG_OPENED': next = { ...next, dialog: { npcId: e.npcId, npcName: e.npcName, lines: e.lines } }; break;
+    case 'DIALOG_OPENED': next = { ...next, dialog: { npcId: e.npcId, npcName: e.npcName, lines: e.lines, options: e.options } }; break;
+    case 'DIALOG_UPDATED': next = { ...next, dialog: next.dialog && { ...next.dialog, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_CLOSED': next = { ...next, dialog: null }; break;
-    case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name) }, character: next.character && { ...next.character, inBattle: true } }; break;
-    case 'BATTLE_TURN_READY': next = { ...next, battle: next.battle && { ...next.battle, round: e.round } }; break;
-    case 'BATTLE_ENDED': next = { ...next, battle: null, character: next.character && { ...next.character, inBattle: false } }; break;
+    case 'SHOP_OPENED': next = { ...next, shop: { npcId: e.npcId, npcName: e.npcName, goods: e.goods } }; break;
+    case 'SHOP_CLOSED': next = { ...next, shop: null }; break;
+    case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name), enemyStates: [], canFlee: true, ready: false }, battleResult: null, character: next.character && { ...next.character, inBattle: true } }; break;
+    case 'BATTLE_TURN_READY': next = { ...next, battle: { battleId: e.battleId, round: e.round, enemies: e.enemies.map(n => n.name), enemyStates: e.enemies, canFlee: e.canFlee, ready: true }, character: next.character && { ...next.character, inBattle: true } }; break;
+    case 'BATTLE_ENDED': next = { ...next, battle: null, battleResult: e.outcome === 'WIN' ? 'VICTORY' : e.outcome === 'LOSE' ? 'DEFEAT' : null, character: next.character && { ...next.character, inBattle: false } }; break;
+    case 'INVENTORY_CHANGED': next = { ...next, inventory: applyInventory(next.inventory, e.changes) }; break;
     case 'GOLD_CHANGED': next = { ...next, character: next.character && { ...next.character, gold: e.gold } }; break;
     case 'COMMAND_REJECTED': level = 'warn'; break;
+    case 'COMMAND_COMPLETED': {
+      const sent = next.inflight[e.commandId];
+      const { [e.commandId]: _done, ...rest } = next.inflight;
+      void _done;
+      next = { ...next, inflight: rest };
+      // 預期 vs 實際：完成碼和送出時預期的不同，標成警告（例如走路預期 ARRIVED，實際被遇敵打斷 ENCOUNTER）。
+      const match = !sent || sent.expect === e.code;
+      const text = sent
+        ? `${sent.label}　預期 ${sent.expect}／實際 ${e.code}（${e.outcome}）${match ? ' ✓' : ' ✗ 與預期不同'}${e.message ? `　${e.message}` : ''}`
+        : describeEvent(e);
+      return addLog(next, '結果', text, now, { commandId, level: match && e.outcome !== 'FAILED' ? 'info' : 'warn' });
+    }
     default: break;
   }
   // COMMAND_* 事件與 command-result 重複，只留 command-result 在日誌（避免同一件事列兩行），但保留對 pending 的清理由 result 處理。
