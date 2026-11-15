@@ -239,7 +239,79 @@ export class FamilyController {
         q.stop('USER_STOPPED');
         return null;
       }
+      case 'QUEST_AUTO':
+        return this.runQuestAuto(action.questId);
     }
+  }
+
+  private runQuestAuto(questId: number): string | null {
+    const snap = this.state.snapshot;
+    const quest = snap?.quests?.find(q => q.questId === questId);
+    if (!quest) return '尚未收到任務資料';
+    if (quest.status === 'COMPLETED') {
+      this.state = addLog(this.state, '系統', `任務【${quest.title}】已完成`, this.now());
+      this.emit();
+      return null;
+    }
+    const dialog = this.state.dialog;
+    if (dialog && (dialog.npcId === quest.npcId || dialog.npcName === quest.npcName)) {
+      if (quest.status === 'AVAILABLE') {
+        const acceptOpt = dialog.options.find(o => o.id === `ACCEPT_QUEST:${questId}`);
+        if (acceptOpt) {
+          this.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: acceptOpt.id }, `接取任務：${quest.title}`);
+          return null;
+        }
+        const demoOpt = dialog.options.find(o => o.id === 'ENABLE_DEMO_MODE');
+        if (demoOpt) {
+          this.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: demoOpt.id }, '切換示範任務模式');
+          return null;
+        }
+        this.send({ type: 'ACCEPT_QUEST', questId }, `接受任務 #${questId}`);
+        return null;
+      }
+      if (quest.status === 'READY') {
+        const completeOpt = dialog.options.find(o => o.id === `COMPLETE_QUEST:${questId}`);
+        if (completeOpt) {
+          this.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: completeOpt.id }, `回報任務：${quest.title}`);
+          return null;
+        }
+        return '對話選項未含回報入口，請於主畫面確認前置步驟';
+      }
+    }
+    if (quest.status === 'AVAILABLE' || quest.status === 'READY') {
+      return this.navigator.go({ kind: 'NPC', query: quest.npcName, talk: true });
+    }
+    // IN_PROGRESS：若有採集／收集目標先自動排程採集
+    const unmet = quest.objectives.filter(o => !o.met);
+    if (unmet.some(o => o.type === 'GATHER_COUNT' || o.type === 'COLLECT_ITEMS')) {
+      const points = [...(snap?.gatherPoints.points ?? []), ...(snap?.nearbyGatherPoints ?? [])];
+      const matchPoint = points.find(p => p.materials?.some(m => unmet.some(u => u.description.includes(m.name)))) ?? points[0];
+      if (matchPoint) {
+        const mat = matchPoint.materials?.[0];
+        const needed = Math.max(1, ...unmet.filter(o => o.type === 'GATHER_COUNT' || o.type === 'COLLECT_ITEMS').map(o => o.required - o.current));
+        const q = this.state.characterId ? this.getOrCreateQueue(this.state.characterId) : this.queue;
+        q.enqueue({
+          kind: 'GATHER',
+          skillId: matchPoint.skillId ?? 5,
+          skillName: matchPoint.skillName ?? '採礦',
+          ...(mat ? { targetItemId: mat.itemId } : {}),
+          targetName: mat?.name ?? matchPoint.name,
+          targetCount: needed,
+          ...(matchPoint.requiredToolItemId ? { requiredToolItemId: matchPoint.requiredToolItemId } : {}),
+          ...(matchPoint.requiredToolName ? { requiredToolName: matchPoint.requiredToolName } : {}),
+        });
+        return null;
+      }
+    }
+    if (unmet.some(o => o.type === 'KILL_MONSTERS' || o.type === 'CAPTURE_PETS' || o.type === 'DEFEAT_BOSS')) {
+      const targetExit = snap?.exits.find(e => /南綠野|草地|森林|外圍|地下/.test(e.targetMapName ?? e.name));
+      if (targetExit) {
+        return this.navigator.go({ kind: 'MAP', mapId: targetExit.targetMapId, name: targetExit.targetMapName ?? targetExit.name });
+      }
+    }
+    this.state = addLog(this.state, '系統', `任務進行中：${unmet.map(o => `${o.description} (${o.current}/${o.required})`).join('、')}`, this.now());
+    this.emit();
+    return null;
   }
 
   /** 自由輸入：解析成與選單相同的動作再執行；解析失敗回傳錯誤文字（不送出）。 */

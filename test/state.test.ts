@@ -117,4 +117,25 @@ suite('v2 state: dialog options, shop, inventory, battle, 預期 vs 實際');
   const ret = { ...B, ts: 51, kind: 'command' as const, commandId: 'fam-x-0011', command: { type: 'CHOOSE_DIALOG_OPTION' as const, optionId: 'RETURN_TO_MAP' } };
   assert(applySent(s, ret, '關窗', 51).battleResult === null, 'sending RETURN_TO_MAP closes the result window locally');
 }
+
+suite('battle statuses & player/pet summaries in state');
+{
+  let s = applyMessage(initialState(), hb(), 0);
+  s = applyMessage(s, { ...ex.snapshot, characterId: 'c1' }, 10);
+  s = applyMessage(s, evt({
+    type: 'BATTLE_TURN_READY',
+    battleId: 9,
+    round: 2,
+    canFlee: true,
+    enemies: [{ slot: 0, id: 'e0', name: '軟軟史萊姆', hp: 12, maxHp: 20, isChanting: true, statuses: [{ type: 'POISON', duration: 2, stacks: 1 }] }],
+    player: { id: 'p1', name: '阿草', hp: 65, maxHp: 100, mp: 30, maxMp: 50, isDefending: false, isChanting: false, statuses: [{ type: 'ATK_UP', duration: 3, value: 20 }] },
+    pet: { id: 'pet1', name: '土來姆', hp: 35, maxHp: 45, mp: 18, maxMp: 20, isDefending: true, statuses: [{ type: 'SHIELD', duration: 2, value: 10 }] },
+  }), 20);
+  assert(s.battle?.player?.statuses?.[0]?.type === 'ATK_UP', 'BATTLE_TURN_READY saves player statuses');
+  assert(s.battle?.pet?.name === '土來姆' && s.battle.pet.isDefending === true, 'BATTLE_TURN_READY saves active pet summary');
+  assert(s.battle?.enemyStates[0]?.statuses?.[0]?.type === 'POISON' && s.battle.enemyStates[0].isChanting === true, 'BATTLE_TURN_READY saves enemy statuses');
+  assert(s.character?.hp === 65 && s.character?.statuses?.[0]?.type === 'ATK_UP' && s.character?.activePet?.name === '土來姆', 'character synced from BATTLE_TURN_READY');
+  s = applyMessage(s, evt({ type: 'BATTLE_ENDED', battleId: 9, outcome: 'WIN' }), 30);
+  assert(s.battle === null && s.character?.statuses?.length === 0 && !s.character?.isDefending, 'BATTLE_ENDED clears transient battle statuses');
+}
 done();

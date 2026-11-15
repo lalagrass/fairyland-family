@@ -21,7 +21,8 @@ export type UiAction =
       targetCharacterId?: string;
     }
   | { kind: 'QUEUE_CRAFT'; recipeId: number; recipeName: string; count: number; label: string; targetCharacterId?: string }
-  | { kind: 'QUEUE_STOP'; label: string; targetCharacterId?: string };
+  | { kind: 'QUEUE_STOP'; label: string; targetCharacterId?: string }
+  | { kind: 'QUEST_AUTO'; questId: number; label: string };
 
 export type ParseResult =
   | { ok: true; action: UiAction }

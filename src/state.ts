@@ -11,6 +11,7 @@ import {
   type DialogOption,
   type PluginCommand,
   type SceneSnapshot,
+  type SnapshotBattleUnitSummary,
   type SnapshotCharacter,
   type SnapshotFamilyMember,
   type SnapshotItem,
@@ -42,7 +43,16 @@ export interface FamilyState {
   character: SnapshotCharacter | null;
   dialog: { npcId: string; npcName: string; lines: string[]; options: DialogOption[] } | null;
   shop: { npcId: string; npcName: string; goods: SnapshotShopGood[] } | null;
-  battle: { battleId: number; round: number | null; enemies: string[]; enemyStates: BattleEnemyState[]; canFlee: boolean; ready: boolean } | null;
+  battle: {
+    battleId: number;
+    round: number | null;
+    enemies: string[];
+    enemyStates: BattleEnemyState[];
+    player?: SnapshotBattleUnitSummary;
+    pet?: SnapshotBattleUnitSummary | null;
+    canFlee: boolean;
+    ready: boolean;
+  } | null;
   /** 戰鬥後的勝敗結算視窗（要送 RETURN_TO_MAP／DEFEAT_RESCUE 才會關）。 */
   battleResult: 'VICTORY' | 'DEFEAT' | null;
   inventory: SnapshotItem[];
@@ -208,7 +218,16 @@ function fromActivity(snap: SceneSnapshot): Pick<FamilyState, 'dialog' | 'shop' 
   return {
     dialog: a.dialog ? { npcId: a.dialog.npcId, npcName: a.dialog.npcName, lines: a.dialog.lines, options: a.dialog.options } : null,
     shop: a.shop ? { npcId: a.shop.npcId, npcName: a.shop.npcName, goods: snap.shops.find(x => x.npcId === a.shop!.npcId)?.goods ?? [] } : null,
-    battle: a.battle ? { battleId: a.battle.battleId, round: a.battle.round, enemies: a.battle.enemies.map(e => e.name), enemyStates: a.battle.enemies, canFlee: a.battle.canFlee, ready: true } : null,
+    battle: a.battle ? {
+      battleId: a.battle.battleId,
+      round: a.battle.round,
+      enemies: a.battle.enemies.map(e => e.name),
+      enemyStates: a.battle.enemies,
+      ...(a.battle.player ? { player: a.battle.player } : {}),
+      ...(a.battle.pet !== undefined ? { pet: a.battle.pet } : {}),
+      canFlee: a.battle.canFlee,
+      ready: true,
+    } : null,
     battleResult: a.battleResult,
     inventory: snap.inventory,
   };
@@ -247,8 +266,49 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
     case 'SHOP_OPENED': next = { ...next, shop: { npcId: e.npcId, npcName: e.npcName, goods: e.goods } }; break;
     case 'SHOP_CLOSED': next = { ...next, shop: null }; break;
     case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name), enemyStates: [], canFlee: true, ready: false }, battleResult: null, character: next.character && { ...next.character, inBattle: true } }; break;
-    case 'BATTLE_TURN_READY': next = { ...next, battle: { battleId: e.battleId, round: e.round, enemies: e.enemies.map(n => n.name), enemyStates: e.enemies, canFlee: e.canFlee, ready: true }, character: next.character && { ...next.character, inBattle: true } }; break;
-    case 'BATTLE_ENDED': next = { ...next, battle: null, battleResult: e.outcome === 'WIN' ? 'VICTORY' : e.outcome === 'LOSE' ? 'DEFEAT' : null, character: next.character && { ...next.character, inBattle: false } }; break;
+    case 'BATTLE_TURN_READY':
+      next = {
+        ...next,
+        battle: {
+          battleId: e.battleId,
+          round: e.round,
+          enemies: e.enemies.map(n => n.name),
+          enemyStates: e.enemies,
+          ...(e.player ? { player: e.player } : {}),
+          ...(e.pet !== undefined ? { pet: e.pet } : {}),
+          canFlee: e.canFlee,
+          ready: true,
+        },
+        character: next.character && {
+          ...next.character,
+          inBattle: true,
+          ...(e.player ? {
+            hp: e.player.hp,
+            maxHp: e.player.maxHp,
+            ...(e.player.mp !== undefined ? { mp: e.player.mp } : {}),
+            ...(e.player.maxMp !== undefined ? { maxMp: e.player.maxMp } : {}),
+            ...(e.player.statuses ? { statuses: e.player.statuses } : {}),
+            ...(e.player.isDefending !== undefined ? { isDefending: e.player.isDefending } : {}),
+            ...(e.player.isChanting !== undefined ? { isChanting: e.player.isChanting } : {}),
+          } : {}),
+          ...(e.pet !== undefined ? { activePet: e.pet } : {}),
+        },
+      };
+      break;
+    case 'BATTLE_ENDED':
+      next = {
+        ...next,
+        battle: null,
+        battleResult: e.outcome === 'WIN' ? 'VICTORY' : e.outcome === 'LOSE' ? 'DEFEAT' : null,
+        character: next.character && {
+          ...next.character,
+          inBattle: false,
+          statuses: [],
+          isDefending: false,
+          isChanting: false,
+        },
+      };
+      break;
     case 'INVENTORY_CHANGED': {
       const members = next.members.map(m => {
         if (m.characterId !== characterId) return m;

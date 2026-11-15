@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 2949182bcc2c4e49fce9792cdac3213cf27855b0
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 61e5ac8d0e9da87be315e2ccd65b48af610d4c26
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -210,6 +210,10 @@ export interface SnapshotCharacter {
   familyLevel?: number;
   comboLevel?: number;
   masteryLevels?: Record<string, number>;
+  statuses?: SnapshotBattleStatus[];
+  isDefending?: boolean;
+  isChanting?: boolean;
+  activePet?: SnapshotBattleUnitSummary | null;
 }
 
 export interface SnapshotItem {
@@ -317,7 +321,14 @@ export interface SnapshotActivity {
   shop: { npcId: string; npcName: string } | null;
   /** 戰鬥結束後的勝敗結算視窗（需要 RETURN_TO_MAP／DEFEAT_RESCUE 才會回到地圖）。 */
   battleResult: 'VICTORY' | 'DEFEAT' | null;
-  battle: { battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean } | null;
+  battle: {
+    battleId: number;
+    round: number;
+    enemies: BattleEnemyState[];
+    canFlee: boolean;
+    player?: SnapshotBattleUnitSummary;
+    pet?: SnapshotBattleUnitSummary | null;
+  } | null;
   /** 宿主正在執行的畫面指令（走路中）。 */
   command: { commandId: string; type: string } | null;
 }
@@ -369,6 +380,8 @@ export interface SceneSnapshot {
   /** 背包（含數量）；賣東西與戰鬥用道具要從這裡選。 */
   inventory: SnapshotItem[];
   activity: SnapshotActivity;
+  openingStage?: string;
+  quests?: SnapshotQuestEntry[];
   nav: {
     status: DataAvailability;
     reason?: string;
@@ -390,7 +403,58 @@ export interface DialogOption { id: string; label: string }
 
 export interface BattleEnemyBrief { id: string; name: string; level: number | null }
 /** 回合就緒時敵人的即時狀態（只列存活者）。 */
-export interface BattleEnemyState { slot: number; id: string; name: string; hp: number; maxHp: number }
+export interface SnapshotBattleStatus {
+  type: string;
+  duration: number;
+  value?: number;
+  stacks?: number;
+}
+
+export interface SnapshotBattleUnitSummary {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  mp?: number;
+  maxMp?: number;
+  isDead?: boolean;
+  isDefending?: boolean;
+  isChanting?: boolean;
+  statuses?: SnapshotBattleStatus[];
+}
+
+export interface SnapshotQuestObjective {
+  type: string;
+  description: string;
+  current: number;
+  required: number;
+  met: boolean;
+}
+
+export interface SnapshotQuestEntry {
+  questId: number;
+  title: string;
+  npcId: string;
+  npcName: string;
+  minLevel: number;
+  status: 'AVAILABLE' | 'IN_PROGRESS' | 'READY' | 'COMPLETED';
+  prerequisites?: number[];
+  objectives: SnapshotQuestObjective[];
+  rewardExp: number;
+  rewardCoins: number;
+}
+
+export interface BattleEnemyState {
+  slot: number;
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  isDead?: boolean;
+  isDefending?: boolean;
+  isChanting?: boolean;
+  statuses?: SnapshotBattleStatus[];
+}
 
 export type LocationChangeCause = 'LOAD' | 'MAP_CHANGE' | 'WARP';
 export type BattleOutcome = 'WIN' | 'LOSE' | 'FLEE' | 'UNKNOWN';
@@ -407,7 +471,15 @@ export type GameEvent =
   | { type: 'SHOP_CLOSED'; npcId: string }
   | { type: 'BATTLE_STARTED'; battleId: number; mapId: string; enemies: BattleEnemyBrief[] }
   | { type: 'BATTLE_ENDED'; battleId: number; outcome: BattleOutcome }
-  | { type: 'BATTLE_TURN_READY'; battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean }
+  | {
+      type: 'BATTLE_TURN_READY';
+      battleId: number;
+      round: number;
+      enemies: BattleEnemyState[];
+      canFlee: boolean;
+      player?: SnapshotBattleUnitSummary;
+      pet?: SnapshotBattleUnitSummary | null;
+    }
   | { type: 'INVENTORY_CHANGED'; changes: Array<{ itemId: number; delta: number; count: number }> }
   | { type: 'GOLD_CHANGED'; gold: number; delta: number }
   | { type: 'WAREHOUSE_CHANGED'; items: SnapshotItem[]; gold: number }

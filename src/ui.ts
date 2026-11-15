@@ -1,4 +1,4 @@
-import type { PluginCommand } from './protocol/index';
+import type { PluginCommand, SnapshotBattleStatus, SnapshotBattleUnitSummary } from './protocol/index';
 import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
 import { buildMenu } from './menu';
@@ -38,6 +38,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   const compareBox = el('section', { 'data-testid': 'compare-panel' });
   const navBox = el('section', { 'data-testid': 'nav-panel' });
   const queueBox = el('section', { 'data-testid': 'work-queue' });
+  const questBox = el('section', { 'data-testid': 'quest-panel' });
   const sceneBox = el('section', { 'data-testid': 'scene' });
   const actBattleBox = el('div');
   const strategySel = el('select', { 'data-testid': 'strategy' });
@@ -52,7 +53,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   const inputBox = el('section', {}, el('h2', {}, '文字輸入'), form, inputErr, el('div', { class: 'muted' }, INPUT_HELP));
   const logBox = el('div', { id: 'log', 'data-testid': 'log' });
   const logSection = el('section', {}, el('h2', {}, '事件日誌（時間／標籤／內容／commandId）'), logBox);
-  root.replaceChildren(header, charBox, familyBox, warehouseBox, compareBox, navBox, queueBox, actBox, sceneBox, inputBox, logSection);
+  root.replaceChildren(header, charBox, familyBox, warehouseBox, compareBox, navBox, queueBox, questBox, actBox, sceneBox, inputBox, logSection);
 
   form.addEventListener('submit', ev => {
     ev.preventDefault();
@@ -208,6 +209,87 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
     );
   }
 
+  const STATUS_LABELS: Record<string, string> = {
+    PETRIFY: '石化', SLEEP: '睡眠', CONFUSE: '混亂', POISON: '中毒', SHIELD: '護盾',
+    ATK_UP: '攻↑', DEF_DOWN: '防↓', GUARD_UP: '格擋↑', COUNTER: '反擊',
+    EVADE_UP: '閃避↑', HASTE: '加速', PROTECT: '守護', FEIGN: '裝死',
+  };
+  const DEBUFF_SET = new Set(['PETRIFY', 'SLEEP', 'CONFUSE', 'POISON', 'DEF_DOWN']);
+
+  function buildStatusBadges(unit?: { isDead?: boolean; isDefending?: boolean; isChanting?: boolean; statuses?: SnapshotBattleStatus[] } | null): HTMLElement[] {
+    if (!unit) return [];
+    const out: HTMLElement[] = [];
+    if (unit.isDead) out.push(el('span', { class: 'status-tag debuff', 'data-testid': 'status-badge' }, '倒下'));
+    if (unit.isDefending) out.push(el('span', { class: 'status-tag buff', 'data-testid': 'status-badge' }, '防禦中'));
+    if (unit.isChanting) out.push(el('span', { class: 'status-tag', 'data-testid': 'status-badge' }, '詠唱中'));
+    for (const st of unit.statuses ?? []) {
+      const cls = DEBUFF_SET.has(st.type) ? 'status-tag debuff' : 'status-tag buff';
+      const label = STATUS_LABELS[st.type] ?? st.type;
+      const stacks = st.stacks && st.stacks > 1 ? `×${st.stacks}` : '';
+      out.push(el('span', { class: cls, 'data-testid': 'status-badge', 'data-status-type': st.type }, `${label}${stacks}(${st.duration}T)`));
+    }
+    return out;
+  }
+
+  function renderUnitStatusRow(title: string, unit: SnapshotBattleUnitSummary, testid: string): HTMLElement {
+    const badges = buildStatusBadges(unit);
+    return el(
+      'div',
+      { class: 'status-row', 'data-testid': testid },
+      el('span', { class: 'k' }, title),
+      el('span', {}, `${unit.name} HP ${unit.hp}/${unit.maxHp}${unit.mp !== undefined ? ` MP ${unit.mp}/${unit.maxMp ?? unit.mp}` : ''}`),
+      ...(badges.length > 0 ? badges : [el('span', { class: 'muted' }, '無異常/增益')]),
+    );
+  }
+
+  function renderQuests(s: FamilyState, running: boolean) {
+    questBox.replaceChildren(el('h2', {}, '任務摘要與自動排程'));
+    const snap = s.snapshot;
+    if (!snap) {
+      questBox.append(el('div', { class: 'muted' }, '（尚未收到任務快照）'));
+      return;
+    }
+    if (snap.openingStage && snap.openingStage !== 'DONE') {
+      questBox.append(el('div', { class: 'row', 'data-testid': 'opening-stage-badge' },
+        el('span', { class: 'pill warn' }, `主線階段：${snap.openingStage}`)));
+    }
+    const quests = snap.quests ?? [];
+    if (quests.length === 0) {
+      questBox.append(el('div', { class: 'muted' }, '（目前沒有可用委託清單）'));
+      return;
+    }
+    const statusLabel: Record<string, { text: string; cls: string }> = {
+      AVAILABLE: { text: '可接取', cls: 'pill mode' },
+      IN_PROGRESS: { text: '進行中', cls: 'pill warn' },
+      READY: { text: '可回報', cls: 'pill ok' },
+      COMPLETED: { text: '已完成', cls: 'pill' },
+    };
+    const ordered = [...quests].sort((a, b) => {
+      const rank = (x: string) => x === 'READY' ? 0 : x === 'IN_PROGRESS' ? 1 : x === 'AVAILABLE' ? 2 : 3;
+      return rank(a.status) - rank(b.status) || a.questId - b.questId;
+    });
+    for (const q of ordered) {
+      const st = statusLabel[q.status] ?? { text: q.status, cls: 'pill' };
+      const item = el('div', { class: 'quest-item', 'data-testid': 'quest-entry', 'data-quest-id': String(q.questId), 'data-quest-status': q.status });
+      const head = el('div', { class: 'row' },
+        el('span', { class: st.cls }, st.text),
+        el('b', {}, q.title),
+        el('span', { class: 'muted' }, `Lv.${q.minLevel}｜${q.npcName}｜獎 ${q.rewardExp}EXP / ${q.rewardCoins}金`),
+      );
+      if (q.status !== 'COMPLETED') {
+        head.append(
+          act(`前往 ${q.npcName}`, { kind: 'NAV', goal: { kind: 'NPC', query: q.npcName, talk: true }, label: `前往並對話 ${q.npcName}` }, 'quest-nav-btn', running, { 'data-quest-id': String(q.questId) }),
+          act(q.status === 'READY' ? '自動回報' : q.status === 'AVAILABLE' ? '自動接取' : '自動推進', { kind: 'QUEST_AUTO', questId: q.questId, label: `自動處理任務 ${q.title}` }, 'quest-auto-btn', running, { 'data-quest-id': String(q.questId) }),
+        );
+      }
+      item.append(head);
+      if (q.objectives.length > 0) {
+        item.append(el('div', { class: 'muted' }, q.objectives.map(o => `${o.description} (${o.current}/${o.required}) ${o.met ? '✓' : '…'}`).join(' ｜ ')));
+      }
+      questBox.append(item);
+    }
+  }
+
   function renderActivity(s: FamilyState, aux: UiAux, running: boolean) {
     actBattleBox.replaceChildren();
     // 戰鬥
@@ -216,6 +298,8 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
       if (s.battle) {
         const b = s.battle;
         box.append(el('div', { 'data-testid': 'battle-info' }, `#${b.battleId}${b.round ? ` 第 ${b.round} 回合` : ''}${b.ready ? '（等你出手）' : '（結算中）'}`));
+        if (b.player) box.append(renderUnitStatusRow('主角', b.player, 'battle-player-status-row'));
+        if (b.pet) box.append(renderUnitStatusRow('出戰寵', b.pet, 'battle-pet-status-row'));
         const en = el('div', { class: 'items' });
         for (const e of b.enemyStates) {
           en.append(act(`攻擊 ${e.name}`, cmdAction({ type: 'BATTLE_ACTION', battleId: b.battleId, action: { kind: 'ATTACK', targetSlot: e.slot } }, `攻擊 ${e.name}`), 'battle-attack', running && b.ready, { 'data-slot': String(e.slot) }));
@@ -224,6 +308,12 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
         en.append(act('防禦', cmdAction({ type: 'BATTLE_ACTION', battleId: b.battleId, action: { kind: 'DEFEND' } }, '防禦'), 'battle-defend', running && b.ready));
         en.append(act('逃跑', cmdAction({ type: 'BATTLE_FLEE', battleId: b.battleId }, '戰鬥逃跑'), 'battle-flee', running && b.ready && b.canFlee));
         box.append(en);
+        for (const e of b.enemyStates) {
+          const eBadges = buildStatusBadges(e);
+          if (eBadges.length > 0) {
+            box.append(el('div', { class: 'status-row', 'data-testid': 'battle-enemy-status-row', 'data-slot': String(e.slot) }, el('span', { class: 'muted' }, `${e.name}：`), ...eBadges));
+          }
+        }
         if (!b.canFlee) box.append(el('div', { class: 'muted' }, '這場戰鬥不能逃跑'));
       }
       if (s.battleResult) {
@@ -288,6 +378,10 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
         el('span', { 'data-testid': 'bag-cap' }, `背包 ${invUsed}/${invCap}`),
         ...(c.weaponFamily ? [el('span', { 'data-testid': 'mastery' }, `武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`)] : []),
         el('span', {}, c.inBattle ? '戰鬥中' : '探索中')));
+      const selfBadges = buildStatusBadges(c);
+      if (selfBadges.length > 0) charBox.append(el('div', { class: 'status-row', 'data-testid': 'char-status-row' }, el('span', { class: 'muted' }, '狀態：'), ...selfBadges));
+      const petUnit = c.activePet ?? s.battle?.pet;
+      if (petUnit) charBox.append(renderUnitStatusRow('出戰寵', petUnit, 'pet-status-row'));
     } else {
       charBox.append(el('div', { class: 'muted' }, running ? '等待快照…' : '（沒有角色資料；請先開啟 fairyland 遊戲分頁）'));
     }
@@ -326,6 +420,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
     renderCompare(s, running);
     renderNav(aux, running);
     renderQueue(aux, running);
+    renderQuests(s, running);
     renderActivity(s, aux, running);
 
     logBox.replaceChildren(...[...s.log].reverse().map(e => {

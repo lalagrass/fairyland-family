@@ -32,3 +32,11 @@ input[type=text] { flex: 1; background: #10141a; color: var(--fg); border: 1px s
 details summary { cursor: pointer; color: var(--dim); }
 select { background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: inherit; }
 #log .tag { min-width: 3em; }
+.status-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 3px 0; }
+.status-tag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(255,203,107,.16); color: var(--warn); border: 1px solid rgba(255,203,107,.3); }
+.status-tag.debuff { background: rgba(255,107,107,.16); color: var(--bad); border-color: rgba(255,107,107,.3); }
+.status-tag.buff { background: rgba(95,211,141,.16); color: var(--ok); border-color: rgba(95,211,141,.3); }
+.quest-item { padding: 6px 0; border-top: 1px dashed var(--line); }
+.quest-item:first-of-type { border-top: none; }
+.pill.ok { background: rgba(95,211,141,.16); color: var(--ok); }
+.pill.warn { background: rgba(255,203,107,.16); color: var(--warn); }
