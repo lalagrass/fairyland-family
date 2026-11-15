@@ -9,13 +9,13 @@ import { assert, done, suite } from './helpers';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 suite('vendored protocol examples pass the vendored guards');
-assert(PROTOCOL_VERSION === 1, 'protocol version 1');
+assert(PROTOCOL_VERSION === 2, 'protocol version 2');
 assert(isHeartbeatMessage(ex.heartbeat), 'heartbeat');
 assert(isSnapshotMessage(ex.snapshot), 'snapshot');
 assert(ex.events.every(isEventMessage), 'events');
 assert(ex.commands.every(isCommandMessage), 'commands');
 assert(ex.commandResults.every(isCommandResultMessage), 'command results');
-assert(!isPluginMessage({ kind: 'event', v: 1 }), 'garbage rejected');
+assert(!isPluginMessage({ kind: 'event', v: 2 }), 'garbage rejected');
 
 suite('replay fixture only contains valid messages');
 const fx = JSON.parse(fs.readFileSync(path.join(root, 'fixtures/replay_village.json'), 'utf8'));

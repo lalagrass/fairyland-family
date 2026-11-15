@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 1dfff18543e2d88d22d9b1827b3ab76c2a8950c3
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 78f543e5ced425fdc37da21affb77b9b4b4ecc6b
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -8,12 +8,16 @@
  *   `scripts/sync-protocol.mjs` 把整個資料夾原樣複製過去。
  * - 每則訊息都帶 `v`（`PROTOCOL_VERSION`）與 `characterId`；指令另外帶 `commandId`。
  *   P1–P3 只有單一角色，`characterId` 固定是目前角色；多角色之後不必升協定版本。
- * - P1 只實作「宿主 → 外掛」的快照／事件與 REQUEST_SNAPSHOT；其餘指令只定義型別，
- *   宿主一律回 COMMAND_REJECTED（`NOT_IMPLEMENTED_P1`），P2 才實作執行。
+ * - P2（協定版本 2）：宿主執行 WALK_TO／TALK_TO_NPC／CHOOSE_DIALOG_OPTION／ACCEPT_QUEST／BUY_ITEM／SELL_ITEM／
+ *   BATTLE_ACTION／BATTLE_FLEE（WORK_ONCE 仍是 `NOT_IMPLEMENTED`，P3 才做）。每個指令先回 COMMAND_ACCEPTED 或
+ *   COMMAND_REJECTED（附原因碼），需要時間的指令（走路、戰鬥回合）完成或被中斷時再送 COMMAND_COMPLETED。
+ * - 版本 2 相對版本 1 的不相容變更：BATTLE_ACTION 改為單一角色的 `action`；`NOT_IMPLEMENTED_P1` 改名
+ *   `NOT_IMPLEMENTED`；快照新增 `inventory`／`activity`／`nav.portalGraph`；事件新增 COMMAND_COMPLETED、
+ *   DIALOG_UPDATED、SHOP_OPENED、SHOP_CLOSED；BATTLE_TURN_READY 帶敵人與可否逃跑。
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -40,12 +44,22 @@ export interface BuyItemCommand { type: 'BUY_ITEM'; itemId: number; count?: numb
 export interface SellItemCommand { type: 'SELL_ITEM'; itemId: number; count?: number }
 /** 單次工作（採集／製作）。`skillId`＝採集技能；`recipeId`＝製作配方（二擇一）。 */
 export interface WorkOnceCommand { type: 'WORK_ONCE'; skillId?: number; recipeId?: number }
-/**
- * 單回合戰鬥指令。`actions` 以戰鬥單位 id 為鍵，值的形狀等同宿主的 `CombatCommand`
- * （P2 才定案，所以這裡不綁定型別）。
- */
-export interface BattleActionCommand { type: 'BATTLE_ACTION'; battleId?: number; actions: Record<string, unknown> }
-/** 戰鬥逃跑。 */
+/** 單回合戰鬥動作（主人角色）；幻獸與其他單位由宿主既有的 AI 代出，與玩家在畫面上只點主人指令相同。 */
+export type BattleActionKind = 'ATTACK' | 'SKILL' | 'SPELL' | 'ITEM' | 'CAPTURE' | 'DEFEND';
+export const BATTLE_ACTION_KINDS: readonly BattleActionKind[] = ['ATTACK', 'SKILL', 'SPELL', 'ITEM', 'CAPTURE', 'DEFEND'];
+export interface BattleActionSpec {
+  kind: BattleActionKind;
+  /** 目標敵人的 slot（BATTLE_TURN_READY.enemies[].slot）；ITEM 對自己可省略。 */
+  targetSlot?: number;
+  skillId?: number;
+  spellId?: number;
+  itemId?: number;
+  /** CAPTURE 使用的封印石道具 id。 */
+  sealStoneId?: number;
+}
+/** 單回合戰鬥指令：送出後宿主結算這一回合；`battleId` 帶了而與目前場次不同會被拒絕（STALE_BATTLE）。 */
+export interface BattleActionCommand { type: 'BATTLE_ACTION'; battleId?: number; action: BattleActionSpec }
+/** 戰鬥逃跑（單回合）：成功與否由宿主逃跑引擎擲骰，結果見 BATTLE_ENDED（outcome FLEE）或下一個 BATTLE_TURN_READY。 */
 export interface BattleFleeCommand { type: 'BATTLE_FLEE'; battleId?: number }
 /** 要求宿主立刻廣播一份完整場景快照（P1 唯一會被執行的指令）。 */
 export interface RequestSnapshotCommand { type: 'REQUEST_SNAPSHOT' }
@@ -76,18 +90,68 @@ export type PluginCommandType = (typeof PLUGIN_COMMAND_TYPES)[number];
 
 /** 指令被拒絕的原因碼。 */
 export type RejectReasonCode =
-  | 'NOT_IMPLEMENTED_P1'
+  | 'NOT_IMPLEMENTED'
   | 'INVALID_COMMAND'
   | 'UNKNOWN_COMMAND'
   | 'WRONG_CHARACTER'
   | 'PROTOCOL_VERSION_MISMATCH'
   | 'GAME_NOT_READY'
-  | 'GAME_BUSY';
+  /** 遊戲畫面正被別的流程占住（遇敵轉場、勝敗視窗、開場畫面…）。 */
+  | 'GAME_BUSY'
+  /** WALK_TO 的 mapId 不是目前地圖（跨圖由外掛拆成多段）。 */
+  | 'WRONG_MAP'
+  | 'TOO_FAR'
+  | 'NPC_NOT_FOUND'
+  | 'UNREACHABLE'
+  | 'IN_BATTLE'
+  | 'NOT_IN_BATTLE'
+  | 'STALE_BATTLE'
+  | 'DIALOG_OPEN'
+  | 'NOT_IN_DIALOG'
+  | 'OPTION_NOT_FOUND'
+  | 'NOT_AT_SHOP'
+  | 'ITEM_NOT_IN_SHOP'
+  | 'COMMAND_NOT_ALLOWED'
+  /** 宿主核心（`dispatchGameCommand`）拒絕；`message` 帶核心的原因文字。 */
+  | 'CORE_REJECTED'
+  | 'BATTLE_NOT_READY'
+  | 'INVALID_BATTLE_ACTION';
 
 export const REJECT_REASON_CODES: readonly RejectReasonCode[] = [
-  'NOT_IMPLEMENTED_P1', 'INVALID_COMMAND', 'UNKNOWN_COMMAND', 'WRONG_CHARACTER',
-  'PROTOCOL_VERSION_MISMATCH', 'GAME_NOT_READY', 'GAME_BUSY',
+  'NOT_IMPLEMENTED', 'INVALID_COMMAND', 'UNKNOWN_COMMAND', 'WRONG_CHARACTER', 'PROTOCOL_VERSION_MISMATCH', 'GAME_NOT_READY',
+  'GAME_BUSY', 'WRONG_MAP', 'TOO_FAR', 'NPC_NOT_FOUND', 'UNREACHABLE', 'IN_BATTLE', 'NOT_IN_BATTLE', 'STALE_BATTLE',
+  'DIALOG_OPEN', 'NOT_IN_DIALOG', 'OPTION_NOT_FOUND', 'NOT_AT_SHOP', 'ITEM_NOT_IN_SHOP', 'COMMAND_NOT_ALLOWED',
+  'CORE_REJECTED', 'BATTLE_NOT_READY', 'INVALID_BATTLE_ACTION',
 ];
+
+/**
+ * 已被接受的指令完成（或中斷）時的結果碼（COMMAND_COMPLETED.code）。
+ * - 走路：ARRIVED＝走到目的點（或夠近）；MAP_CHANGED＝走路途中換圖（走到出口時這是預期結果）；
+ *   ENCOUNTER＝被暗雷遇敵打斷；SUPERSEDED＝被新的走路／手動操作取代；BLOCKED＝路徑走不通或被障礙擋下；TIMEOUT。
+ * - 其他：DIALOG_OPENED（TALK_TO_NPC）、DONE（狀態指令與選項）、TURN_SUBMITTED（戰鬥動作已送出並結算）、
+ *   FLED／FLEE_FAILED（逃跑結果）。
+ */
+export type CompletionCode =
+  | 'ARRIVED' | 'MAP_CHANGED' | 'ENCOUNTER' | 'SUPERSEDED' | 'BLOCKED' | 'TIMEOUT'
+  | 'DIALOG_OPENED' | 'DONE' | 'TURN_SUBMITTED' | 'FLED' | 'FLEE_FAILED' | 'BATTLE_ENDED' | 'GAME_STOPPED';
+
+export const COMPLETION_CODES: readonly CompletionCode[] = [
+  'ARRIVED', 'MAP_CHANGED', 'ENCOUNTER', 'SUPERSEDED', 'BLOCKED', 'TIMEOUT',
+  'DIALOG_OPENED', 'DONE', 'TURN_SUBMITTED', 'FLED', 'FLEE_FAILED', 'BATTLE_ENDED', 'GAME_STOPPED',
+];
+export type CompletionOutcome = 'DONE' | 'INTERRUPTED' | 'FAILED';
+export const COMPLETION_OUTCOMES: readonly CompletionOutcome[] = ['DONE', 'INTERRUPTED', 'FAILED'];
+
+/**
+ * 對話選項 id 約定（DIALOG_OPENED／DIALOG_UPDATED 的 options[].id，CHOOSE_DIALOG_OPTION 的 optionId）：
+ *   `ACCEPT_QUEST:<id>`、`COMPLETE_QUEST:<id>`、`OPEN_SHOP`（商店）、`OPEN_FACILITY:<名稱>`（醫院／打鐵舖）、
+ *   `ENABLE_DEMO_MODE`（忠實模式下啟用重建示範，等同對話框內的按鈕）、`CLOSE`（告辭離開）。
+ * 商店開啟後（SHOP_OPENED）可用的選項：`CLOSE_SHOP`。
+ * 戰鬥結算視窗開著時（BATTLE_ENDED 之後的勝利／敗北視窗，`activity.battleResult` 非 null）可用的選項：
+ *   `RETURN_TO_MAP`（勝利：返回地圖探索）、`DEFEAT_RESCUE`（敗北：送回醫院）。
+ */
+export const DIALOG_OPTION_CLOSE = 'CLOSE';
+export const SHOP_OPTION_CLOSE = 'CLOSE_SHOP';
 
 // ---------------------------------------------------------------------------
 // 場景快照（宿主 → 外掛，FX10）
@@ -111,6 +175,12 @@ export interface SnapshotCharacter {
   y: number;
   dir: number;
   inBattle: boolean;
+}
+
+export interface SnapshotItem {
+  itemId: number;
+  name: string | null;
+  count: number;
 }
 
 export interface SnapshotShopGood {
@@ -168,6 +238,24 @@ export interface SnapshotShop {
   goods: SnapshotShopGood[];
 }
 
+/** 世界地圖鄰接（每張地圖通往哪些地圖）；外掛用它規劃跨圖路線，各地圖的出口座標到了該圖再從 `exits` 取得。 */
+export interface SnapshotPortalNode {
+  mapId: string;
+  name: string | null;
+  targets: string[];
+}
+
+/** 進行中的互動狀態：外掛重連時用它重建「現在正在對話／戰鬥」。 */
+export interface SnapshotActivity {
+  dialog: { npcId: string; npcName: string; lines: string[]; options: DialogOption[] } | null;
+  shop: { npcId: string; npcName: string } | null;
+  /** 戰鬥結束後的勝敗結算視窗（需要 RETURN_TO_MAP／DEFEAT_RESCUE 才會回到地圖）。 */
+  battleResult: 'VICTORY' | 'DEFEAT' | null;
+  battle: { battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean } | null;
+  /** 宿主正在執行的畫面指令（走路中）。 */
+  command: { commandId: string; type: string } | null;
+}
+
 export interface SceneSnapshot {
   schema: 'scene-snapshot';
   mapId: string;
@@ -178,6 +266,9 @@ export interface SceneSnapshot {
   /** 採集點：P1 沒有可用資料（FX6 之後才有），`status` 會是 UNAVAILABLE。 */
   gatherPoints: { status: DataAvailability; reason?: string; points: SnapshotGatherPoint[] };
   shops: SnapshotShop[];
+  /** 背包（含數量）；賣東西與戰鬥用道具要從這裡選。 */
+  inventory: SnapshotItem[];
+  activity: SnapshotActivity;
   nav: {
     status: DataAvailability;
     reason?: string;
@@ -186,6 +277,8 @@ export interface SceneSnapshot {
     /** 地圖像素寬高，供外掛估距離。 */
     pixelWidth: number | null;
     pixelHeight: number | null;
+    /** 世界目錄的地圖鄰接（沒有世界目錄時只有目前地圖與其直接出口）。 */
+    portalGraph: SnapshotPortalNode[];
   };
 }
 
@@ -196,6 +289,8 @@ export interface SceneSnapshot {
 export interface DialogOption { id: string; label: string }
 
 export interface BattleEnemyBrief { id: string; name: string; level: number | null }
+/** 回合就緒時敵人的即時狀態（只列存活者）。 */
+export interface BattleEnemyState { slot: number; id: string; name: string; hp: number; maxHp: number }
 
 export type LocationChangeCause = 'LOAD' | 'MAP_CHANGE' | 'WARP';
 export type BattleOutcome = 'WIN' | 'LOSE' | 'FLEE' | 'UNKNOWN';
@@ -206,19 +301,23 @@ export type GameEvent =
   | { type: 'LOCATION_CHANGED'; mapId: string; mapName: string | null; fromMapId: string | null; x: number; y: number; cause: LocationChangeCause }
   | { type: 'MOVED'; mapId: string; x: number; y: number; dir: number }
   | { type: 'DIALOG_OPENED'; npcId: string; npcName: string; role: string | null; lines: string[]; options: DialogOption[]; optionsAvailable: boolean }
+  | { type: 'DIALOG_UPDATED'; npcId: string; lines: string[]; options: DialogOption[] }
   | { type: 'DIALOG_CLOSED'; npcId: string }
+  | { type: 'SHOP_OPENED'; npcId: string; npcName: string; goods: SnapshotShopGood[] }
+  | { type: 'SHOP_CLOSED'; npcId: string }
   | { type: 'BATTLE_STARTED'; battleId: number; mapId: string; enemies: BattleEnemyBrief[] }
   | { type: 'BATTLE_ENDED'; battleId: number; outcome: BattleOutcome }
-  | { type: 'BATTLE_TURN_READY'; battleId: number; round: number }
+  | { type: 'BATTLE_TURN_READY'; battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean }
   | { type: 'INVENTORY_CHANGED'; changes: Array<{ itemId: number; delta: number; count: number }> }
   | { type: 'GOLD_CHANGED'; gold: number; delta: number }
   | { type: 'COMMAND_ACCEPTED'; commandId: string }
-  | { type: 'COMMAND_REJECTED'; commandId: string; reasonCode: RejectReasonCode; message?: string };
+  | { type: 'COMMAND_REJECTED'; commandId: string; reasonCode: RejectReasonCode; message?: string }
+  | { type: 'COMMAND_COMPLETED'; commandId: string; outcome: CompletionOutcome; code: CompletionCode; message?: string };
 
 export const GAME_EVENT_TYPES = [
-  'GAME_STARTED', 'GAME_STOPPED', 'LOCATION_CHANGED', 'MOVED', 'DIALOG_OPENED', 'DIALOG_CLOSED',
-  'BATTLE_STARTED', 'BATTLE_ENDED', 'BATTLE_TURN_READY', 'INVENTORY_CHANGED', 'GOLD_CHANGED',
-  'COMMAND_ACCEPTED', 'COMMAND_REJECTED',
+  'GAME_STARTED', 'GAME_STOPPED', 'LOCATION_CHANGED', 'MOVED', 'DIALOG_OPENED', 'DIALOG_UPDATED', 'DIALOG_CLOSED',
+  'SHOP_OPENED', 'SHOP_CLOSED', 'BATTLE_STARTED', 'BATTLE_ENDED', 'BATTLE_TURN_READY', 'INVENTORY_CHANGED', 'GOLD_CHANGED',
+  'COMMAND_ACCEPTED', 'COMMAND_REJECTED', 'COMMAND_COMPLETED',
 ] as const;
 export type GameEventType = (typeof GAME_EVENT_TYPES)[number];
 

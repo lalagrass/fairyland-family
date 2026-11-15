@@ -42,8 +42,8 @@ export interface ReplayOptions {
 }
 
 /**
- * 假 fairyland：按時間軸重播錄好的事件與快照、自己補心跳，並像 P1 宿主一樣回覆指令
- * （REQUEST_SNAPSHOT 接受並回最近快照；其餘一律 NOT_IMPLEMENTED_P1）。這樣 family 不開 fairyland 也能開發與測試。
+ * 假 fairyland：按時間軸重播錄好的事件與快照、自己補心跳，並回覆指令
+ * （REQUEST_SNAPSHOT 接受並回最近快照；其餘一律 NOT_IMPLEMENTED（回放不模擬遊戲））。這樣 family 不開 fairyland 也能開發與測試。
  */
 export class ReplayTransport implements Transport {
   readonly name = '回放（假 fairyland）';
@@ -117,7 +117,7 @@ export class ReplayTransport implements Transport {
     let out: { status: 'ACCEPTED' | 'REJECTED'; reasonCode?: string; message?: string };
     if (msg.characterId !== this.fixture.characterId) out = { status: 'REJECTED', reasonCode: 'WRONG_CHARACTER' };
     else if (msg.command.type === 'REQUEST_SNAPSHOT') out = this.latestSnapshot ? { status: 'ACCEPTED' } : { status: 'REJECTED', reasonCode: 'GAME_NOT_READY' };
-    else out = { status: 'REJECTED', reasonCode: 'NOT_IMPLEMENTED_P1', message: `P1 只支援 REQUEST_SNAPSHOT，尚未實作 ${msg.command.type}` };
+    else out = { status: 'REJECTED', reasonCode: 'NOT_IMPLEMENTED', message: `回放模式只支援 REQUEST_SNAPSHOT，不執行 ${msg.command.type}` };
     if (out.reasonCode !== 'GAME_NOT_READY') this.seen.set(msg.commandId, out);
     const t = () => this.sch.now();
     this.emit({ ...base, ts: t(), kind: 'command-result', commandId: msg.commandId, ...out } as PluginMessage);

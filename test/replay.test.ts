@@ -54,7 +54,7 @@ suite('replay transport plays the recorded sequence');
   assert(got.length === n, 'stop() halts heartbeats and events');
 }
 
-suite('replay answers commands like the P1 host');
+suite('replay answers commands like the host');
 {
   const sch = manual();
   const got: PluginMessage[] = [];
@@ -71,7 +71,7 @@ suite('replay answers commands like the P1 host');
   assert(got.some(m => isSnapshotMessage(m) && m.reason === 'REQUESTED' && m.inReplyTo === 'c1'), 'snapshot reply carries inReplyTo');
   tr.send(mk('c2', { type: 'WALK_TO', mapId: '10001', x: 1, y: 2 }));
   const r2 = got.filter(isCommandResultMessage).find(r => r.commandId === 'c2');
-  assert(r2?.status === 'REJECTED' && r2.reasonCode === 'NOT_IMPLEMENTED_P1', 'WALK_TO -> NOT_IMPLEMENTED_P1');
+  assert(r2?.status === 'REJECTED' && r2.reasonCode === 'NOT_IMPLEMENTED', 'WALK_TO -> NOT_IMPLEMENTED');
   assert(got.some(m => isEventMessage(m) && m.event.type === 'COMMAND_REJECTED' && m.event.commandId === 'c2'), 'COMMAND_REJECTED event too');
   tr.send(mk('c2', { type: 'WALK_TO', mapId: '10001', x: 1, y: 2 }));
   const dup = got.filter(isCommandResultMessage).filter(r => r.commandId === 'c2');
@@ -93,7 +93,7 @@ suite('controller on top of the replay: connected, snapshot, menu click is rejec
   const id = c.send({ type: 'TALK_TO_NPC', npcId: c.state.snapshot!.npcs[0].id }, '對話：測試');
   assert(!!id, 'command was sent');
   const res = c.state.log.find(l => l.tag === '結果' && l.commandId === id);
-  assert(!!res && res.text.includes('NOT_IMPLEMENTED_P1'), 'the rejection is shown in the log with the same commandId');
+  assert(!!res && res.text.includes('NOT_IMPLEMENTED'), 'the rejection is shown in the log with the same commandId');
   sch.advance(30000);
   assert(c.state.snapshot?.mapId === '20010' && c.state.location?.mapId === '20010', 'family follows the map change in the replay');
   tr.stop();

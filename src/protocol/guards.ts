@@ -1,10 +1,13 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 1dfff18543e2d88d22d9b1827b3ab76c2a8950c3
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 78f543e5ced425fdc37da21affb77b9b4b4ecc6b
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
  */
 import {
+  BATTLE_ACTION_KINDS,
+  COMPLETION_CODES,
+  COMPLETION_OUTCOMES,
   GAME_EVENT_TYPES,
   PLUGIN_COMMAND_TYPES,
   PROTOCOL_VERSION,
@@ -31,6 +34,8 @@ const isArr = (x: unknown): x is unknown[] => Array.isArray(x);
 const optNum = (x: unknown): boolean => x === undefined || isNum(x);
 const strOrNull = (x: unknown): boolean => x === null || isStr(x);
 const numOrNull = (x: unknown): boolean => x === null || isNum(x);
+const isOption = (o: unknown): boolean => isRec(o) && isStr(o.id) && isStr(o.label);
+const isEnemyState = (e: unknown): boolean => isRec(e) && isNum(e.slot) && isStr(e.id) && isStr(e.name) && isNum(e.hp) && isNum(e.maxHp);
 
 /** 指令內容（不含信封）。 */
 export function isPluginCommand(x: unknown): x is PluginCommand {
@@ -44,7 +49,11 @@ export function isPluginCommand(x: unknown): x is PluginCommand {
     case 'BUY_ITEM':
     case 'SELL_ITEM': return isNum(x.itemId) && optNum(x.count);
     case 'WORK_ONCE': return optNum(x.skillId) && optNum(x.recipeId) && (x.skillId !== undefined || x.recipeId !== undefined);
-    case 'BATTLE_ACTION': return optNum(x.battleId) && isRec(x.actions);
+    case 'BATTLE_ACTION': {
+      const a = x.action;
+      return optNum(x.battleId) && isRec(a) && (BATTLE_ACTION_KINDS as readonly string[]).includes(a.kind as string)
+        && optNum(a.targetSlot) && optNum(a.skillId) && optNum(a.spellId) && optNum(a.itemId) && optNum(a.sealStoneId);
+    }
     case 'BATTLE_FLEE': return optNum(x.battleId);
     case 'REQUEST_SNAPSHOT': return true;
     case 'GAME_COMMAND': return isRec(x.command) && isNonEmptyStr(x.command.type);
@@ -65,13 +74,18 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'MOVED': return isNonEmptyStr(x.mapId) && isNum(x.x) && isNum(x.y) && isNum(x.dir);
     case 'DIALOG_OPENED':
       return isStr(x.npcId) && isStr(x.npcName) && strOrNull(x.role) && isArr(x.lines) && x.lines.every(isStr)
-        && isArr(x.options) && x.options.every(o => isRec(o) && isStr(o.id) && isStr(o.label)) && isBool(x.optionsAvailable);
+        && isArr(x.options) && x.options.every(isOption) && isBool(x.optionsAvailable);
+    case 'DIALOG_UPDATED': return isStr(x.npcId) && isArr(x.lines) && x.lines.every(isStr) && isArr(x.options) && x.options.every(isOption);
     case 'DIALOG_CLOSED': return isStr(x.npcId);
+    case 'SHOP_OPENED':
+      return isStr(x.npcId) && isStr(x.npcName) && isArr(x.goods)
+        && x.goods.every(w => isRec(w) && isNum(w.itemId) && strOrNull(w.name) && isNum(w.price));
+    case 'SHOP_CLOSED': return isStr(x.npcId);
     case 'BATTLE_STARTED':
       return isNum(x.battleId) && isNonEmptyStr(x.mapId) && isArr(x.enemies)
         && x.enemies.every(e => isRec(e) && isStr(e.id) && isStr(e.name) && numOrNull(e.level));
     case 'BATTLE_ENDED': return isNum(x.battleId) && ['WIN', 'LOSE', 'FLEE', 'UNKNOWN'].includes(x.outcome as string);
-    case 'BATTLE_TURN_READY': return isNum(x.battleId) && isNum(x.round);
+    case 'BATTLE_TURN_READY': return isNum(x.battleId) && isNum(x.round) && isArr(x.enemies) && x.enemies.every(isEnemyState) && isBool(x.canFlee);
     case 'INVENTORY_CHANGED':
       return isArr(x.changes) && x.changes.every(c => isRec(c) && isNum(c.itemId) && isNum(c.delta) && isNum(c.count));
     case 'GOLD_CHANGED': return isNum(x.gold) && isNum(x.delta);
@@ -79,6 +93,9 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'COMMAND_REJECTED':
       return isNonEmptyStr(x.commandId) && (REJECT_REASON_CODES as readonly string[]).includes(x.reasonCode as string)
         && (x.message === undefined || isStr(x.message));
+    case 'COMMAND_COMPLETED':
+      return isNonEmptyStr(x.commandId) && (COMPLETION_OUTCOMES as readonly string[]).includes(x.outcome as string)
+        && (COMPLETION_CODES as readonly string[]).includes(x.code as string) && (x.message === undefined || isStr(x.message));
     default: return false;
   }
 }
@@ -103,7 +120,16 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   const n = x.nav;
   if (!isRec(n) || !AVAIL.includes(n.status as string) || !isArr(n.reachableMaps)
     || !n.reachableMaps.every(m => isRec(m) && isNonEmptyStr(m.mapId) && strOrNull(m.name) && isNum(m.hops))
-    || !numOrNull(n.pixelWidth) || !numOrNull(n.pixelHeight)) return false;
+    || !numOrNull(n.pixelWidth) || !numOrNull(n.pixelHeight)
+    || !isArr(n.portalGraph) || !n.portalGraph.every(p => isRec(p) && isNonEmptyStr(p.mapId) && strOrNull(p.name) && isArr(p.targets) && p.targets.every(isStr))) return false;
+  if (!isArr(x.inventory) || !x.inventory.every(i => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count))) return false;
+  const a = x.activity;
+  if (!isRec(a)) return false;
+  if (a.dialog !== null && !(isRec(a.dialog) && isStr(a.dialog.npcId) && isStr(a.dialog.npcName) && isArr(a.dialog.lines) && a.dialog.lines.every(isStr) && isArr(a.dialog.options) && a.dialog.options.every(isOption))) return false;
+  if (a.battleResult !== null && a.battleResult !== 'VICTORY' && a.battleResult !== 'DEFEAT') return false;
+  if (a.shop !== null && !(isRec(a.shop) && isStr(a.shop.npcId) && isStr(a.shop.npcName))) return false;
+  if (a.battle !== null && !(isRec(a.battle) && isNum(a.battle.battleId) && isNum(a.battle.round) && isArr(a.battle.enemies) && a.battle.enemies.every(isEnemyState) && isBool(a.battle.canFlee))) return false;
+  if (a.command !== null && !(isRec(a.command) && isStr(a.command.commandId) && isStr(a.command.type))) return false;
   return true;
 }
 
