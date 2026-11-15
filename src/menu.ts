@@ -74,13 +74,28 @@ export function buildMenu(snap: SceneSnapshot, known: DirNpc[] = []): MenuSectio
     },
     {
       key: 'gather', label: '採集',
-      items: snap.gatherPoints.points.map(p => ({ label: p.name, action: { kind: 'COMMAND', command: { type: 'WALK_TO', mapId: snap.mapId, x: p.x, y: p.y }, label: `走到採集點：${p.name}` } as UiAction })),
+      items: snap.gatherPoints.points.map(p => ({
+        label: p.itemName ?? p.name, hint: `${p.name}${p.requiredToolName ? `／需要${p.requiredToolName}` : ''}${p.source === 'CUSTOM' ? '／自訂位置' : ''}`,
+        action: p.itemId === undefined ? null : gatherAction(p.itemId, p.itemName ?? p.name),
+      })),
       emptyText: gatherEmpty,
     },
     {
       key: 'nearby', label: '附近可採',
-      items: [],
-      emptyText: gatherUnavailable ? '（資料尚未提供，P3 才會有）' : '（無）',
+      items: snap.gatherPoints.nearby.flatMap(n => {
+        const p = snap.gatherPoints.points.find(x => x.id === n.pointId);
+        if (!p || p.itemId === undefined) return [];
+        return [{
+          label: `${p.itemName ?? p.name}`, hint: `${Math.round(n.distance)}${n.withinReach ? '・在範圍內' : ''}${n.haveTool ? '' : '・缺工具'}`,
+          action: gatherAction(p.itemId, p.itemName ?? p.name),
+        }];
+      }),
+      emptyText: gatherUnavailable ? '（資料尚未提供）' : '（本區無）',
     },
   ];
+}
+
+/** 點採集點＝規劃「採到背包滿」並排進佇列（缺工具會先問要不要去買）。 */
+function gatherAction(itemId: number, name: string): UiAction {
+  return { kind: 'PLAN', req: { workType: 'GATHER', itemId, until: { kind: 'BAG_FULL' } }, label: `採集 ${name}（直到背包滿）` };
 }

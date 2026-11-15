@@ -19,6 +19,9 @@ const srcRel = 'packages/shared/src/protocol';
 const srcDir = path.join(fairyland, srcRel);
 const dstDir = path.join(root, 'src', 'protocol');
 const check = process.argv.includes('--check');
+// P3：工作資料（材料、配方、採集點、工具、站點；每欄有來源標記）也由 fairyland 單一來源複製，附版本，外掛用來規劃佇列。
+const dataSrc = path.join(fairyland, 'packages/shared/src/data/work_data.json');
+const dataDst = path.join(root, 'src', 'data', 'work_data.json');
 const MARK = '// [sync-protocol]';
 
 if (!fs.existsSync(srcDir)) {
@@ -39,7 +42,8 @@ if (!check) {
   fs.mkdirSync(dstDir, { recursive: true });
   for (const f of fs.readdirSync(dstDir)) if (!files.includes(f) && (f.endsWith('.ts') || f === 'examples.json')) fs.rmSync(path.join(dstDir, f));
   for (const f of files) fs.writeFileSync(path.join(dstDir, f), wanted(f, fs.readFileSync(path.join(srcDir, f), 'utf8')));
-  console.log(`[sync-protocol] 已複製 ${files.length} 個檔案 @ ${commit.slice(0, 10)}${dirty}`);
+  if (fs.existsSync(dataSrc)) { fs.mkdirSync(path.dirname(dataDst), { recursive: true }); fs.copyFileSync(dataSrc, dataDst); }
+  console.log(`[sync-protocol] 已複製 ${files.length} 個檔案（含工作資料）@ ${commit.slice(0, 10)}${dirty}`);
   process.exit(0);
 }
 
@@ -54,6 +58,7 @@ for (const f of files) {
 for (const f of fs.existsSync(dstDir) ? fs.readdirSync(dstDir) : []) {
   if ((f.endsWith('.ts') || f === 'examples.json') && !files.includes(f)) problems.push(`多出 ${f}（fairyland 已沒有）`);
 }
+if (fs.existsSync(dataSrc) && (!fs.existsSync(dataDst) || fs.readFileSync(dataDst, 'utf8') !== fs.readFileSync(dataSrc, 'utf8'))) problems.push('src/data/work_data.json 與 fairyland 不同');
 if (problems.length) {
   console.error(`[sync-protocol] 協定副本已過期：\n  - ${problems.join('\n  - ')}\n請執行 npm run sync-protocol`);
   process.exit(1);

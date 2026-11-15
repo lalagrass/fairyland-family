@@ -1,13 +1,13 @@
 {
  "format": "fairyland-replay/1",
  "description": "吉恩村→市鎮中心的示範序列：走路、阿爾對話、一場戰鬥、金錢道具、換圖、村長對話。快照來自真實地圖資料；事件順序為手排。回放模式只回應 REQUEST_SNAPSHOT，其他指令回 NOT_IMPLEMENTED（不模擬遊戲）。",
- "protocolVersion": 2,
+ "protocolVersion": 3,
  "characterId": "replay-char-1",
  "steps": [
   {
    "at": 0,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -21,7 +21,7 @@
   {
    "at": 60,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -40,7 +40,7 @@
   {
    "at": 120,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -668,9 +668,179 @@
       }
      ],
      "gatherPoints": {
-      "status": "UNAVAILABLE",
-      "reason": "FX6_NOT_EXTRACTED",
-      "points": []
+      "status": "RECONSTRUCTED_DEMO",
+      "reason": "CUSTOM_POSITIONS_NOT_ORIGINAL",
+      "points": [
+       {
+        "id": "gp_10001_coal",
+        "name": "煤礦脈",
+        "x": 3880,
+        "y": 3240,
+        "skillId": 5,
+        "requiredToolItemId": 90001,
+        "itemId": 10201,
+        "itemName": "煤",
+        "requiredToolName": "鐵鎬",
+        "durationMs": 2500,
+        "successRate": 0.9,
+        "countMin": 1,
+        "countMax": 2,
+        "source": "CUSTOM"
+       },
+       {
+        "id": "gp_10001_bronze",
+        "name": "青銅礦脈",
+        "x": 4360,
+        "y": 3400,
+        "skillId": 5,
+        "requiredToolItemId": 90001,
+        "itemId": 10234,
+        "itemName": "青銅礦",
+        "requiredToolName": "鐵鎬",
+        "durationMs": 2500,
+        "successRate": 0.9,
+        "countMin": 1,
+        "countMax": 2,
+        "source": "CUSTOM"
+       },
+       {
+        "id": "gp_10001_copper",
+        "name": "銅礦脈",
+        "x": 3400,
+        "y": 3400,
+        "skillId": 5,
+        "requiredToolItemId": 90001,
+        "itemId": 10208,
+        "itemName": "銅礦石",
+        "requiredToolName": "鐵鎬",
+        "durationMs": 2500,
+        "successRate": 0.9,
+        "countMin": 1,
+        "countMax": 2,
+        "source": "CUSTOM"
+       },
+       {
+        "id": "gp_10001_poplar",
+        "name": "白楊樹林",
+        "x": 3720,
+        "y": 4360,
+        "skillId": 1,
+        "requiredToolItemId": 90002,
+        "itemId": 10103,
+        "itemName": "白楊木",
+        "requiredToolName": "鐵斧",
+        "durationMs": 2500,
+        "successRate": 0.9,
+        "countMin": 1,
+        "countMax": 2,
+        "source": "CUSTOM"
+       }
+      ],
+      "nearby": [
+       {
+        "pointId": "gp_10001_coal",
+        "distance": 500,
+        "withinReach": false,
+        "requiredToolItemId": 90001,
+        "haveTool": false
+       },
+       {
+        "pointId": "gp_10001_bronze",
+        "distance": 588,
+        "withinReach": false,
+        "requiredToolItemId": 90001,
+        "haveTool": false
+       },
+       {
+        "pointId": "gp_10001_copper",
+        "distance": 588,
+        "withinReach": false,
+        "requiredToolItemId": 90001,
+        "haveTool": false
+       },
+       {
+        "pointId": "gp_10001_poplar",
+        "distance": 640,
+        "withinReach": false,
+        "requiredToolItemId": 90002,
+        "haveTool": false
+       }
+      ]
+     },
+     "work": {
+      "status": "RECONSTRUCTED_DEMO",
+      "reason": "CUSTOM_VALUES_SEE_MISSING_LIST",
+      "dataVersion": 1,
+      "origin": "repo-extracted-json",
+      "inventory": {
+       "slotsUsed": 0,
+       "slotLimit": 30,
+       "stackMax": 99,
+       "source": "CUSTOM"
+      },
+      "stamina": {
+       "value": 100,
+       "max": 100,
+       "gatherCost": 10,
+       "craftCost": 5,
+       "source": "CUSTOM"
+      },
+      "tools": [
+       {
+        "itemId": 90001,
+        "name": "鐵鎬",
+        "skillId": 5,
+        "count": 0,
+        "durability": null,
+        "maxDurability": 30
+       },
+       {
+        "itemId": 90002,
+        "name": "鐵斧",
+        "skillId": 1,
+        "count": 0,
+        "durability": null,
+        "maxDurability": 30
+       }
+      ],
+      "stations": [
+       {
+        "id": "station_10001_smithy",
+        "name": "打鐵舖前",
+        "kind": "SMITHY",
+        "x": 3220,
+        "y": 5060,
+        "reach": 200,
+        "workTypes": [
+         "SMELT",
+         "FORGE"
+        ],
+        "source": "CUSTOM"
+       }
+      ],
+      "vendors": [
+       {
+        "mapId": "10001",
+        "npcName": "收破爛阿利",
+        "itemId": 90001,
+        "itemName": "鐵鎬",
+        "price": 300,
+        "source": "CUSTOM"
+       },
+       {
+        "mapId": "10001",
+        "npcName": "收破爛阿利",
+        "itemId": 90002,
+        "itemName": "鐵斧",
+        "price": 280,
+        "source": "CUSTOM"
+       }
+      ],
+      "missingCount": 15,
+      "skillLevels": {
+       "1": 1,
+       "5": 1
+      }
      },
      "shops": [
       {
@@ -682,79 +852,92 @@
          "itemId": 50001,
          "name": "恢復劑",
          "price": 150,
-         "category": "SUPPLY"
+         "category": "SUPPLY",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 50002,
          "name": "強力恢復劑",
          "price": 450,
-         "category": "SUPPLY"
+         "category": "SUPPLY",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 50011,
          "name": "童話黑麥麵包",
          "price": 100,
-         "category": "SUPPLY"
+         "category": "SUPPLY",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 50111,
          "name": "一級封印石",
          "price": 800,
-         "category": "SEAL"
-        },
-        {
-         "itemId": 100000,
-         "name": "新鮮草藥",
-         "price": 60,
-         "category": "MATERIAL"
-        },
-        {
-         "itemId": 100003,
-         "name": "棉織線捲",
-         "price": 65,
-         "category": "MATERIAL"
+         "category": "SEAL",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 1001,
          "name": "新手銅劍",
          "price": 400,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 2001,
          "name": "旅行布帽",
          "price": 350,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 3001,
          "name": "旅行者布衣",
          "price": 450,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 4001,
          "name": "旅人布鞋",
          "price": 350,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 5001,
          "name": "吉恩守護符",
          "price": 900,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 6001,
          "name": "新手皮手套",
          "price": 1200,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
         },
         {
          "itemId": 7001,
          "name": "旅人圓木盾",
          "price": 1600,
-         "category": "GEAR"
+         "category": "GEAR",
+         "source": "RECONSTRUCTED_DEMO"
+        },
+        {
+         "itemId": 90001,
+         "name": "鐵鎬",
+         "price": 300,
+         "category": "TOOL",
+         "source": "CUSTOM"
+        },
+        {
+         "itemId": 90002,
+         "name": "鐵斧",
+         "price": 280,
+         "category": "TOOL",
+         "source": "CUSTOM"
         }
        ]
       }
@@ -765,7 +948,8 @@
       "shop": null,
       "battleResult": null,
       "battle": null,
-      "command": null
+      "command": null,
+      "work": null
      },
      "nav": {
       "status": "AVAILABLE",
@@ -843,7 +1027,7 @@
   {
    "at": 2000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -860,7 +1044,7 @@
   {
    "at": 2600,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -877,7 +1061,7 @@
   {
    "at": 3200,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -894,7 +1078,7 @@
   {
    "at": 4500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -923,7 +1107,7 @@
   {
    "at": 7000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -937,7 +1121,7 @@
   {
    "at": 8000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -959,7 +1143,7 @@
   {
    "at": 8100,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -984,7 +1168,7 @@
   {
    "at": 10000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1009,7 +1193,7 @@
   {
    "at": 12000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1024,7 +1208,7 @@
   {
    "at": 12500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1039,7 +1223,7 @@
   {
    "at": 12600,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1059,7 +1243,7 @@
   {
    "at": 15000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1078,7 +1262,7 @@
   {
    "at": 15400,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -1427,8 +1611,70 @@
      ],
      "gatherPoints": {
       "status": "UNAVAILABLE",
-      "reason": "FX6_NOT_EXTRACTED",
-      "points": []
+      "reason": "NO_GATHER_POINT_DATA_FOR_THIS_MAP",
+      "points": [],
+      "nearby": []
+     },
+     "work": {
+      "status": "RECONSTRUCTED_DEMO",
+      "reason": "CUSTOM_VALUES_SEE_MISSING_LIST",
+      "dataVersion": 1,
+      "origin": "repo-extracted-json",
+      "inventory": {
+       "slotsUsed": 0,
+       "slotLimit": 30,
+       "stackMax": 99,
+       "source": "CUSTOM"
+      },
+      "stamina": {
+       "value": 100,
+       "max": 100,
+       "gatherCost": 10,
+       "craftCost": 5,
+       "source": "CUSTOM"
+      },
+      "tools": [
+       {
+        "itemId": 90001,
+        "name": "鐵鎬",
+        "skillId": 5,
+        "count": 0,
+        "durability": null,
+        "maxDurability": 30
+       },
+       {
+        "itemId": 90002,
+        "name": "鐵斧",
+        "skillId": 1,
+        "count": 0,
+        "durability": null,
+        "maxDurability": 30
+       }
+      ],
+      "stations": [],
+      "vendors": [
+       {
+        "mapId": "10001",
+        "npcName": "收破爛阿利",
+        "itemId": 90001,
+        "itemName": "鐵鎬",
+        "price": 300,
+        "source": "CUSTOM"
+       },
+       {
+        "mapId": "10001",
+        "npcName": "收破爛阿利",
+        "itemId": 90002,
+        "itemName": "鐵斧",
+        "price": 280,
+        "source": "CUSTOM"
+       }
+      ],
+      "missingCount": 15,
+      "skillLevels": {
+       "1": 1,
+       "5": 1
+      }
      },
      "shops": [],
      "inventory": [],
@@ -1437,7 +1683,8 @@
       "shop": null,
       "battleResult": null,
       "battle": null,
-      "command": null
+      "command": null,
+      "work": null
      },
      "nav": {
       "status": "AVAILABLE",
@@ -1515,7 +1762,7 @@
   {
    "at": 17000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1532,7 +1779,7 @@
   {
    "at": 18500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1549,7 +1796,7 @@
   {
    "at": 20000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1577,7 +1824,7 @@
   {
    "at": 23000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",

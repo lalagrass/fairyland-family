@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 78f543e5ced425fdc37da21affb77b9b4b4ecc6b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 710e78847a14404fddf6275e5a2b227a02d3f22b
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -8,6 +8,10 @@
  *   `scripts/sync-protocol.mjs` 把整個資料夾原樣複製過去。
  * - 每則訊息都帶 `v`（`PROTOCOL_VERSION`）與 `characterId`；指令另外帶 `commandId`。
  *   P1–P3 只有單一角色，`characterId` 固定是目前角色；多角色之後不必升協定版本。
+ * - P3（協定版本 3）：WORK_ONCE 改為 `{ workType, targetId }`（原 skillId／recipeId 作廢）並真的執行；COMMAND_COMPLETED 可帶 `output`；
+ *   快照新增 `work`（工作資料、背包格數、體力、工具、站點、販售處、進行中的工作）與 `gatherPoints` 附近可採；
+ *   商店商品帶 `source` 標記；新增工作相關原因碼（MISSING_TOOL、MISSING_MATERIAL、INVENTORY_FULL、TOO_FAR、TOOL_BROKEN、
+ *   NO_STAMINA、FAILED_ROLL、NOT_AVAILABLE_DATA、LEVEL_TOO_LOW）。
  * - P2（協定版本 2）：宿主執行 WALK_TO／TALK_TO_NPC／CHOOSE_DIALOG_OPTION／ACCEPT_QUEST／BUY_ITEM／SELL_ITEM／
  *   BATTLE_ACTION／BATTLE_FLEE（WORK_ONCE 仍是 `NOT_IMPLEMENTED`，P3 才做）。每個指令先回 COMMAND_ACCEPTED 或
  *   COMMAND_REJECTED（附原因碼），需要時間的指令（走路、戰鬥回合）完成或被中斷時再送 COMMAND_COMPLETED。
@@ -17,7 +21,7 @@
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -42,8 +46,18 @@ export interface AcceptQuestCommand { type: 'ACCEPT_QUEST'; questId: number }
 export interface BuyItemCommand { type: 'BUY_ITEM'; itemId: number; count?: number }
 /** 對應 `GameCommand` 的 SELL_ITEM。 */
 export interface SellItemCommand { type: 'SELL_ITEM'; itemId: number; count?: number }
-/** 單次工作（採集／製作）。`skillId`＝採集技能；`recipeId`＝製作配方（二擇一）。 */
-export interface WorkOnceCommand { type: 'WORK_ONCE'; skillId?: number; recipeId?: number }
+/** 資料來源標記（FX6）：每個資料欄位都標明是原版提取、重建示範還是本專案自訂。 */
+export type SourceTag = 'ORIGINAL_EXTRACTED' | 'RECONSTRUCTED_DEMO' | 'CUSTOM';
+export const SOURCE_TAGS: readonly SourceTag[] = ['ORIGINAL_EXTRACTED', 'RECONSTRUCTED_DEMO', 'CUSTOM'];
+
+/** 單次工作類型：GATHER 採集（targetId＝採集點 id）；SMELT 冶煉、FORGE 鍛造、CRAFT 其他製作（targetId＝配方產物的道具 id，字串）。 */
+export type WorkType = 'GATHER' | 'SMELT' | 'FORGE' | 'CRAFT';
+export const WORK_TYPES: readonly WorkType[] = ['GATHER', 'SMELT', 'FORGE', 'CRAFT'];
+/**
+ * 單次原子工作：檢核工具、材料、距離（採集點／站點）、背包空間、體力，通過後角色忙碌 `durationMs`（遊戲時鐘），
+ * 結束時一次結算（扣材料、給產出、耗損工具）。同一 commandId 只會結算一次。
+ */
+export interface WorkOnceCommand { type: 'WORK_ONCE'; workType: WorkType; targetId: string }
 /** 單回合戰鬥動作（主人角色）；幻獸與其他單位由宿主既有的 AI 代出，與玩家在畫面上只點主人指令相同。 */
 export type BattleActionKind = 'ATTACK' | 'SKILL' | 'SPELL' | 'ITEM' | 'CAPTURE' | 'DEFEND';
 export const BATTLE_ACTION_KINDS: readonly BattleActionKind[] = ['ATTACK', 'SKILL', 'SPELL', 'ITEM', 'CAPTURE', 'DEFEND'];
@@ -115,13 +129,31 @@ export type RejectReasonCode =
   /** 宿主核心（`dispatchGameCommand`）拒絕；`message` 帶核心的原因文字。 */
   | 'CORE_REJECTED'
   | 'BATTLE_NOT_READY'
-  | 'INVALID_BATTLE_ACTION';
+  | 'INVALID_BATTLE_ACTION'
+  // P3：WORK_ONCE 的起始檢核（沒有任何東西被消耗）
+  | 'MISSING_TOOL'
+  | 'MISSING_MATERIAL'
+  | 'INVENTORY_FULL'
+  | 'TOOL_BROKEN'
+  | 'NO_STAMINA'
+  | 'NOT_AVAILABLE_DATA'
+  | 'LEVEL_TOO_LOW';
+
+/** WORK_ONCE 可能回報的原因碼（起始檢核以 COMMAND_REJECTED、結算時以 COMMAND_COMPLETED 送出，用同一組代碼）。 */
+export type WorkReasonCode =
+  | 'MISSING_TOOL' | 'MISSING_MATERIAL' | 'INVENTORY_FULL' | 'TOO_FAR' | 'TOOL_BROKEN' | 'NO_STAMINA' | 'FAILED_ROLL'
+  | 'NOT_AVAILABLE_DATA' | 'LEVEL_TOO_LOW' | 'WRONG_MAP';
+export const WORK_REASON_CODES: readonly WorkReasonCode[] = [
+  'MISSING_TOOL', 'MISSING_MATERIAL', 'INVENTORY_FULL', 'TOO_FAR', 'TOOL_BROKEN', 'NO_STAMINA', 'FAILED_ROLL',
+  'NOT_AVAILABLE_DATA', 'LEVEL_TOO_LOW', 'WRONG_MAP',
+];
 
 export const REJECT_REASON_CODES: readonly RejectReasonCode[] = [
   'NOT_IMPLEMENTED', 'INVALID_COMMAND', 'UNKNOWN_COMMAND', 'WRONG_CHARACTER', 'PROTOCOL_VERSION_MISMATCH', 'GAME_NOT_READY',
   'GAME_BUSY', 'WRONG_MAP', 'TOO_FAR', 'NPC_NOT_FOUND', 'UNREACHABLE', 'IN_BATTLE', 'NOT_IN_BATTLE', 'STALE_BATTLE',
   'DIALOG_OPEN', 'NOT_IN_DIALOG', 'OPTION_NOT_FOUND', 'NOT_AT_SHOP', 'ITEM_NOT_IN_SHOP', 'COMMAND_NOT_ALLOWED',
   'CORE_REJECTED', 'BATTLE_NOT_READY', 'INVALID_BATTLE_ACTION',
+  'MISSING_TOOL', 'MISSING_MATERIAL', 'INVENTORY_FULL', 'TOOL_BROKEN', 'NO_STAMINA', 'NOT_AVAILABLE_DATA', 'LEVEL_TOO_LOW',
 ];
 
 /**
@@ -130,14 +162,19 @@ export const REJECT_REASON_CODES: readonly RejectReasonCode[] = [
  *   ENCOUNTER＝被暗雷遇敵打斷；SUPERSEDED＝被新的走路／手動操作取代；BLOCKED＝路徑走不通或被障礙擋下；TIMEOUT。
  * - 其他：DIALOG_OPENED（TALK_TO_NPC）、DONE（狀態指令與選項）、TURN_SUBMITTED（戰鬥動作已送出並結算）、
  *   FLED／FLEE_FAILED（逃跑結果）。
+ * - WORK_ONCE：WORK_DONE（產出在 `output`）、TOOL_BROKEN（這次仍完成並有產出，但工具壞了；outcome 為 DONE）、
+ *   FAILED_ROLL（擲骰失敗；採集沒有產出，製作會消耗材料）、CANCELLED（玩家取消，沒有任何消耗）、
+ *   以及結算時發現條件已變的 WorkReasonCode（MISSING_*／INVENTORY_FULL／TOO_FAR／NO_STAMINA…，outcome FAILED，沒有任何消耗）。
  */
 export type CompletionCode =
   | 'ARRIVED' | 'MAP_CHANGED' | 'ENCOUNTER' | 'SUPERSEDED' | 'BLOCKED' | 'TIMEOUT'
-  | 'DIALOG_OPENED' | 'DONE' | 'TURN_SUBMITTED' | 'FLED' | 'FLEE_FAILED' | 'BATTLE_ENDED' | 'GAME_STOPPED';
+  | 'DIALOG_OPENED' | 'DONE' | 'TURN_SUBMITTED' | 'FLED' | 'FLEE_FAILED' | 'BATTLE_ENDED' | 'GAME_STOPPED'
+  | 'WORK_DONE' | 'CANCELLED' | WorkReasonCode;
 
 export const COMPLETION_CODES: readonly CompletionCode[] = [
   'ARRIVED', 'MAP_CHANGED', 'ENCOUNTER', 'SUPERSEDED', 'BLOCKED', 'TIMEOUT',
   'DIALOG_OPENED', 'DONE', 'TURN_SUBMITTED', 'FLED', 'FLEE_FAILED', 'BATTLE_ENDED', 'GAME_STOPPED',
+  'WORK_DONE', 'CANCELLED', ...WORK_REASON_CODES,
 ];
 export type CompletionOutcome = 'DONE' | 'INTERRUPTED' | 'FAILED';
 export const COMPLETION_OUTCOMES: readonly CompletionOutcome[] = ['DONE', 'INTERRUPTED', 'FAILED'];
@@ -188,6 +225,8 @@ export interface SnapshotShopGood {
   name: string | null;
   price: number;
   category?: string;
+  /** 這個商品／價格的資料來源（P3 起）；沒有標記＝舊資料。 */
+  source?: SourceTag;
 }
 
 export interface SnapshotNpc {
@@ -222,6 +261,102 @@ export interface SnapshotGatherPoint {
   y: number;
   skillId: number | null;
   requiredToolItemId: number | null;
+  /** P3：產出道具、名稱、單次耗時／成功率／數量範圍，與資料來源（座標、產出、耗時各欄來源見 work 資料檔的 fieldSources）。 */
+  itemId?: number;
+  itemName?: string | null;
+  requiredToolName?: string | null;
+  durationMs?: number;
+  successRate?: number;
+  countMin?: number;
+  countMax?: number;
+  source?: SourceTag;
+}
+
+/** 「附近可採」：本圖採集點由近到遠，含離角色的距離、是否已在採集範圍內、是否持有所需工具。 */
+export interface SnapshotNearbyGather {
+  pointId: string;
+  distance: number;
+  withinReach: boolean;
+  requiredToolItemId: number | null;
+  haveTool: boolean;
+}
+
+export interface SnapshotWorkTool {
+  itemId: number;
+  name: string;
+  skillId: number;
+  count: number;
+  /** 目前使用中那把的剩餘耐久；沒有這項道具為 null。 */
+  durability: number | null;
+  maxDurability: number;
+}
+
+export interface SnapshotWorkStation {
+  id: string;
+  name: string;
+  kind: string;
+  x: number;
+  y: number;
+  reach: number;
+  workTypes: WorkType[];
+  source: SourceTag;
+}
+
+/** 工具販售處（全世界已知；只有本圖的商店 NPC 在對話後才會真的賣）。 */
+export interface SnapshotVendor {
+  mapId: string;
+  npcName: string;
+  itemId: number;
+  itemName: string | null;
+  price: number | null;
+  source: SourceTag;
+}
+
+export interface WorkInProgress {
+  commandId: string;
+  workType: WorkType;
+  targetId: string;
+  /** 宿主時鐘（performance.now 換算成 epoch ms）開始時間與預計結束時間。 */
+  startedAt: number;
+  endsAt: number;
+  durationMs: number;
+}
+
+/** 工作資料與角色工作狀態（P3 / FX6）。外掛用它決定要不要先買工具、背包滿了沒有、站點在哪。 */
+export interface SnapshotWork {
+  status: DataAvailability;
+  reason?: string;
+  /** 宿主載入的 work_data 版本與來源（repo-extracted-json｜p00.adf）；外掛的資料副本版本不同時要警告。 */
+  dataVersion: number | null;
+  origin: string | null;
+  inventory: { slotsUsed: number; slotLimit: number; stackMax: number; source: SourceTag };
+  stamina: { value: number; max: number; gatherCost: number; craftCost: number; source: SourceTag };
+  tools: SnapshotWorkTool[];
+  stations: SnapshotWorkStation[];
+  vendors: SnapshotVendor[];
+  /** 「客戶端找不到」清單的項目數（清單全文在 docs/data/WORK_DATA_MISSING.md）。 */
+  missingCount: number;
+  /** 工作技能等級（技能 id → 等級）。 */
+  skillLevels: Record<string, number>;
+}
+
+/** WORK_ONCE 結算輸出（COMMAND_COMPLETED.output）。 */
+export interface WorkOutput {
+  workType: WorkType;
+  targetId: string;
+  gained: Array<{ itemId: number; name: string | null; count: number }>;
+  consumed: Array<{ itemId: number; name: string | null; count: number }>;
+  staminaLeft: number;
+  /** 使用的工具剩餘耐久；沒用工具為 null。 */
+  toolDurabilityLeft: number | null;
+  toolBroken: boolean;
+  skillId: number | null;
+  skillLevel: number | null;
+  roll: number;
+  successRate: number;
+  inventorySlotsUsed: number;
+  /** 背包裡沒有再裝一份同樣產出的空間（外掛可用來預先停工）。 */
+  inventoryFullAfter: boolean;
 }
 
 export interface SnapshotReachableMap {
@@ -254,6 +389,8 @@ export interface SnapshotActivity {
   battle: { battleId: number; round: number; enemies: BattleEnemyState[]; canFlee: boolean } | null;
   /** 宿主正在執行的畫面指令（走路中）。 */
   command: { commandId: string; type: string } | null;
+  /** P3：進行中的單次工作（角色忙碌中）；外掛重開時用它與自己的佇列比對，不重送。 */
+  work: WorkInProgress | null;
 }
 
 export interface SceneSnapshot {
@@ -263,8 +400,13 @@ export interface SceneSnapshot {
   character: SnapshotCharacter;
   npcs: SnapshotNpc[];
   exits: SnapshotExit[];
-  /** 採集點：P1 沒有可用資料（FX6 之後才有），`status` 會是 UNAVAILABLE。 */
-  gatherPoints: { status: DataAvailability; reason?: string; points: SnapshotGatherPoint[] };
+  /**
+   * 採集點：本圖的採集點。P3 起來自 work_data（目前全是 CUSTOM 自訂位置，`status` 為 RECONSTRUCTED_DEMO 表示「有資料但不是原版提取」）；
+   * 沒有工作資料（或這張圖沒資料）時 UNAVAILABLE，外掛不得當成「本區沒有採集點」。`nearby`＝附近可採（由近到遠）。
+   */
+  gatherPoints: { status: DataAvailability; reason?: string; points: SnapshotGatherPoint[]; nearby: SnapshotNearbyGather[] };
+  /** P3：工作資料、背包格數、體力、工具、站點與販售處。 */
+  work: SnapshotWork;
   shops: SnapshotShop[];
   /** 背包（含數量）；賣東西與戰鬥用道具要從這裡選。 */
   inventory: SnapshotItem[];
@@ -312,7 +454,7 @@ export type GameEvent =
   | { type: 'GOLD_CHANGED'; gold: number; delta: number }
   | { type: 'COMMAND_ACCEPTED'; commandId: string }
   | { type: 'COMMAND_REJECTED'; commandId: string; reasonCode: RejectReasonCode; message?: string }
-  | { type: 'COMMAND_COMPLETED'; commandId: string; outcome: CompletionOutcome; code: CompletionCode; message?: string };
+  | { type: 'COMMAND_COMPLETED'; commandId: string; outcome: CompletionOutcome; code: CompletionCode; message?: string; output?: WorkOutput };
 
 export const GAME_EVENT_TYPES = [
   'GAME_STARTED', 'GAME_STOPPED', 'LOCATION_CHANGED', 'MOVED', 'DIALOG_OPENED', 'DIALOG_UPDATED', 'DIALOG_CLOSED',

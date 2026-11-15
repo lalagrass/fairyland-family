@@ -3,15 +3,16 @@ import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
 import { buildMenu } from './menu';
 import type { NavStatus } from './navigator';
-import { INPUT_HELP, type UiAction } from './parse';
+import { INPUT_HELP, type QueueOp, type UiAction } from './parse';
 import { initialState, type FamilyState } from './state';
+import { stepText, type NewStep, type QueueState } from './queue';
 
 type Perform = (action: UiAction) => string | null;
 type SubmitText = (text: string) => string | null;
 
 /** 畫面上除了鏡像狀態之外，還要顯示的外掛端資訊。 */
-export interface UiAux { nav: NavStatus; strategy: BattleStrategy; known: DirNpc[] }
-const NO_AUX: UiAux = { nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置' }, strategy: 'MANUAL', known: [] };
+export interface UiAux { nav: NavStatus; strategy: BattleStrategy; known: DirNpc[]; queue: QueueState | null; plan: { steps: NewStep[]; confirm: string; summary: string } | null }
+const NO_AUX: UiAux = { nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置' }, strategy: 'MANUAL', known: [], queue: null, plan: null };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -32,6 +33,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   const header = el('header', {}, el('h1', {}, '童話家族'), status, el('span', { class: 'pill mode' }, modeLabel), el('span', { class: 'muted', 'data-testid': 'session' }));
   const charBox = el('section', { 'data-testid': 'character' });
   const navBox = el('section', { 'data-testid': 'nav-panel' });
+  const queueBox = el('section', { 'data-testid': 'queue-panel' });
   const sceneBox = el('section', { 'data-testid': 'scene' });
   const actBox = el('section', { 'data-testid': 'activity' });
   const inputErr = el('div', { class: 'err', 'data-testid': 'input-error' });
@@ -40,7 +42,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   const inputBox = el('section', {}, el('h2', {}, '文字輸入'), form, inputErr, el('div', { class: 'muted' }, INPUT_HELP));
   const logBox = el('div', { id: 'log', 'data-testid': 'log' });
   const logSection = el('section', {}, el('h2', {}, '事件日誌（時間／標籤／內容／commandId）'), logBox);
-  root.replaceChildren(header, charBox, navBox, actBox, sceneBox, inputBox, logSection);
+  root.replaceChildren(header, charBox, navBox, queueBox, actBox, sceneBox, inputBox, logSection);
 
   form.addEventListener('submit', ev => {
     ev.preventDefault();
@@ -76,6 +78,40 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
     if (aux.nav.route.length > 1) navBox.append(el('div', { class: 'muted', 'data-testid': 'nav-route' }, `路線：${aux.nav.route.join(' → ')}`));
     const active = ['WALKING', 'WAIT_MAP', 'PAUSED_BATTLE', 'TALKING'].includes(aux.nav.phase);
     if (active) navBox.append(act('停止導航', { kind: 'NAV_CANCEL', label: '取消導航' }, 'nav-cancel', running));
+  }
+
+  const qop = (op: QueueOp, label: string): UiAction => ({ kind: 'QUEUE', op, label });
+
+  function renderQueue(aux: UiAux, running: boolean) {
+    queueBox.replaceChildren(el('h2', {}, '行動佇列'));
+    if (aux.plan) {
+      queueBox.append(el('div', { class: 'dialog', 'data-testid': 'plan-confirm' }, el('b', {}, '要這樣排嗎？'), el('div', {}, aux.plan.confirm), el('div', { class: 'muted' }, `計畫：${aux.plan.summary}`),
+        el('div', { class: 'items' }, act('確認', qop({ op: 'CONFIRM' }, '確認規劃'), 'plan-yes', true), act('不要', qop({ op: 'DECLINE' }, '不要這個規劃'), 'plan-no', true))));
+    }
+    const q = aux.queue;
+    if (!q || !q.steps.length) {
+      queueBox.append(el('div', { class: 'muted', 'data-testid': 'queue-status', 'data-run': q?.run ?? 'IDLE' }, '（佇列是空的；用「採礦 銅礦石 直到 背包滿」之類的文字，或點選單的採集項目）'));
+    } else {
+      const runLabel = { IDLE: '尚未開始', RUNNING: '執行中', PAUSED: '已暫停', DONE: '全部完成' }[q.run];
+      queueBox.append(el('div', { 'data-testid': 'queue-status', 'data-run': q.run, 'data-cursor': String(q.cursor) }, `${runLabel}（第 ${Math.min(q.cursor + 1, q.steps.length)}／${q.steps.length} 步）${q.reason ? `　原因：${q.reason}` : ''}`));
+      const list = el('ol', { class: 'queue' });
+      q.steps.forEach((st, i) => {
+        const mark = i < q.cursor ? '✓' : i === q.cursor ? (q.run === 'RUNNING' ? '▶' : q.run === 'PAUSED' ? '⏸' : '·') : '·';
+        const li = el('li', { 'data-testid': 'queue-step', 'data-index': String(i), 'data-state': i < q.cursor ? 'done' : i === q.cursor ? 'current' : 'todo' }, `${mark} ${stepText(st)} `);
+        li.append(act('↑', qop({ op: 'MOVE', index: i, delta: -1 }, `上移 ${i + 1}`), 'queue-up', true), act('↓', qop({ op: 'MOVE', index: i, delta: 1 }, `下移 ${i + 1}`), 'queue-down', true), act('刪', qop({ op: 'REMOVE', index: i }, `刪除 ${i + 1}`), 'queue-del', true));
+        list.append(li);
+      });
+      queueBox.append(list);
+      queueBox.append(el('div', { class: 'items' },
+        act(q.run === 'PAUSED' ? '繼續（重試這一步）' : '開始', qop({ op: 'START' }, '開始／繼續佇列'), 'queue-start', running && q.run !== 'RUNNING' && q.run !== 'DONE'),
+        act('暫停', qop({ op: 'PAUSE' }, '暫停佇列'), 'queue-pause', q.run === 'RUNNING'),
+        act('跳過這步', qop({ op: 'SKIP' }, '跳過這一步'), 'queue-skip', q.run === 'PAUSED'),
+        act('清空', qop({ op: 'CLEAR' }, '清空佇列'), 'queue-clear', true)));
+    }
+    if (q?.log.length) {
+      queueBox.append(el('h2', {}, '工作結果與停止原因'));
+      queueBox.append(el('div', { 'data-testid': 'work-log' }, ...[...q.log].slice(-12).reverse().map(l => el('div', { class: l.kind === 'STOP' ? 'warn' : '' }, `${fmtTime(l.at)} ${l.kind === 'STOP' ? '■' : '·'} ${l.text}`))));
+    }
   }
 
   function renderActivity(s: FamilyState, aux: UiAux, running: boolean) {
@@ -173,6 +209,7 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
       sceneBox.append(el('div', { class: 'muted' }, '（尚未收到場景快照）'));
     }
     renderNav(aux, running);
+    renderQueue(aux, running);
     renderActivity(s, aux, running);
 
     logBox.replaceChildren(...[...s.log].reverse().map(e => {

@@ -14,6 +14,7 @@ import {
   type SnapshotCharacter,
   type SnapshotItem,
   type SnapshotShopGood,
+  type WorkOutput,
 } from './protocol/index';
 
 export type LogTag = '連線' | '事件' | '快照' | '送出' | '結果' | '系統';
@@ -97,8 +98,16 @@ export function expectedCode(c: PluginCommand): string | undefined {
     case 'CHOOSE_DIALOG_OPTION': case 'ACCEPT_QUEST': case 'BUY_ITEM': case 'SELL_ITEM': return 'DONE';
     case 'BATTLE_ACTION': return 'TURN_SUBMITTED';
     case 'BATTLE_FLEE': return 'FLED';
+    case 'WORK_ONCE': return 'WORK_DONE';
     default: return undefined;
   }
+}
+
+/** WORK_ONCE 結算輸出的一行摘要（得到／消耗／體力／耐久）。 */
+export function describeOutput(o: WorkOutput | undefined): string {
+  if (!o) return '';
+  const list = (xs: WorkOutput['gained']) => xs.map(x => `${x.name ?? `#${x.itemId}`}×${x.count}`).join('、') || '無';
+  return `　得到 ${list(o.gained)}／消耗 ${list(o.consumed)}／體力 ${o.staminaLeft}${o.toolDurabilityLeft !== null ? `／耐久 ${o.toolDurabilityLeft}` : ''}${o.toolBroken ? '（工具壞了）' : ''}／背包 ${o.inventorySlotsUsed} 格`;
 }
 
 export function describeEvent(e: GameEvent): string {
@@ -119,7 +128,7 @@ export function describeEvent(e: GameEvent): string {
     case 'GOLD_CHANGED': return `金錢 ${e.delta >= 0 ? '+' : ''}${e.delta}，現有 ${e.gold}`;
     case 'COMMAND_ACCEPTED': return '指令已接受';
     case 'COMMAND_REJECTED': return `指令被拒絕：${e.reasonCode}${e.message ? `（${e.message}）` : ''}`;
-    case 'COMMAND_COMPLETED': return `指令完成：${e.outcome} ${e.code}${e.message ? `（${e.message}）` : ''}`;
+    case 'COMMAND_COMPLETED': return `指令完成：${e.outcome} ${e.code}${e.message ? `（${e.message}）` : ''}${describeOutput(e.output)}`;
   }
 }
 
@@ -219,7 +228,7 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
       // 預期 vs 實際：完成碼和送出時預期的不同，標成警告（例如走路預期 ARRIVED，實際被遇敵打斷 ENCOUNTER）。
       const match = !sent || sent.expect === e.code;
       const text = sent
-        ? `${sent.label}　預期 ${sent.expect}／實際 ${e.code}（${e.outcome}）${match ? ' ✓' : ' ✗ 與預期不同'}${e.message ? `　${e.message}` : ''}`
+        ? `${sent.label}　預期 ${sent.expect}／實際 ${e.code}（${e.outcome}）${match ? ' ✓' : ' ✗ 與預期不同'}${e.message ? `　${e.message}` : ''}${describeOutput(e.output)}`
         : describeEvent(e);
       return addLog(next, '結果', text, now, { commandId, level: match && e.outcome !== 'FAILED' ? 'info' : 'warn' });
     }

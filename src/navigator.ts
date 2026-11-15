@@ -8,7 +8,9 @@ import type { FamilyState } from './state';
 /** 導航目標：某個 NPC（可選擇到了就對話），或某張地圖。 */
 export type NavGoal =
   | { kind: 'NPC'; query: string; talk: boolean }
-  | { kind: 'MAP'; mapId: string; name: string };
+  | { kind: 'MAP'; mapId: string; name: string }
+  /** 某張地圖上的一個座標（採集點、站點）；離座標 reach 以內就算到。 */
+  | { kind: 'POINT'; mapId: string; x: number; y: number; reach: number; name: string };
 
 export type NavPhase = 'IDLE' | 'WALKING' | 'WAIT_MAP' | 'PAUSED_BATTLE' | 'TALKING' | 'DONE' | 'FAILED' | 'CANCELLED';
 
@@ -37,6 +39,7 @@ const MAX_RETRY = 90;
 const MAX_BLOCKED_EXITS = 12;
 
 const goalText = (g: NavGoal) => (g.kind === 'NPC' ? `${g.talk ? '對話' : '前往'} ${g.query}` : `前往 ${g.name}`);
+export const goalMapId = (g: NavGoal): string | null => (g.kind === 'NPC' ? null : g.mapId);
 
 /**
  * 外掛端自動導航器：把「前往 村長」拆成多段 WALK_TO（每段只在同一張圖內），換圖後等新快照再繼續，
@@ -136,6 +139,7 @@ export class AutoNavigator {
         return;
       case 'ARRIVED': {
         const g = this.status.goal;
+        if (cur.role === 'APPROACH' && g && g.kind === 'POINT') { this.set({ ...this.status, phase: 'DONE', text: `導航：已到達 ${g.name}` }); return; }
         if (cur.role === 'APPROACH' && g && g.kind === 'NPC') {
           if (!g.talk) { this.set({ ...this.status, phase: 'DONE', text: `導航：已走到 ${g.query} 附近` }); return; }
           this.set({ ...this.status, phase: 'TALKING' });
@@ -194,7 +198,7 @@ export class AutoNavigator {
     // 結算視窗沒關時宿主會回 GAME_BUSY，由重試處理（不在這裡猜，因為在遊戲裡手動關窗外掛收不到事件）。
     if (st.dialog || st.shop) { this.fail(`請先結束${st.dialog ? '對話' : '商店'}再導航`); return; }
 
-    const targetMap = goal.kind === 'MAP' ? goal.mapId : this.resolveNpcMap(goal.query, snap);
+    const targetMap = goal.kind === 'NPC' ? this.resolveNpcMap(goal.query, snap) : goal.mapId;
     if (!targetMap) { this.fail(goal.kind === 'NPC' ? `不知道「${goal.query}」在哪張圖` : '沒有目標地圖'); return; }
 
     if (snap.mapId !== targetMap) {
@@ -214,6 +218,12 @@ export class AutoNavigator {
 
     // 已在目標地圖
     if (goal.kind === 'MAP') { this.set({ ...this.status, phase: 'DONE', text: `導航：已到達 ${snap.mapName ?? snap.mapId}` }); return; }
+    if (goal.kind === 'POINT') {
+      const pc = this.host.state().character;
+      if (pc && dist(pc.x, pc.y, goal.x, goal.y) <= goal.reach) this.set({ ...this.status, phase: 'DONE', text: `導航：已在 ${goal.name} 範圍內` });
+      else this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: goal.x, y: goal.y }, `導航：走向 ${goal.name}`, 'APPROACH', 'ARRIVED', snap.mapId);
+      return;
+    }
     const npc = this.findNpc(snap, goal.query);
     if (!npc) { this.fail(`這張圖找不到「${goal.query}」`); return; }
     const c = this.host.state().character;

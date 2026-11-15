@@ -1,7 +1,7 @@
 {
-  "_comment": "FX1 範例訊息。每個陣列元素都必須通過 guards.ts 對應的型別守衛；fairyland 與 fairyland-family 共用同一份。",
+  "_comment": "FX1 範例訊息（協定版本 3）。每個陣列元素都必須通過 guards.ts 對應的型別守衛；fairyland 與 fairyland-family 共用同一份。",
   "heartbeat": {
-    "v": 2,
+    "v": 3,
     "characterId": "char-demo-1",
     "ts": 1700000000000,
     "kind": "heartbeat",
@@ -12,7 +12,7 @@
     "inBattle": false
   },
   "snapshot": {
-    "v": 2,
+    "v": 3,
     "characterId": "char-demo-1",
     "ts": 1700000000100,
     "kind": "snapshot",
@@ -101,9 +101,35 @@
         }
       ],
       "gatherPoints": {
-        "status": "UNAVAILABLE",
-        "reason": "FX6_NOT_EXTRACTED",
-        "points": []
+        "status": "RECONSTRUCTED_DEMO",
+        "reason": "CUSTOM_POSITIONS_NOT_ORIGINAL",
+        "points": [
+          {
+            "id": "gp_10001_coal",
+            "name": "煤礦脈",
+            "x": 3880,
+            "y": 3240,
+            "skillId": 5,
+            "requiredToolItemId": 90001,
+            "itemId": 10201,
+            "itemName": "煤",
+            "requiredToolName": "鐵鎬",
+            "durationMs": 2500,
+            "successRate": 0.9,
+            "countMin": 1,
+            "countMax": 2,
+            "source": "CUSTOM"
+          }
+        ],
+        "nearby": [
+          {
+            "pointId": "gp_10001_coal",
+            "distance": 500,
+            "withinReach": false,
+            "requiredToolItemId": 90001,
+            "haveTool": false
+          }
+        ]
       },
       "shops": [
         {
@@ -115,13 +141,22 @@
               "itemId": 50001,
               "name": "恢復劑",
               "price": 150,
-              "category": "SUPPLY"
+              "category": "SUPPLY",
+              "source": "RECONSTRUCTED_DEMO"
             },
             {
               "itemId": 50002,
               "name": "強力恢復劑",
               "price": 450,
-              "category": "SUPPLY"
+              "category": "SUPPLY",
+              "source": "RECONSTRUCTED_DEMO"
+            },
+            {
+              "itemId": 90001,
+              "name": "鐵鎬",
+              "price": 300,
+              "category": "TOOL",
+              "source": "CUSTOM"
             }
           ]
         }
@@ -184,13 +219,72 @@
         "shop": null,
         "battle": null,
         "battleResult": null,
-        "command": null
+        "command": null,
+        "work": null
+      },
+      "work": {
+        "status": "RECONSTRUCTED_DEMO",
+        "reason": "ALL_VALUES_CUSTOM_SEE_MISSING_LIST",
+        "dataVersion": 1,
+        "origin": "repo-extracted-json",
+        "inventory": {
+          "slotsUsed": 4,
+          "slotLimit": 30,
+          "stackMax": 99,
+          "source": "CUSTOM"
+        },
+        "stamina": {
+          "value": 100,
+          "max": 100,
+          "gatherCost": 10,
+          "craftCost": 5,
+          "source": "CUSTOM"
+        },
+        "tools": [
+          {
+            "itemId": 90001,
+            "name": "鐵鎬",
+            "skillId": 5,
+            "count": 1,
+            "durability": 30,
+            "maxDurability": 30
+          }
+        ],
+        "stations": [
+          {
+            "id": "station_10001_smithy",
+            "name": "打鐵舖前",
+            "kind": "SMITHY",
+            "x": 3220,
+            "y": 5060,
+            "reach": 200,
+            "workTypes": [
+              "SMELT",
+              "FORGE"
+            ],
+            "source": "CUSTOM"
+          }
+        ],
+        "vendors": [
+          {
+            "mapId": "10001",
+            "npcName": "收破爛阿利",
+            "itemId": 90001,
+            "itemName": "鐵鎬",
+            "price": 300,
+            "source": "CUSTOM"
+          }
+        ],
+        "missingCount": 14,
+        "skillLevels": {
+          "5": 1
+        }
       }
     }
   },
   "events": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001000,
       "kind": "event",
@@ -201,7 +295,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001100,
       "kind": "event",
@@ -217,7 +311,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001200,
       "kind": "event",
@@ -231,7 +325,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001300,
       "kind": "event",
@@ -262,7 +356,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001150,
@@ -286,7 +380,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001160,
@@ -305,7 +399,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001170,
@@ -316,7 +410,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001180,
@@ -329,7 +423,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001400,
       "kind": "event",
@@ -340,7 +434,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001500,
       "kind": "event",
@@ -359,7 +453,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001600,
       "kind": "event",
@@ -381,7 +475,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001700,
       "kind": "event",
@@ -393,7 +487,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001800,
       "kind": "event",
@@ -405,7 +499,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001900,
       "kind": "event",
@@ -422,7 +516,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002000,
       "kind": "event",
@@ -433,7 +527,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002100,
       "kind": "event",
@@ -446,7 +540,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002200,
       "kind": "event",
@@ -460,7 +554,7 @@
   ],
   "commands": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002000,
       "kind": "command",
@@ -470,7 +564,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002100,
       "kind": "command",
@@ -483,7 +577,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002200,
       "kind": "command",
@@ -494,7 +588,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002300,
       "kind": "command",
@@ -505,7 +599,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002400,
       "kind": "command",
@@ -516,7 +610,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002500,
       "kind": "command",
@@ -528,7 +622,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002600,
       "kind": "command",
@@ -540,18 +634,19 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002700,
       "kind": "command",
       "commandId": "cmd-0008",
       "command": {
         "type": "WORK_ONCE",
-        "skillId": 4
+        "workType": "GATHER",
+        "targetId": "gp_10001_coal"
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002800,
       "kind": "command",
@@ -566,7 +661,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002900,
       "kind": "command",
@@ -576,7 +671,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003000,
       "kind": "command",
@@ -589,7 +684,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002900,
       "kind": "command",
@@ -602,7 +697,7 @@
   ],
   "commandResults": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003000,
       "kind": "command-result",
@@ -610,7 +705,7 @@
       "status": "ACCEPTED"
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003100,
       "kind": "command-result",
@@ -620,7 +715,7 @@
       "message": "WORK_ONCE 要到 P3 才實作"
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003200,
       "kind": "command-result",
@@ -630,7 +725,7 @@
       "duplicate": true
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003300,
       "kind": "command-result",
@@ -638,6 +733,93 @@
       "status": "REJECTED",
       "reasonCode": "TOO_FAR",
       "message": "離 村長傑夫 太遠"
+    },
+    {
+      "v": 3,
+      "characterId": "char-demo-1",
+      "ts": 1700000006100,
+      "kind": "command-result",
+      "commandId": "cmd-0013",
+      "status": "REJECTED",
+      "reasonCode": "MISSING_TOOL",
+      "message": "需要 鐵鎬"
+    }
+  ],
+  "workEvents": [
+    {
+      "v": 3,
+      "characterId": "char-demo-1",
+      "ts": 1700000005000,
+      "kind": "event",
+      "seq": 30,
+      "event": {
+        "type": "COMMAND_COMPLETED",
+        "commandId": "cmd-0008",
+        "outcome": "DONE",
+        "code": "WORK_DONE",
+        "message": "採集到 煤 ×2",
+        "output": {
+          "workType": "GATHER",
+          "targetId": "gp_10001_coal",
+          "gained": [
+            {
+              "itemId": 10201,
+              "name": "煤",
+              "count": 2
+            }
+          ],
+          "consumed": [],
+          "staminaLeft": 90,
+          "toolDurabilityLeft": 29,
+          "toolBroken": false,
+          "skillId": 5,
+          "skillLevel": 1,
+          "roll": 0.31,
+          "successRate": 0.9,
+          "inventorySlotsUsed": 5,
+          "inventoryFullAfter": false
+        }
+      }
+    },
+    {
+      "v": 3,
+      "characterId": "char-demo-1",
+      "ts": 1700000006000,
+      "kind": "event",
+      "seq": 31,
+      "event": {
+        "type": "COMMAND_COMPLETED",
+        "commandId": "cmd-0012",
+        "outcome": "FAILED",
+        "code": "FAILED_ROLL",
+        "message": "鍛造失敗，材料已消耗"
+      }
+    },
+    {
+      "v": 3,
+      "characterId": "char-demo-1",
+      "ts": 1700000006100,
+      "kind": "event",
+      "seq": 32,
+      "event": {
+        "type": "COMMAND_REJECTED",
+        "commandId": "cmd-0013",
+        "reasonCode": "MISSING_TOOL",
+        "message": "需要 鐵鎬"
+      }
+    },
+    {
+      "v": 3,
+      "characterId": "char-demo-1",
+      "ts": 1700000006200,
+      "kind": "event",
+      "seq": 33,
+      "event": {
+        "type": "COMMAND_REJECTED",
+        "commandId": "cmd-0014",
+        "reasonCode": "INVENTORY_FULL",
+        "message": "背包已滿（30/30 格）"
+      }
     }
   ]
 }

@@ -32,3 +32,7 @@ input[type=text] { flex: 1; background: #10141a; color: var(--fg); border: 1px s
 details summary { cursor: pointer; color: var(--dim); }
 select { background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: inherit; }
 #log .tag { min-width: 3em; }
+ol.queue { margin: 4px 0; padding-left: 22px; }
+ol.queue li { margin: 3px 0; }
+ol.queue li button { padding: 0 6px; margin-left: 4px; }
+[data-testid=work-log] .warn { color: var(--warn); }

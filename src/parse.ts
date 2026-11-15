@@ -1,13 +1,22 @@
 import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotItem } from './protocol/index';
 import type { BattleStrategy } from './battler';
 import type { NavGoal } from './navigator';
+import { isWorkVerb, parseWorkText, type PlanRequest } from './queue';
 
 /** 選單與文字輸入共用的「動作」：同一份文字或同一顆按鈕，一定走到同一個動作。 */
 export type UiAction =
   | { kind: 'COMMAND'; command: PluginCommand; label: string }
   | { kind: 'NAV'; goal: NavGoal; label: string }
   | { kind: 'NAV_CANCEL'; label: string }
-  | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string };
+  | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string }
+  /** 採集／冶煉／鍛造：規劃（缺工具會先問要不要去買）後排進佇列。 */
+  | { kind: 'PLAN'; req: PlanRequest; label: string }
+  | { kind: 'QUEUE'; op: QueueOp; label: string };
+
+export type QueueOp =
+  | { op: 'START' } | { op: 'PAUSE' } | { op: 'SKIP' } | { op: 'CLEAR' }
+  | { op: 'REMOVE'; index: number } | { op: 'MOVE'; index: number; delta: -1 | 1 }
+  | { op: 'CONFIRM' } | { op: 'DECLINE' };
 
 export type ParseResult =
   | { ok: true; action: UiAction }
@@ -27,7 +36,7 @@ export interface ParseContext {
 }
 
 export const INPUT_HELP =
-  '可輸入：前往 村長｜對話 阿爾｜走到 1000 700｜選項 接受任務｜買 50001 [數量]｜賣 100000 [數量]｜攻擊 [目標]｜防禦｜逃跑｜策略 手動/普通攻擊/逃跑｜停止導航｜快照';
+  '可輸入：前往 村長｜對話 阿爾｜走到 1000 700｜選項 接受任務｜買 50001 [數量]｜賣 100000 [數量]｜攻擊 [目標]｜防禦｜逃跑｜策略 手動/普通攻擊/逃跑｜停止導航｜快照｜採礦 銅礦石 直到 背包滿｜採集 煤 10 次｜冶煉 青銅塊 3 次｜鍛造 新手銅劍｜佇列：開始／暫停／跳過／清空佇列／刪除 N／上移 N／下移 N／確認／不要';
 
 const fail = (error: string): ParseResult => ({ ok: false, error });
 const cmd = (command: PluginCommand, label: string): ParseResult => ({ ok: true, action: { kind: 'COMMAND', command, label } });
@@ -92,9 +101,25 @@ export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseC
       return cmd({ type: 'ACCEPT_QUEST', questId: nums[0] }, `接任務 ${nums[0]}`);
     }
 
-    case '工作': case 'work': {
-      if (nums.length !== 1 || !Number.isInteger(nums[0])) return fail('用法：工作 <技能編號>');
-      return cmd({ type: 'WORK_ONCE', skillId: nums[0] }, `工作一次（技能 ${nums[0]}）`);
+    case '開始': case '繼續': case '執行': case 'run': case 'resume':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'START' }, label: '開始／繼續佇列' } };
+    case '暫停': case 'pause':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'PAUSE' }, label: '暫停佇列' } };
+    case '停止佇列': case '停止工作':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'PAUSE' }, label: '停止佇列' } };
+    case '跳過': case 'skip':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'SKIP' }, label: '跳過這一步' } };
+    case '清空佇列': case '清除佇列': case '清空': case 'clear':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'CLEAR' }, label: '清空佇列' } };
+    case '確認': case '好': case '是': case 'yes': case 'ok':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'CONFIRM' }, label: '確認規劃' } };
+    case '不要': case '否': case 'no':
+      return { ok: true, action: { kind: 'QUEUE', op: { op: 'DECLINE' }, label: '不要這個規劃' } };
+    case '刪除': case '移除': case '上移': case '下移': {
+      if (nums.length !== 1 || !Number.isInteger(nums[0]) || nums[0] < 1) return fail(`用法：${verb} <第幾步>（從 1 開始，看佇列面板）`);
+      const index = nums[0] - 1;
+      const op: QueueOp = verb === '上移' ? { op: 'MOVE', index, delta: -1 } : verb === '下移' ? { op: 'MOVE', index, delta: 1 } : { op: 'REMOVE', index };
+      return { ok: true, action: { kind: 'QUEUE', op, label: `${verb} 第 ${nums[0]} 步` } };
     }
 
     case '選項': case 'option': {
@@ -162,6 +187,10 @@ export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseC
     }
 
     default:
+      if (isWorkVerb(verb)) {
+        const w = parseWorkText(verb, rest);
+        return w.ok ? { ok: true, action: { kind: 'PLAN', req: w.req, label: t } } : fail(w.error);
+      }
       return fail(`看不懂「${verb}」。${INPUT_HELP}`);
   }
 }
