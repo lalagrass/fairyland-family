@@ -34,6 +34,7 @@ const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax -
 export const TALK_NEAR = 140;
 const RETRY_MS = 1000;
 const MAX_RETRY = 90;
+const MAX_BLOCKED_EXITS = 12;
 
 const goalText = (g: NavGoal) => (g.kind === 'NPC' ? `${g.talk ? '對話' : '前往'} ${g.query}` : `前往 ${g.name}`);
 
@@ -44,7 +45,9 @@ const goalText = (g: NavGoal) => (g.kind === 'NPC' ? `${g.talk ? '對話' : '前
  */
 export class AutoNavigator {
   private token = 0;
-  private current: { commandId: string; role: 'LEG' | 'APPROACH' | 'TALK'; fromMap: string } | null = null;
+  private current: { commandId: string; role: 'LEG' | 'APPROACH' | 'TALK'; fromMap: string; exitId?: string } | null = null;
+  /** 這張圖上已經走不通（BLOCKED）的出口；換圖或重新派發就清空。 */
+  private blocked = new Set<string>();
   /** 剛換圖：在看到不同於這張圖的新快照之前，不重新規劃（避免拿舊快照再走一次舊出口）。 */
   private awaitFrom: string | null = null;
   private retries = 0;
@@ -59,6 +62,7 @@ export class AutoNavigator {
   go(goal: NavGoal): string | null {
     this.cancelInternal(false);
     this.awaitFrom = null;
+    this.blocked.clear();
     const token = ++this.token;
     this.retries = 0;
     this.set({ phase: 'WALKING', goal, route: [], text: `導航：${goalText(goal)}` });
@@ -91,6 +95,7 @@ export class AutoNavigator {
       if (e.type === 'GAME_STARTED' || e.type === 'GAME_STOPPED') { this.fail('遊戲重新啟動或停止，導航中止'); return; }
       if (e.type === 'COMMAND_COMPLETED') this.onCompleted(e.commandId, e.code, e.message);
       else if (e.type === 'COMMAND_REJECTED') this.onRejected(e.commandId, e.reasonCode, e.message);
+      else if (e.type === 'LOCATION_CHANGED' && this.status.phase === 'WAIT_MAP') { const token = this.token; this.host.after(0, () => this.step(token)); }
       else if (e.type === 'BATTLE_STARTED' && this.status.phase !== 'PAUSED_BATTLE') this.set({ ...this.status, phase: 'PAUSED_BATTLE', text: '導航：遇到戰鬥，暫停' });
       else if (e.type === 'BATTLE_ENDED' && this.status.phase === 'PAUSED_BATTLE') this.resumeSoon('導航：戰鬥結束，繼續');
       return;
@@ -124,6 +129,7 @@ export class AutoNavigator {
     switch (code) {
       case 'MAP_CHANGED':
         this.awaitFrom = cur.fromMap;
+        this.blocked.clear();
         this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：已換圖，等新場景快照' });
         // 新快照可能已經先到（事件順序不保證），所以立刻檢查一次；還沒到就等 onMessage 的快照。
         this.host.after(0, () => this.step(token));
@@ -133,15 +139,31 @@ export class AutoNavigator {
         if (cur.role === 'APPROACH' && g && g.kind === 'NPC') {
           if (!g.talk) { this.set({ ...this.status, phase: 'DONE', text: `導航：已走到 ${g.query} 附近` }); return; }
           this.set({ ...this.status, phase: 'TALKING' });
-          this.step(token, false, true); // 走到了就直接對話，不再用（可能過期的）位置判斷
+          this.step(token, true); // 走到了就直接對話，不再用（可能過期的）位置判斷
           return;
         }
+        if (cur.role === 'LEG' && cur.exitId) {
+          // 走到了出口座標卻沒換圖（例如建築入口只是裝飾）：這個出口不算數，換另一個。
+          this.blocked.add(cur.exitId);
+          this.host.log('導航：走到出口但沒有換圖，換另一個出口', 'warn');
+        }
         this.set({ ...this.status, phase: 'WALKING' });
-        this.step(token, cur.role === 'LEG');
+        this.step(token);
         return;
       }
       case 'ENCOUNTER':
         this.set({ ...this.status, phase: 'PAUSED_BATTLE', text: '導航：遇敵，戰鬥結束後繼續' });
+        return;
+      case 'BLOCKED':
+        // 這個出口走不到（例如建築入口沒有通路）：換同一個目的地的別個出口再試。
+        if (cur.role === 'LEG' && cur.exitId) {
+          this.blocked.add(cur.exitId);
+          this.host.log(`導航：出口走不通（${message ?? 'BLOCKED'}），換另一個出口`, 'warn');
+          this.set({ ...this.status, phase: 'WALKING' });
+          this.step(token);
+          return;
+        }
+        this.fail(`走路中斷 ${code}${message ? `（${message}）` : ''}`);
         return;
       default:
         this.fail(`走路中斷 ${code}${message ? `（${message}）` : ''}`);
@@ -155,12 +177,13 @@ export class AutoNavigator {
     this.host.after(RETRY_MS, () => this.step(token));
   }
 
-  /** `arrivedAtExit`＝剛走完前往出口的那一段卻沒換圖。 */
-  private step(token: number, arrivedAtExit = false, talkNow = false): void {
+  private step(token: number, talkNow = false): void {
     if (token !== this.token || !this.status.goal) return;
     const goal = this.status.goal;
     const st = this.host.state();
     if (this.host.state().battle) { this.set({ ...this.status, phase: 'PAUSED_BATTLE', text: '導航：戰鬥中，暫停' }); return; }
+    // 宿主在沒有場景資料的地圖（模擬野外）不會送快照；目標就是這張圖時，知道所在位置就算到了。
+    if (goal.kind === 'MAP' && st.location?.mapId === goal.mapId) { this.set({ ...this.status, phase: 'DONE', text: `導航：已到達 ${st.location.mapName ?? goal.name}` }); return; }
     const snap = st.snapshot;
     if (!snap || !st.location || snap.mapId !== st.location.mapId) { this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：等待場景快照' }); return; }
     if (this.awaitFrom) {
@@ -175,15 +198,17 @@ export class AutoNavigator {
     if (!targetMap) { this.fail(goal.kind === 'NPC' ? `不知道「${goal.query}」在哪張圖` : '沒有目標地圖'); return; }
 
     if (snap.mapId !== targetMap) {
-      if (arrivedAtExit) { this.fail('走到出口了但沒有換圖'); return; }
+      if (this.blocked.size > MAX_BLOCKED_EXITS) { this.fail(`試了 ${this.blocked.size} 個出口都到不了下一張圖`); return; }
       const route = planMapRoute(this.host.dir.adjacency(snap), snap.mapId, targetMap);
       if (!route) { this.fail(`找不到從 ${snap.mapName ?? snap.mapId} 到 ${this.host.dir.mapName(targetMap) ?? targetMap} 的路線（只知道看過的地圖出口）`); return; }
       const next = route[1];
-      const exit = snap.exits.find(e => e.targetMapId === next);
-      if (!exit) { this.fail(`這張圖沒有通往 ${next} 的出口`); return; }
+      const c0 = st.character;
+      const exit = snap.exits.filter(e => e.targetMapId === next && !this.blocked.has(e.id))
+        .sort((a, b) => (c0 ? dist(c0.x, c0.y, a.x, a.y) - dist(c0.x, c0.y, b.x, b.y) : 0))[0];
+      if (!exit) { this.fail(snap.exits.some(e => e.targetMapId === next) ? `通往 ${next} 的出口都走不通` : `這張圖沒有通往 ${next} 的出口`); return; }
       const names = route.map(m => this.host.dir.mapName(m) ?? m);
       this.set({ ...this.status, phase: 'WALKING', route, text: `導航：${names.join(' → ')}　現在前往出口「${exit.name}」` });
-      this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: exit.x, y: exit.y }, `導航：走向出口「${exit.name}」`, 'LEG', 'MAP_CHANGED', snap.mapId);
+      this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: exit.x, y: exit.y }, `導航：走向出口「${exit.name}」`, 'LEG', 'MAP_CHANGED', snap.mapId, exit.id);
       return;
     }
 
@@ -218,10 +243,10 @@ export class AutoNavigator {
     return hits.length ? hits[0].mapId : null;
   }
 
-  private issue(command: PluginCommand, label: string, role: 'LEG' | 'APPROACH' | 'TALK', expect: string, fromMap: string): void {
+  private issue(command: PluginCommand, label: string, role: 'LEG' | 'APPROACH' | 'TALK', expect: string, fromMap: string, exitId?: string): void {
     const id = this.host.send(command, label, expect);
     if (!id) { this.fail('指令送不出去（遊戲未執行？）'); return; }
-    this.current = { commandId: id, role, fromMap };
+    this.current = { commandId: id, role, fromMap, exitId };
   }
 
   private fail(why: string): void {

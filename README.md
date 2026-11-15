@@ -88,5 +88,18 @@ npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔
 - [ ] 遊戲裡點地板走路 → 日誌出現「走到 (x, y)」，角色列位置與遊戲一致。
 - [ ] 遊戲裡點 NPC 對話 → 日誌與場景區出現該 NPC 與對白；關閉對話 → 「對話結束」。
 - [ ] 買東西 → 金錢與道具變動事件；走進傳送點 → 「移動到…（換圖）」且場景選單換成新地圖的 NPC／出口。
-- [ ] family 點「對話：某 NPC」或輸入 `前往 村長` → 日誌顯示送出與 `NOT_IMPLEMENTED_P1`，commandId 與遊戲 `?dev=1` 面板相同。
+- [ ] （P1 版本；P2 起指令會真的執行，見下節）family 點「對話：某 NPC」或輸入 `前往 村長` → commandId 與遊戲 `?dev=1` 面板相同。
 
+## P2：自動導航、自動戰鬥與文字操作（文字 → 遊戲）
+
+協定版本 2。宿主（fairyland）真的執行 `WALK_TO`（只限同一張圖）、`TALK_TO_NPC`、`CHOOSE_DIALOG_OPTION`、`ACCEPT_QUEST`、`BUY_ITEM`、`SELL_ITEM`、`BATTLE_ACTION`、`BATTLE_FLEE`；每個指令先回「已接受／被拒絕＋原因碼」，需要時間的再送 `COMMAND_COMPLETED`。`WORK_ONCE` 仍是 `NOT_IMPLEMENTED`（P3）。
+
+- **自動導航**（`src/navigator.ts`）：`前往 村長`＝規劃跨圖路線（協定資料夾的 `planMapRoute`，鄰接來自快照 `nav.portalGraph` 與外掛看過的各圖出口）→ 每張圖用 `WALK_TO` 走到下一個出口 → 換圖後等新快照再繼續 → 抵達後 `TALK_TO_NPC`。遇敵暫停，戰鬥結束從目前位置續走；遊戲回 `GAME_BUSY`（結算視窗還沒關）就每秒重試。重新派發、取消（`停止導航`）或遊戲重啟都會讓舊的完成處理失效。出口走不通（`BLOCKED`、或走到卻沒換圖）會換同一目的地的另一個出口。
+- **自動戰鬥**（`src/battler.ts`）：策略 手動（預設，什麼都不做）／普通攻擊／逃跑，記在 localStorage。只在 `BATTLE_TURN_READY` 出手，同一（場次, 回合）最多一次；非手動策略在戰鬥結束後會送 `RETURN_TO_MAP`／`DEFEAT_RESCUE` 關掉結算視窗。逃跑公式是宿主的**佔位值**（見 fairyland NEXT_PHASE_PLAN §13.6），不是原版數值。
+- **已知目錄**（`src/directory.ts`）：預設知道村長傑夫在市鎮中心 20010；每份快照看到的 NPC 與出口都會記住（localStorage）。宿主沒有世界目錄，所以沒去過的地方只能靠 `portalGraph` 與這份預設清單。
+- **面板**：對話選項、商店（買／賣）、戰鬥（攻擊／防禦／逃跑、勝敗視窗）、導航狀態與取消、策略下拉；文字輸入與按鈕走同一個 `UiAction`（`src/parse.ts`）。日誌每個指令都顯示「預期 vs 實際」（例如 `預期 MAP_CHANGED／實際 ENCOUNTER ✗`）。
+- **回放模式**（`?replay=1`）只回應 `REQUEST_SNAPSHOT`，其他指令回 `NOT_IMPLEMENTED`（不模擬遊戲）；P2 的真實行為用 fairyland 的 `scripts/plugin_p2_check.mjs` 兩分頁端到端檢查。
+
+文字指令：`前往 村長`、`對話 阿爾`、`走到 x y`、`選項 <id 或文字>`、`買／賣 <id 或名稱> [數量]`、`攻擊 [目標]`、`防禦`、`逃跑`、`策略 手動|普通攻擊|逃跑`、`停止導航`、`快照`、`talk <名>`（不走過去，太遠會 `TOO_FAR`）。
+
+已知限制：模擬野外地圖（如 `FIELD_MEADOW`）宿主不送場景快照，外掛只知道所在地圖 id（選單不更新）；市鎮中心沒有走得通的出口回吉恩村。

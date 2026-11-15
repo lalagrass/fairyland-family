@@ -15,6 +15,8 @@ export type ParseResult =
 
 /** 解析時可參考的外掛端資料（都是選用）。 */
 export interface ParseContext {
+  /** 目前所在地圖（事件追蹤的位置）；宿主在沒有場景資料的地圖不送快照時，快照的 mapId 會是上一張圖。 */
+  mapId?: string | null;
   dialogOptions?: DialogOption[];
   enemies?: BattleEnemyState[];
   battleId?: number | null;
@@ -80,8 +82,9 @@ export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseC
 
     case '走到': case 'walk': {
       if (nums.length !== 2 || nums.some(n => !Number.isFinite(n))) return fail('用法：走到 <x> <y>（世界座標）');
-      if (!snap) return fail('還沒有場景快照，無法知道目前地圖');
-      return cmd({ type: 'WALK_TO', mapId: snap.mapId, x: nums[0], y: nums[1] }, `走到 (${nums[0]}, ${nums[1]})`);
+      const mapId = ctx.mapId ?? snap?.mapId;
+      if (!mapId) return fail('還沒有場景快照，無法知道目前地圖');
+      return cmd({ type: 'WALK_TO', mapId, x: nums[0], y: nums[1] }, `走到 (${nums[0]}, ${nums[1]})`);
     }
 
     case '接任務': case 'accept': {

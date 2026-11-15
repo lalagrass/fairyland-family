@@ -150,7 +150,7 @@ export class FamilyController {
   parseAndSend(text: string): string | null {
     const s = this.state;
     const r = parseInput(text, s.snapshot, {
-      dialogOptions: s.dialog?.options, enemies: s.battle?.enemyStates, battleId: s.battle?.battleId ?? null, inventory: s.inventory,
+      mapId: s.location?.mapId, dialogOptions: s.dialog?.options, enemies: s.battle?.enemyStates, battleId: s.battle?.battleId ?? null, inventory: s.inventory,
       findNpc: q => this.directory.findNpc(q), findMap: q => this.directory.findMap(q),
     });
     if (!r.ok) return r.error;

@@ -1197,7 +1197,7 @@
        "name": "食品店",
        "x": 4880,
        "y": 3880,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1205,7 +1205,7 @@
        "name": "裝備店",
        "x": 2760,
        "y": 5060,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1221,7 +1221,7 @@
        "name": "魚貨店",
        "x": 5720,
        "y": 5220,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1229,7 +1229,7 @@
        "name": "木工店",
        "x": 2680,
        "y": 4660,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1237,7 +1237,7 @@
        "name": "肉品店",
        "x": 4320,
        "y": 1960,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1245,7 +1245,7 @@
        "name": "農家",
        "x": 4800,
        "y": 2240,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1253,7 +1253,7 @@
        "name": "裁縫店",
        "x": 5280,
        "y": 2440,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1261,7 +1261,7 @@
        "name": "酒館",
        "x": 3400,
        "y": 2780,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1269,7 +1269,7 @@
        "name": "整修中...",
        "x": 4640,
        "y": 5600,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1277,7 +1277,7 @@
        "name": "牧場",
        "x": 3040,
        "y": 1960,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1301,7 +1301,7 @@
        "name": "往青蛙沼澤",
        "x": 7240,
        "y": 7380,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1325,7 +1325,7 @@
        "name": "往酒館",
        "x": 4160,
        "y": 3440,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1333,7 +1333,7 @@
        "name": "往裁縫店",
        "x": 4160,
        "y": 3000,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1349,7 +1349,7 @@
        "name": "阿米的家",
        "x": 2560,
        "y": 1920,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1357,7 +1357,7 @@
        "name": "雲兒的家",
        "x": 3640,
        "y": 2140,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1365,7 +1365,7 @@
        "name": "可蜜的家",
        "x": 2760,
        "y": 2740,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1373,7 +1373,7 @@
        "name": "卡卡路的家",
        "x": 5760,
        "y": 2640,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1381,7 +1381,7 @@
        "name": "拉斐的家",
        "x": 6320,
        "y": 3800,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1389,7 +1389,7 @@
        "name": "賽司的家",
        "x": 4800,
        "y": 4760,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1397,7 +1397,7 @@
        "name": "特爾凱的家",
        "x": 6200,
        "y": 4620,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1405,7 +1405,7 @@
        "name": "排行榜",
        "x": 3680,
        "y": 4600,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1413,7 +1413,7 @@
        "name": "心情留言版",
        "x": 3520,
        "y": 3560,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       },
       {
@@ -1421,7 +1421,7 @@
        "name": "天空小屋",
        "x": 400,
        "y": 2960,
-       "targetMapId": "TOWN_GIEN",
+       "targetMapId": "10001",
        "targetMapName": "吉恩村"
       }
      ],

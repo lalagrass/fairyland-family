@@ -124,7 +124,7 @@ suite('navigator: re-dispatch / cancel invalidate the old arrival handler');
   h.c.parseAndSend('前往 村長');
   h.advance(50);
   assert(h.c.navStatus().phase === 'FAILED', 'BLOCKED fails the navigation with a reason');
-  assert(h.c.navStatus().text.includes('BLOCKED'), 'failure text names the code');
+  assert(h.c.navStatus().text.includes('走不通'), 'failure text says the exits are blocked');
   assert(!!held, 'sanity');
   // 重新派發後，舊指令的完成事件不得推進新的導航
   const h2 = harness();

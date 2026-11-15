@@ -68,4 +68,6 @@ for (const bad of ['', '飛 天上', '走到 abc', '接任務', '前往', '前�
 assert(!parseInput('前往 阿爾', null).ok, 'name lookups need a snapshot or a directory');
 const ambiguous = parseInput('對話 阿', village, ctx);
 assert(!ambiguous.ok && ambiguous.error.includes('多個'), 'ambiguous names list candidates');
+const wf = parseInput('走到 100 200', village, { mapId: 'FIELD_MEADOW' });
+assert(wf.ok && (cmdOf(wf.action) as any).mapId === 'FIELD_MEADOW', '走到 uses the tracked location when the snapshot is from the previous map (simulated fields send no snapshot)');
 done();

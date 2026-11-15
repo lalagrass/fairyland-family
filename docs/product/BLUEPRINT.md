@@ -113,6 +113,8 @@
 
 **P1 實作狀態**：FX1／FX2／FX10 已在 fairyland 分支 `claude/project-thread-j7vbgy` 完成（遊戲 → 文字方向；外掛指令一律回 `NOT_IMPLEMENTED_P1`，P2 才執行）。協定副本由 `npm run sync-protocol` 同步；採集點資料與商店原版資料仍缺（FX6）。
 
+**P2 實作狀態**：FX3 已在 fairyland 分支 `claude/project-thread-j7vbgy`、外掛端導航／自動戰鬥在本 repo 同名分支完成（協定版本 2）。外掛指令現在真的執行並回報「接受／拒絕＋原因碼＋完成事件」；`前往 村長` 由外掛拆成多段同圖 `WALK_TO` ＋ `TALK_TO_NPC`（FX11 的第一個實例：導航器是外掛端邏輯，宿主只做單步）。逃跑公式是宿主佔位值（無原版公式來源）；野外模擬地圖沒有場景快照；`WORK_ONCE` 仍待 P3。細節見 fairyland `docs/design/NEXT_PHASE_PLAN.md` §13.6 與本 repo README「P2」。
+
 建議順序（對應 fairyland NEXT_PHASE_PLAN.md §13.2 的 P1–P4）：FX1 → FX2、FX10（FX6 平行）＝P1 → FX3（原子動作＋單角色存檔接續＋外掛導航／自動戰鬥；主遊戲自動功能先隱藏）＝P2 → FX6＋外掛端 FX5／FX11＝P3 → **G1 單角色對照關卡** → FX4、FX7 多角色＝P4。兩個專案的 milestone 一起規劃：fairyland 只負責穩定薄宿主與資料提取，family 用假 fairyland 先開發，不互相等待；每個 FX 完成時，以介面約定中的同一組情境（例如「前往村長」「採礦直到背包滿」）在真的 fairyland 上驗收。
 
 ## 3. 核心循環與第一次遊玩【提案】
