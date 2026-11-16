@@ -123,13 +123,17 @@
 | 任務摘要與戰鬥狀態（FX1／FX10 延伸） | 部分完成 | wave 1–2 | 快照帶任務清單與戰鬥狀態；family 有任務面板與「自動接取／推進／回報」，但只涵蓋示範任務，討伐目標的地圖靠名稱猜測 |
 | FX9 | 未開始 | P6 | 觀察畫面與常駐伺服器 |
 
+**第四輪（2026-11-17）**：W3、W4、W5 已合併（本 repo PR #4、#5）。接下來是 W7a 倉庫清理 → W7b CI → W7c 宿主與協定清理，再接 W8；順序與清理清單在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §16。
+
 **下一階段（2026-11-16 規劃，【提案】）**：兩邊的待辦收在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §15.1，milestone 是 §15.3 的 W3–W14，待決定事項在 §15.4。2026-11-16 晚 Yuying 調整為**只做吉恩村、現階段以本機分頁為主**，並加入現代地圖架構與武俠新角色（設計在 fairyland `docs/design/WORLD_AND_WUXIA_DIRECTION.md`）。建議主順序：W3 → W4 → W5 → W7 → W8 → W9 → W10 → W12 → W13 → W14；W6 考據與 W11 武俠立繪全程平行。family 端相關的有：
 
 | Milestone | family 端工作 | 需要 fairyland 配合 |
 | --- | --- | --- |
 | W3 試玩前小修 | 無功能變更，配合 Mac 雙分頁實機試玩 | 座標標籤、靜音、幻獸／野怪技能名稱對照 |
 | W5 顯示第一波＋任務導航 | 先換輕量 UI 框架（React 或 Preact），再做顯示第一波 DV1–DV5（除錯資訊收進 `?dev=1`、三欄版面、進度條與剩餘時間、日誌分類／×N／篩選、背景通知），角色卡預留立繪位置；自動任務改用宿主提供的目標地圖，不再比對出口名稱（`src/controller.ts`），串成全鏈並加端到端腳本 | 任務快照附目標地圖提示；工作快照送 `endsAt` |
-| W7 宿主收尾＋CI | 加 GitHub Actions（`npm run build`、`npm test`、`check-protocol`） | 刪除宿主 `?dev=1` 舊自動尋路／自動戰鬥 |
+| W7a 倉庫清理 | 刪已合併分支、封存 `claude/project-thread-j7vbgy`（打 tag `archive/j7vbgy`）、本 §2.5 同步 | 同步清理 |
+| W7b CI | 加 GitHub Actions（`npm ci`、`npm run build`、`npm test`）；協定一致檢查改在 fairyland 的 CI 跑，因為本 repo 公開、拿不到私有的 fairyland | fairyland CI checkout 本 repo 跑 `check-protocol` |
+| W7c 宿主與協定清理 | 協定 v4：配方表等靜態資料改成連線時收一次，不再從每次快照讀（B9） | 協定 v4；刪除宿主 `?dev=1` 舊自動尋路／自動戰鬥（等 Yuying 實機試玩 W3–W5 通過） |
 | W8 共用繪圖器 | 接收同步過來的 `packages/render`（PixiJS） | 抽出 `packages/render`、特效改成 JSON 腳本 |
 | W9–W10 現代地圖 | 導航改讀新地圖格式的區域與碰撞（協定的 `mapId` 改成世界＋區塊或保留舊 id 當區域名） | 自有世界資料格式、分塊渲染、吉恩生活圈連續世界、LDtk 編輯 |
 | W11 武俠立繪 | 角色卡、對話與戰報顯示武俠立繪與表情 | 風格參考板、角色設定（美術工作） |
