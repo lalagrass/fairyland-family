@@ -123,16 +123,21 @@
 | 任務摘要與戰鬥狀態（FX1／FX10 延伸） | 部分完成 | wave 1–2 | 快照帶任務清單與戰鬥狀態；family 有任務面板與「自動接取／推進／回報」，但只涵蓋示範任務，討伐目標的地圖靠名稱猜測 |
 | FX9 | 未開始 | P6 | 觀察畫面與常駐伺服器 |
 
-**下一階段（2026-11-16 規劃，【提案】）**：兩邊的待辦已收成一張表，放在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §15.1，下一階段 milestone 是 §15.3 的 W3–W9。family 端相關的有：
+**下一階段（2026-11-16 規劃，【提案】）**：兩邊的待辦已收成一張表，放在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §15.1；milestone 是 §15.3 的 W3–W14（同日第二輪把「新素材」「family 放置型主畫面與手機版」「常駐宿主」研究一起排入），待決定事項在 §15.4。建議主順序：W3 → W4 → W5 → W7 →（決策關卡）→ W8 → W9 → W10 → W11 → W12 → W13 → W14，W6 考據全程平行。family 端相關的有：
 
 | Milestone | family 端工作 | 需要 fairyland 配合 |
 | --- | --- | --- |
 | W3 試玩前小修 | 無功能變更，配合 Mac 雙分頁實機試玩 | 座標標籤、靜音、幻獸／野怪技能名稱對照 |
-| W5 顯示改版＋任務導航 | 顯示改版【提案，已排進 backlog】：第一波 DV1–DV5（除錯資訊收進 `?dev=1`、三欄版面、進度條與剩餘時間、日誌分類／×N／篩選、背景通知，同一 PR、不動協定）、第二波 DV6–DV9（Ctrl+K、回來摘要、佇列卡片、漸進揭露）；第三波 DV10–DV12（地圖節點圖、任務卡片、觀察畫面）等試玩回饋。細節見 NEXT_PHASE_PLAN §15.3.1。自動任務的討伐目標改用宿主提供的目標地圖，不再比對出口名稱（`src/controller.ts`）；「導航 → 達成 → 回報」全鏈與端到端腳本 | 任務快照附目標地圖提示；工作快照送 `endsAt`（DV3） |
-| W7 宿主收尾 | 加 GitHub Actions（`npm run build`、`npm test`、`check-protocol`） | 刪除宿主 `?dev=1` 舊自動尋路／自動戰鬥 |
+| W5 顯示第一波＋任務導航 | 先換輕量 UI 框架（React 或 Preact），再做顯示第一波 DV1–DV5（除錯資訊收進 `?dev=1`、三欄版面且預留手機直向、進度條與剩餘時間、日誌分類／×N／篩選、背景通知）；自動任務改用宿主提供的目標地圖，不再比對出口名稱（`src/controller.ts`），串成全鏈並加端到端腳本 | 任務快照附目標地圖提示；工作快照送 `endsAt` |
+| W7 宿主收尾＋CI | 加 GitHub Actions（`npm run build`、`npm test`、`check-protocol`） | 刪除宿主 `?dev=1` 舊自動尋路／自動戰鬥 |
 | W8 綠夫村 | 用綠夫村跑一次完整對照 | R3-1 解鎖精靈與綠夫村 |
-| W9 伊利村＋平衡 | 工作秒數（考據 Task C）接進排程器 | R3-2、V6、V7 |
-| 未排程（研究提案，先進 backlog） | family 成為放置型主畫面：桌機觀察畫面（MB2）、手機 PWA（MB4）、雲端與推播（MB5）、介面改用 React／Preact；系統頁顯示宿主健康狀態 | 共用繪圖器 `packages/render`（PixiJS，MB1）、常駐宿主取代「分頁開著＝時鐘」（MB3，未決定）、新素材管線 A0–A5。細節見 NEXT_PHASE_PLAN §15.1 G／H／I 與 §15.4 |
+| W9 共用繪圖器 | 接收同步過來的 `packages/render`（PixiJS） | 抽出 `packages/render`、特效改成 JSON 腳本 |
+| W10 常駐宿主【假設 Yuying 同意】 | 改連常駐宿主，不再以「fairyland 分頁開著」判斷遊戲是否進行；系統頁顯示宿主健康狀態 | 無畫面宿主跑引擎與時鐘、`/health`、自動重啟、浸泡測試；主機假設 Oracle Always Free 東京／大阪 |
+| W11 觀察畫面＋顯示第二波 | 桌機觀察畫面（播放走路與戰鬥，即 FX9 觀察畫面）；DV6–DV9（Ctrl+K、回來摘要、佇列卡片、漸進揭露） | `packages/render`、宿主事件歷史 |
+| W12 伊利村＋平衡 | 工作秒數（考據 Task C）接進排程器 | R3-2、V6、V7 |
+| W13 手機版 PWA【同 W10 假設】 | 直向版型、`vite-plugin-pwa`、手機連常駐宿主 | W10 |
+
+之後才排：雲端與推播（只能帶自製素材，需 fairyland W14 新角色管線）、顯示第三波（地圖節點圖、任務卡片）。若 Yuying 決定不改成常駐宿主，W10、W13 取消，W11 只做桌機。
 
 建議順序（對應 fairyland NEXT_PHASE_PLAN.md §13.2 的 P1–P4）：FX1 → FX2、FX10（FX6 平行）＝P1 → FX3（原子動作＋單角色存檔接續＋外掛導航／自動戰鬥；主遊戲自動功能先隱藏）＝P2 → FX6＋外掛端 FX5／FX11＝P3 → **G1 單角色對照關卡** → FX4、FX7 多角色＝P4。兩個專案的 milestone 一起規劃：fairyland 只負責穩定薄宿主與資料提取，family 用假 fairyland 先開發，不互相等待；每個 FX 完成時，以介面約定中的同一組情境（例如「前往村長」「採礦直到背包滿」）在真的 fairyland 上驗收。
 
