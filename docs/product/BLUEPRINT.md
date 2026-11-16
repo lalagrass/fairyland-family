@@ -132,6 +132,7 @@
 | W7 宿主收尾 | 加 GitHub Actions（`npm run build`、`npm test`、`check-protocol`） | 刪除宿主 `?dev=1` 舊自動尋路／自動戰鬥 |
 | W8 綠夫村 | 用綠夫村跑一次完整對照 | R3-1 解鎖精靈與綠夫村 |
 | W9 伊利村＋平衡 | 工作秒數（考據 Task C）接進排程器 | R3-2、V6、V7 |
+| 未排程（研究提案，先進 backlog） | family 成為放置型主畫面：桌機觀察畫面（MB2）、手機 PWA（MB4）、雲端與推播（MB5）、介面改用 React／Preact；系統頁顯示宿主健康狀態 | 共用繪圖器 `packages/render`（PixiJS，MB1）、常駐宿主取代「分頁開著＝時鐘」（MB3，未決定）、新素材管線 A0–A5。細節見 NEXT_PHASE_PLAN §15.1 G／H／I 與 §15.4 |
 
 建議順序（對應 fairyland NEXT_PHASE_PLAN.md §13.2 的 P1–P4）：FX1 → FX2、FX10（FX6 平行）＝P1 → FX3（原子動作＋單角色存檔接續＋外掛導航／自動戰鬥；主遊戲自動功能先隱藏）＝P2 → FX6＋外掛端 FX5／FX11＝P3 → **G1 單角色對照關卡** → FX4、FX7 多角色＝P4。兩個專案的 milestone 一起規劃：fairyland 只負責穩定薄宿主與資料提取，family 用假 fairyland 先開發，不互相等待；每個 FX 完成時，以介面約定中的同一組情境（例如「前往村長」「採礦直到背包滿」）在真的 fairyland 上驗收。
 
