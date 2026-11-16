@@ -1,13 +1,13 @@
 {
  "format": "fairyland-replay/1",
  "description": "吉恩村→市鎮中心的示範序列：走路、阿爾對話、一場戰鬥、金錢道具、換圖、村長對話。快照來自真實地圖資料；事件順序為手排。回放模式只回應 REQUEST_SNAPSHOT，其他指令回 NOT_IMPLEMENTED（不模擬遊戲）。",
- "protocolVersion": 2,
+ "protocolVersion": 3,
  "characterId": "replay-char-1",
  "steps": [
   {
    "at": 0,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -21,7 +21,7 @@
   {
    "at": 60,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -40,7 +40,7 @@
   {
    "at": 120,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -61,7 +61,12 @@
       "x": 3880,
       "y": 3740,
       "dir": 2,
-      "inBattle": false
+      "inBattle": false,
+      "satiety": 100,
+      "maxSatiety": 100,
+      "inventoryCount": 0,
+      "inventoryCap": 40,
+      "workSkills": {}
      },
      "npcs": [
       {
@@ -575,7 +580,7 @@
        "y": 360,
        "gridX": 87,
        "gridY": 18,
-       "role": "VILLAGER",
+       "role": "MENTOR",
        "talkable": true,
        "isAnimal": false,
        "isShop": false
@@ -595,83 +600,1086 @@
      ],
      "exits": [
       {
-       "id": "portal_0",
-       "name": "雜貨店",
-       "x": 1760,
-       "y": 3880,
-       "targetMapId": "20001",
-       "targetMapName": "雜貨店"
-      },
-      {
-       "id": "portal_1",
-       "name": "吉恩村市鎮中心",
-       "x": 2800,
-       "y": 3880,
-       "targetMapId": "20010",
-       "targetMapName": "吉恩村市鎮中心"
-      },
-      {
-       "id": "portal_2",
-       "name": "醫院",
-       "x": 5560,
-       "y": 3860,
-       "targetMapId": "20007",
-       "targetMapName": "醫院"
-      },
-      {
-       "id": "portal_5",
-       "name": "打鐵舖",
-       "x": 3240,
-       "y": 5340,
-       "targetMapId": "20009",
-       "targetMapName": "打鐵舖"
-      },
-      {
-       "id": "portal_14",
+       "id": "portal_10001_00_10004",
        "name": "往北綠野",
-       "x": 880,
+       "x": 560,
        "y": 360,
-       "targetMapId": "FIELD_MEADOW",
-       "targetMapName": null
+       "targetMapId": "10004",
+       "targetMapName": "北綠野"
       },
       {
-       "id": "portal_15",
-       "name": "往南綠野",
-       "x": 2600,
-       "y": 7580,
-       "targetMapId": "FIELD_MEADOW",
-       "targetMapName": null
+       "id": "portal_10001_01_10005",
+       "name": "前往 南綠野",
+       "x": 2560,
+       "y": 7720,
+       "targetMapId": "10005",
+       "targetMapName": "南綠野"
       },
       {
-       "id": "portal_17",
-       "name": "往雜貨店",
-       "x": 3720,
-       "y": 3860,
+       "id": "portal_10001_02_10011",
+       "name": "前往 尼克草原",
+       "x": 7160,
+       "y": 340,
+       "targetMapId": "10011",
+       "targetMapName": "尼克草原"
+      },
+      {
+       "id": "portal_10001_03_20001",
+       "name": "雜貨店",
+       "x": 1960,
+       "y": 3820,
        "targetMapId": "20001",
        "targetMapName": "雜貨店"
       },
       {
-       "id": "portal_18",
-       "name": "西北方往打鐵舖、裝備店；東北方往魚貨店",
-       "x": 4160,
-       "y": 5880,
-       "targetMapId": "20009",
-       "targetMapName": "打鐵舖"
+       "id": "portal_10001_04_20002",
+       "name": "食品店",
+       "x": 5080,
+       "y": 3860,
+       "targetMapId": "20002",
+       "targetMapName": "麵包店"
       },
       {
-       "id": "portal_21",
-       "name": "往食品店、醫院",
+       "id": "portal_10001_05_20003",
+       "name": "魚貨店",
+       "x": 5800,
+       "y": 5260,
+       "targetMapId": "20003",
+       "targetMapName": "魚貨店"
+      },
+      {
+       "id": "portal_10001_06_20004",
+       "name": "農家",
+       "x": 5000,
+       "y": 2260,
+       "targetMapId": "20004",
+       "targetMapName": "農家"
+      },
+      {
+       "id": "portal_10001_07_20005",
+       "name": "肉品店",
        "x": 4400,
-       "y": 4080,
+       "y": 2000,
+       "targetMapId": "20005",
+       "targetMapName": "肉品店"
+      },
+      {
+       "id": "portal_10001_08_20006",
+       "name": "裁縫店",
+       "x": 5480,
+       "y": 2500,
+       "targetMapId": "20006",
+       "targetMapName": "裁縫店"
+      },
+      {
+       "id": "portal_10001_09_20007",
+       "name": "醫院",
+       "x": 5680,
+       "y": 3840,
        "targetMapId": "20007",
        "targetMapName": "醫院"
+      },
+      {
+       "id": "portal_10001_10_20008",
+       "name": "木工店",
+       "x": 2600,
+       "y": 4700,
+       "targetMapId": "20008",
+       "targetMapName": "木工店"
+      },
+      {
+       "id": "portal_10001_11_20009",
+       "name": "打鐵舖",
+       "x": 3320,
+       "y": 5380,
+       "targetMapId": "20009",
+       "targetMapName": "打鐵鋪"
+      },
+      {
+       "id": "portal_10001_12_20010",
+       "name": "吉恩村市鎮中心",
+       "x": 3000,
+       "y": 3860,
+       "targetMapId": "20010",
+       "targetMapName": "市鎮中心"
+      },
+      {
+       "id": "portal_10001_13_20011",
+       "name": "酒館",
+       "x": 3560,
+       "y": 2820,
+       "targetMapId": "20011",
+       "targetMapName": "酒館室內"
+      },
+      {
+       "id": "portal_10001_14_20012",
+       "name": "裝備店",
+       "x": 2840,
+       "y": 5100,
+       "targetMapId": "20012",
+       "targetMapName": "裝備店"
+      },
+      {
+       "id": "portal_10001_15_20013",
+       "name": "阿米的家",
+       "x": 2760,
+       "y": 1940,
+       "targetMapId": "20013",
+       "targetMapName": "阿米的家"
+      },
+      {
+       "id": "portal_10001_16_20014",
+       "name": "雲兒的家",
+       "x": 3480,
+       "y": 2100,
+       "targetMapId": "20014",
+       "targetMapName": "雲兒的家"
+      },
+      {
+       "id": "portal_10001_17_20026",
+       "name": "卡卡路的家",
+       "x": 5880,
+       "y": 2700,
+       "targetMapId": "20026",
+       "targetMapName": "卡卡路的家"
+      },
+      {
+       "id": "portal_10001_18_20027",
+       "name": "可蜜的家",
+       "x": 2880,
+       "y": 2680,
+       "targetMapId": "20027",
+       "targetMapName": "可蜜的家"
+      },
+      {
+       "id": "portal_10001_19_20028",
+       "name": "拉斐的家",
+       "x": 6200,
+       "y": 3860,
+       "targetMapId": "20028",
+       "targetMapName": "拉斐的家"
+      },
+      {
+       "id": "portal_10001_20_20029",
+       "name": "特爾凱的家",
+       "x": 6040,
+       "y": 4580,
+       "targetMapId": "20029",
+       "targetMapName": "特爾凱的家"
+      },
+      {
+       "id": "portal_10001_21_20030",
+       "name": "賽司的家",
+       "x": 4640,
+       "y": 4720,
+       "targetMapId": "20030",
+       "targetMapName": "賽司的家"
+      },
+      {
+       "id": "portal_10001_22_20680",
+       "name": "天空小屋",
+       "x": 480,
+       "y": 2880,
+       "targetMapId": "20680",
+       "targetMapName": "天空小屋"
       }
      ],
      "gatherPoints": {
-      "status": "UNAVAILABLE",
-      "reason": "FX6_NOT_EXTRACTED",
-      "points": []
+      "status": "AVAILABLE",
+      "points": [
+       {
+        "id": "gather_10001_z1_s1",
+        "name": "吉恩村 伐木點#1",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 4020,
+        "y": 3540,
+        "skillId": 1,
+        "skillName": "伐木",
+        "requiredToolItemId": 51001,
+        "requiredToolName": "伐木斧",
+        "materials": [
+         {
+          "itemId": 10101,
+          "name": "竹子",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10102,
+          "name": "藤條",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10103,
+          "name": "白楊木",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z1_s2",
+        "name": "吉恩村 採集點#1",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 3961,
+        "y": 3673,
+        "skillId": 2,
+        "skillName": "採集",
+        "requiredToolItemId": 51002,
+        "requiredToolName": "小藥杵",
+        "materials": [
+         {
+          "itemId": 10403,
+          "name": "生薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10404,
+          "name": "老薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10405,
+          "name": "黃蔓葵",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10406,
+          "name": "半夏",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z1_s4",
+        "name": "吉恩村 狩獵點#1",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 3750,
+        "y": 3685,
+        "skillId": 4,
+        "skillName": "狩獵",
+        "requiredToolItemId": 51004,
+        "requiredToolName": "獵刀",
+        "materials": [
+         {
+          "itemId": 10301,
+          "name": "雞肉",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10302,
+          "name": "豬肉",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z3_s1",
+        "name": "吉恩村 伐木點#3",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 7260,
+        "y": 2000,
+        "skillId": 1,
+        "skillName": "伐木",
+        "requiredToolItemId": 51001,
+        "requiredToolName": "伐木斧",
+        "materials": [
+         {
+          "itemId": 10101,
+          "name": "竹子",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10102,
+          "name": "藤條",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10103,
+          "name": "白楊木",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z3_s2",
+        "name": "吉恩村 採集點#3",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 7201,
+        "y": 2133,
+        "skillId": 2,
+        "skillName": "採集",
+        "requiredToolItemId": 51002,
+        "requiredToolName": "小藥杵",
+        "materials": [
+         {
+          "itemId": 10403,
+          "name": "生薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10404,
+          "name": "老薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10405,
+          "name": "黃蔓葵",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10406,
+          "name": "半夏",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z3_s4",
+        "name": "吉恩村 狩獵點#3",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 7020,
+        "y": 2130,
+        "skillId": 4,
+        "skillName": "狩獵",
+        "requiredToolItemId": 51004,
+        "requiredToolName": "獵刀",
+        "materials": [
+         {
+          "itemId": 10301,
+          "name": "雞肉",
+          "reqLevel": 1
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z3_s8",
+        "name": "吉恩村 農事點#3",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 6863,
+        "y": 1966,
+        "skillId": 8,
+        "skillName": "農事",
+        "requiredToolItemId": 51007,
+        "requiredToolName": "剪刀",
+        "materials": [
+         {
+          "itemId": 10401,
+          "name": "蘋果",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10402,
+          "name": "桃子",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z4_s1",
+        "name": "吉恩村 伐木點#4",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 5980,
+        "y": 760,
+        "skillId": 1,
+        "skillName": "伐木",
+        "requiredToolItemId": 51001,
+        "requiredToolName": "伐木斧",
+        "materials": [
+         {
+          "itemId": 10101,
+          "name": "竹子",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10102,
+          "name": "藤條",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10103,
+          "name": "白楊木",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z4_s2",
+        "name": "吉恩村 採集點#4",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 5921,
+        "y": 893,
+        "skillId": 2,
+        "skillName": "採集",
+        "requiredToolItemId": 51002,
+        "requiredToolName": "小藥杵",
+        "materials": [
+         {
+          "itemId": 10403,
+          "name": "生薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10404,
+          "name": "老薑",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10405,
+          "name": "黃蔓葵",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10406,
+          "name": "半夏",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z4_s4",
+        "name": "吉恩村 狩獵點#4",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 5710,
+        "y": 905,
+        "skillId": 4,
+        "skillName": "狩獵",
+        "requiredToolItemId": 51004,
+        "requiredToolName": "獵刀",
+        "materials": [
+         {
+          "itemId": 10301,
+          "name": "雞肉",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10302,
+          "name": "豬肉",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z4_s8",
+        "name": "吉恩村 農事點#4",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 5583,
+        "y": 726,
+        "skillId": 8,
+        "skillName": "農事",
+        "requiredToolItemId": 51007,
+        "requiredToolName": "剪刀",
+        "materials": [
+         {
+          "itemId": 10401,
+          "name": "蘋果",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10402,
+          "name": "桃子",
+          "reqLevel": 5
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z5_s8",
+        "name": "吉恩村 農事點#5",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 2380,
+        "y": 1880,
+        "skillId": 8,
+        "skillName": "農事",
+        "requiredToolItemId": 51007,
+        "requiredToolName": "剪刀",
+        "materials": [
+         {
+          "itemId": 10603,
+          "name": "羊毛",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z6_s8",
+        "name": "吉恩村 農事點#6",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 6100,
+        "y": 1900,
+        "skillId": 8,
+        "skillName": "農事",
+        "requiredToolItemId": 51009,
+        "requiredToolName": "鋤頭",
+        "materials": [
+         {
+          "itemId": 10605,
+          "name": "稻米",
+          "reqLevel": 15
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z7_s3",
+        "name": "吉恩村 釣魚點#7",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 5700,
+        "y": 6270,
+        "skillId": 3,
+        "skillName": "釣魚",
+        "requiredToolItemId": 51003,
+        "requiredToolName": "釣竿",
+        "materials": [
+         {
+          "itemId": 10501,
+          "name": "雜魚",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10502,
+          "name": "鯉魚",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_z8_s3",
+        "name": "吉恩村 釣魚點#8",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 6220,
+        "y": 5970,
+        "skillId": 3,
+        "skillName": "釣魚",
+        "requiredToolItemId": 51003,
+        "requiredToolName": "釣竿",
+        "materials": [
+         {
+          "itemId": 10501,
+          "name": "雜魚",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10502,
+          "name": "鯉魚",
+          "reqLevel": 10
+         }
+        ],
+        "walkableVerified": true,
+        "source": "EXTRACTED"
+       },
+       {
+        "id": "gather_10001_starter_mine",
+        "name": "吉恩村礦坑（新手採礦點）",
+        "mapId": "10001",
+        "mapName": "吉恩村",
+        "x": 3560,
+        "y": 3880,
+        "skillId": 5,
+        "skillName": "挖礦",
+        "requiredToolItemId": 51005,
+        "requiredToolName": "十字鎬",
+        "materials": [
+         {
+          "itemId": 10201,
+          "name": "煤",
+          "reqLevel": 1
+         },
+         {
+          "itemId": 10234,
+          "name": "青銅礦",
+          "reqLevel": 5
+         },
+         {
+          "itemId": 10208,
+          "name": "銅礦石",
+          "reqLevel": 10
+         },
+         {
+          "itemId": 10209,
+          "name": "鐵礦石",
+          "reqLevel": 20
+         }
+        ],
+        "walkableVerified": true,
+        "source": "CUSTOM_STARTER_LOOP"
+       }
+      ]
      },
+     "nearbyGatherPoints": [
+      {
+       "id": "gather_10004_z1_s2",
+       "name": "北綠野 採集點#1",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 4100,
+       "y": 1980,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10407,
+         "name": "薄荷",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10408,
+         "name": "附貝子",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z1_s4",
+       "name": "北綠野 狩獵點#1",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 4041,
+       "y": 2113,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10303,
+         "name": "羊肉",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10305,
+         "name": "羊皮",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z2_s2",
+       "name": "北綠野 採集點#2",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 3500,
+       "y": 410,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10407,
+         "name": "薄荷",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10408,
+         "name": "附貝子",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z2_s3",
+       "name": "北綠野 釣魚點#2",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 3580,
+       "y": 490,
+       "skillId": 3,
+       "skillName": "釣魚",
+       "requiredToolItemId": 51003,
+       "requiredToolName": "釣竿",
+       "materials": [
+        {
+         "itemId": 10510,
+         "name": "草蝦",
+         "reqLevel": 20
+        },
+        {
+         "itemId": 10503,
+         "name": "鱸魚",
+         "reqLevel": 30
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z2_s4",
+       "name": "北綠野 狩獵點#2",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 3390,
+       "y": 425,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10303,
+         "name": "羊肉",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10305,
+         "name": "羊皮",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z3_s2",
+       "name": "北綠野 採集點#3",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 7060,
+       "y": 460,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10407,
+         "name": "薄荷",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10408,
+         "name": "附貝子",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z3_s4",
+       "name": "北綠野 狩獵點#3",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 7001,
+       "y": 593,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10303,
+         "name": "羊肉",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10305,
+         "name": "羊皮",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z4_s2",
+       "name": "北綠野 採集點#4",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 7220,
+       "y": 380,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10407,
+         "name": "薄荷",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10408,
+         "name": "附貝子",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10004_z4_s4",
+       "name": "北綠野 狩獵點#4",
+       "mapId": "10004",
+       "mapName": "北綠野",
+       "x": 7161,
+       "y": 513,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10303,
+         "name": "羊肉",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10305,
+         "name": "羊皮",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10005_z1_s2",
+       "name": "南綠野 採集點#1",
+       "mapId": "10005",
+       "mapName": "南綠野",
+       "x": 4100,
+       "y": 2980,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10410,
+         "name": "金猴毛",
+         "reqLevel": 15
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10005_z1_s4",
+       "name": "南綠野 狩獵點#1",
+       "mapId": "10005",
+       "mapName": "南綠野",
+       "x": 4041,
+       "y": 3113,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10304,
+         "name": "牛肉",
+         "reqLevel": 15
+        },
+        {
+         "itemId": 10307,
+         "name": "牛皮",
+         "reqLevel": 15
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10005_z2_s8",
+       "name": "南綠野 農事點#2",
+       "mapId": "10005",
+       "mapName": "南綠野",
+       "x": 1300,
+       "y": 900,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51009,
+       "requiredToolName": "鋤頭",
+       "materials": [
+        {
+         "itemId": 10606,
+         "name": "小麥",
+         "reqLevel": 20
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10005_z3_s8",
+       "name": "南綠野 農事點#3",
+       "mapId": "10005",
+       "mapName": "南綠野",
+       "x": 1140,
+       "y": 4580,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51007,
+       "requiredToolName": "剪刀",
+       "materials": [
+        {
+         "itemId": 10613,
+         "name": "羊絨",
+         "reqLevel": 45
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10005_z4_s8",
+       "name": "南綠野 農事點#4",
+       "mapId": "10005",
+       "mapName": "南綠野",
+       "x": 7140,
+       "y": 780,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51009,
+       "requiredToolName": "鋤頭",
+       "materials": [
+        {
+         "itemId": 10608,
+         "name": "棉花",
+         "reqLevel": 20
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      }
+     ],
+     "recipes": [
+      {
+       "recipeId": 20309,
+       "resultItemId": 20309,
+       "name": "金毛鬼",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 70,
+       "ingredients": [
+        {
+         "itemId": 10420,
+         "name": "碧幽果",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10410,
+         "name": "金猴毛",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 3,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20321,
+       "resultItemId": 20321,
+       "name": "活血劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 25,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20301,
+       "resultItemId": 20301,
+       "name": "恢復劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 30,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10412,
+         "name": "續斷",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      }
+     ],
      "shops": [
       {
        "npcId": "npc_10001_01_收破爛阿利",
@@ -713,6 +1721,60 @@
          "name": "棉織線捲",
          "price": 65,
          "category": "MATERIAL"
+        },
+        {
+         "itemId": 10201,
+         "name": "煤",
+         "price": 20,
+         "category": "MATERIAL"
+        },
+        {
+         "itemId": 10103,
+         "name": "白楊木",
+         "price": 30,
+         "category": "MATERIAL"
+        },
+        {
+         "itemId": 51001,
+         "name": "伐木斧",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51002,
+         "name": "小藥杵",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51003,
+         "name": "釣竿",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51004,
+         "name": "獵刀",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51005,
+         "name": "十字鎬",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51007,
+         "name": "剪刀",
+         "price": 100,
+         "category": "SUPPLY"
+        },
+        {
+         "itemId": 51009,
+         "name": "鋤頭",
+         "price": 100,
+         "category": "SUPPLY"
         },
         {
          "itemId": 1001,
@@ -767,17 +1829,713 @@
       "battle": null,
       "command": null
      },
+     "quests": [
+      {
+       "questId": 1,
+       "title": "村長傑夫的新手委託",
+       "npcId": "npc_jeff",
+       "npcName": "吉恩村村長傑夫",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "VISIT_MAPS",
+         "description": "探索吉恩村周邊地圖 (1張)",
+         "current": 1,
+         "required": 1,
+         "met": true
+        }
+       ],
+       "rewardExp": 300,
+       "rewardCoins": 1500
+      },
+      {
+       "questId": 2,
+       "title": "初心者一轉入學試煉",
+       "npcId": "npc_mentor",
+       "npcName": "職業學院導師",
+       "minLevel": 10,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "討伐野外魔物完成入學試煉 (2隻)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 1500,
+       "rewardCoins": 5000
+      },
+      {
+       "questId": 3,
+       "title": "聖殿長老二轉進階試煉",
+       "npcId": "npc_shrine",
+       "npcName": "聖殿大長老",
+       "minLevel": 40,
+       "status": "AVAILABLE",
+       "prerequisites": [
+        2
+       ],
+       "objectives": [
+        {
+         "type": "DEFEAT_BOSS",
+         "description": "討伐任一區域首領證明實力 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 10000,
+       "rewardCoins": 30000
+      },
+      {
+       "questId": 4,
+       "title": "[重建示範] 微笑森林的糖果屋線索",
+       "npcId": "npc_gretel",
+       "npcName": "葛蕾特 (微笑森林)",
+       "minLevel": 5,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "於微笑森林擊退徘徊魔物 (3隻)",
+         "current": 0,
+         "required": 3,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 3200,
+       "rewardCoins": 8000
+      },
+      {
+       "questId": 5,
+       "title": "[重建示範] 雙神殿試煉：火與土的認可",
+       "npcId": "npc_temple_sage",
+       "npcName": "火之聖者／土之聖者",
+       "minLevel": 15,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "通過雙神殿周邊魔物試煉 (5隻)",
+         "current": 0,
+         "required": 5,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 12000,
+       "rewardCoins": 25000
+      },
+      {
+       "questId": 6,
+       "title": "[重建示範] 北綠野生態調查",
+       "npcId": "npc_village_elder",
+       "npcName": "吉恩村長老",
+       "minLevel": 3,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "調查並擊敗北綠野魔物 (3隻)",
+         "current": 0,
+         "required": 3,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 650,
+       "rewardCoins": 1200
+      },
+      {
+       "questId": 7,
+       "title": "[重建示範] 鐵匠懷懷特的礦石補給",
+       "npcId": "npc_blacksmith_white",
+       "npcName": "鐵匠懷懷特",
+       "minLevel": 6,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "執行工作採集取得礦石原料 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 4020,
+           "y": 3540
+          },
+          {
+           "mapId": "10004",
+           "mapName": "北綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 1980
+          },
+          {
+           "mapId": "10005",
+           "mapName": "南綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 2980
+          }
+         ]
+        }
+       ],
+       "rewardExp": 1800,
+       "rewardCoins": 2800
+      },
+      {
+       "questId": 8,
+       "title": "[重建示範] 彩虹城商隊護衛委託",
+       "npcId": "npc_guild_master",
+       "npcName": "冒險公會會長",
+       "minLevel": 12,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "VISIT_MAPS",
+         "description": "巡邏並造訪連通區域地圖 (2張)",
+         "current": 1,
+         "required": 2,
+         "met": false
+        }
+       ],
+       "rewardExp": 5200,
+       "rewardCoins": 6500
+      },
+      {
+       "questId": 9,
+       "title": "[重建示範] 微風洞窟的結晶採集",
+       "npcId": "npc_alchemy_master",
+       "npcName": "煉金大師米露",
+       "minLevel": 18,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "採集洞窟魔力結晶或原料 (2次)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 4020,
+           "y": 3540
+          },
+          {
+           "mapId": "10004",
+           "mapName": "北綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 1980
+          },
+          {
+           "mapId": "10005",
+           "mapName": "南綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 2980
+          }
+         ]
+        }
+       ],
+       "rewardExp": 9500,
+       "rewardCoins": 11000
+      },
+      {
+       "questId": 10,
+       "title": "[重建示範] 幻獸保育院的羈絆試煉",
+       "npcId": "npc_pet_keeper",
+       "npcName": "幻獸保育員小雪",
+       "minLevel": 22,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "CAPTURE_PETS",
+         "description": "擁有或累計收服幻獸夥伴 (2隻)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 14500,
+       "rewardCoins": 16000
+      },
+      {
+       "questId": 11,
+       "title": "[重建示範] 金銀城外圍的狂暴野獸",
+       "npcId": "npc_royal_commander",
+       "npcName": "金銀城騎士團長",
+       "minLevel": 28,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "鎮壓金銀城外圍狂暴野獸 (8隻)",
+         "current": 0,
+         "required": 8,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 24000,
+       "rewardCoins": 28000
+      },
+      {
+       "questId": 12,
+       "title": "[重建示範] 童話王國的單機勇者勳章",
+       "npcId": "npc_fairyland_queen",
+       "npcName": "童話王國女王",
+       "minLevel": 35,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "累計討伐童話王國魔物 (12隻)",
+         "current": 0,
+         "required": 12,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        },
+        {
+         "type": "CRAFT_COUNT",
+         "description": "親手鍛造或製作裝備/道具 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false
+        }
+       ],
+       "rewardExp": 45000,
+       "rewardCoins": 50000
+      },
+      {
+       "questId": 13,
+       "title": "[重建示範] 佛洛的南綠野警戒巡邏",
+       "npcId": "npc_10001_02_佛洛",
+       "npcName": "佛洛",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "於吉恩村外圍草地討伐魔物 (2場)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "ENCOUNTER_AREA",
+           "x": 840,
+           "y": 3980,
+           "pools": [
+            "mouse1",
+            "mouse2",
+            "mouse3",
+            "bug1",
+            "bug2",
+            "bug3",
+            "fly1",
+            "fly2",
+            "fly3",
+            "spider1",
+            "spider2",
+            "spider3",
+            "slime1",
+            "slime2",
+            "slime3",
+            "cow1",
+            "cow2",
+            "cow3",
+            "sheep1",
+            "sheep2",
+            "sheep3"
+           ]
+          }
+         ]
+        }
+       ],
+       "rewardExp": 180,
+       "rewardCoins": 400
+      },
+      {
+       "questId": 14,
+       "title": "[重建示範] 伯恩的礦脈補給委託",
+       "npcId": "npc_10001_06_伯恩",
+       "npcName": "伯恩",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "實際採集原料 (2次)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 4020,
+           "y": 3540
+          },
+          {
+           "mapId": "10004",
+           "mapName": "北綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 1980
+          },
+          {
+           "mapId": "10005",
+           "mapName": "南綠野",
+           "reason": "GATHER_POINT",
+           "x": 4100,
+           "y": 2980
+          }
+         ]
+        },
+        {
+         "type": "COLLECT_ITEMS",
+         "description": "收集並交付青銅礦 (2個)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 3560,
+           "y": 3880
+          }
+         ]
+        }
+       ],
+       "rewardExp": 200,
+       "rewardCoins": 500
+      }
+     ],
      "nav": {
       "status": "AVAILABLE",
       "reachableMaps": [
+       {
+        "mapId": "10004",
+        "name": "北綠野",
+        "hops": 1
+       },
+       {
+        "mapId": "10005",
+        "name": "南綠野",
+        "hops": 1
+       },
+       {
+        "mapId": "10011",
+        "name": "尼克草原",
+        "hops": 1
+       },
        {
         "mapId": "20001",
         "name": "雜貨店",
         "hops": 1
        },
        {
+        "mapId": "20002",
+        "name": "麵包店",
+        "hops": 1
+       },
+       {
+        "mapId": "20003",
+        "name": "魚貨店",
+        "hops": 1
+       },
+       {
+        "mapId": "20004",
+        "name": "農家",
+        "hops": 1
+       },
+       {
+        "mapId": "20005",
+        "name": "肉品店",
+        "hops": 1
+       },
+       {
+        "mapId": "20006",
+        "name": "裁縫店",
+        "hops": 1
+       },
+       {
         "mapId": "20007",
         "name": "醫院",
+        "hops": 1
+       },
+       {
+        "mapId": "20008",
+        "name": "木工店",
         "hops": 1
        },
        {
@@ -791,8 +2549,53 @@
         "hops": 1
        },
        {
-        "mapId": "FIELD_MEADOW",
-        "name": null,
+        "mapId": "20011",
+        "name": "酒館室內",
+        "hops": 1
+       },
+       {
+        "mapId": "20012",
+        "name": "裝備店",
+        "hops": 1
+       },
+       {
+        "mapId": "20013",
+        "name": "阿米的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20014",
+        "name": "雲兒的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20026",
+        "name": "卡卡路的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20027",
+        "name": "可蜜的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20028",
+        "name": "拉斐的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20029",
+        "name": "特爾凱的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20030",
+        "name": "賽司的家",
+        "hops": 1
+       },
+       {
+        "mapId": "20680",
+        "name": "天空小屋",
         "hops": 1
        }
       ],
@@ -803,12 +2606,45 @@
         "mapId": "10001",
         "name": "吉恩村",
         "targets": [
+         "10004",
+         "10005",
+         "10011",
          "20001",
+         "20002",
+         "20003",
+         "20004",
+         "20005",
+         "20006",
          "20007",
+         "20008",
          "20009",
          "20010",
-         "FIELD_MEADOW"
+         "20011",
+         "20012",
+         "20013",
+         "20014",
+         "20026",
+         "20027",
+         "20028",
+         "20029",
+         "20030",
+         "20680"
         ]
+       },
+       {
+        "mapId": "10004",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "10005",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "10011",
+        "name": null,
+        "targets": []
        },
        {
         "mapId": "20001",
@@ -816,8 +2652,38 @@
         "targets": []
        },
        {
+        "mapId": "20002",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20003",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20004",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20005",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20006",
+        "name": null,
+        "targets": []
+       },
+       {
         "mapId": "20007",
         "name": "醫院",
+        "targets": []
+       },
+       {
+        "mapId": "20008",
+        "name": null,
         "targets": []
        },
        {
@@ -831,7 +2697,52 @@
         "targets": []
        },
        {
-        "mapId": "FIELD_MEADOW",
+        "mapId": "20011",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20012",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20013",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20014",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20026",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20027",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20028",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20029",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20030",
+        "name": null,
+        "targets": []
+       },
+       {
+        "mapId": "20680",
         "name": null,
         "targets": []
        }
@@ -843,7 +2754,7 @@
   {
    "at": 2000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -860,7 +2771,7 @@
   {
    "at": 2600,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -877,7 +2788,7 @@
   {
    "at": 3200,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -894,7 +2805,7 @@
   {
    "at": 4500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -923,7 +2834,7 @@
   {
    "at": 7000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -937,7 +2848,7 @@
   {
    "at": 8000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -959,7 +2870,7 @@
   {
    "at": 8100,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -984,7 +2895,7 @@
   {
    "at": 10000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1009,7 +2920,7 @@
   {
    "at": 12000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1024,7 +2935,7 @@
   {
    "at": 12500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1039,7 +2950,7 @@
   {
    "at": 12600,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1059,7 +2970,7 @@
   {
    "at": 15000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1078,7 +2989,7 @@
   {
    "at": 15400,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -1099,7 +3010,12 @@
       "x": 880,
       "y": 1040,
       "dir": 2,
-      "inBattle": false
+      "inBattle": false,
+      "satiety": 100,
+      "maxSatiety": 100,
+      "inventoryCount": 0,
+      "inventoryCap": 40,
+      "workSkills": {}
      },
      "npcs": [
       {
@@ -1157,7 +3073,7 @@
        "y": 440,
        "gridX": 11,
        "gridY": 22,
-       "role": "VILLAGER",
+       "role": "MENTOR",
        "talkable": true,
        "isAnimal": false,
        "isShop": false
@@ -1169,7 +3085,7 @@
        "y": 520,
        "gridX": 13,
        "gridY": 26,
-       "role": "VILLAGER",
+       "role": "MENTOR",
        "talkable": true,
        "isAnimal": false,
        "isShop": false
@@ -1177,259 +3093,565 @@
      ],
      "exits": [
       {
-       "id": "portal_0",
-       "name": "雜貨店",
-       "x": 1760,
-       "y": 3880,
-       "targetMapId": "20001",
-       "targetMapName": "雜貨店"
-      },
-      {
-       "id": "portal_2",
-       "name": "醫院",
-       "x": 5560,
-       "y": 3860,
-       "targetMapId": "20007",
-       "targetMapName": "醫院"
-      },
-      {
-       "id": "portal_3",
-       "name": "食品店",
-       "x": 4880,
-       "y": 3880,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_4",
-       "name": "裝備店",
-       "x": 2760,
-       "y": 5060,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_5",
-       "name": "打鐵舖",
-       "x": 3240,
-       "y": 5340,
-       "targetMapId": "20009",
-       "targetMapName": "打鐵舖"
-      },
-      {
-       "id": "portal_6",
-       "name": "魚貨店",
-       "x": 5720,
-       "y": 5220,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_7",
-       "name": "木工店",
-       "x": 2680,
-       "y": 4660,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_8",
-       "name": "肉品店",
-       "x": 4320,
-       "y": 1960,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_9",
-       "name": "農家",
-       "x": 4800,
-       "y": 2240,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_10",
-       "name": "裁縫店",
-       "x": 5280,
-       "y": 2440,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_11",
-       "name": "酒館",
-       "x": 3400,
-       "y": 2780,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_12",
-       "name": "整修中...",
-       "x": 4640,
-       "y": 5600,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_13",
-       "name": "牧場",
-       "x": 3040,
-       "y": 1960,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_14",
-       "name": "往北綠野",
+       "id": "portal_20010_00_10001",
+       "name": "前往 吉恩村",
        "x": 880,
-       "y": 360,
-       "targetMapId": "FIELD_MEADOW",
-       "targetMapName": null
-      },
-      {
-       "id": "portal_15",
-       "name": "往南綠野",
-       "x": 2600,
-       "y": 7580,
-       "targetMapId": "FIELD_MEADOW",
-       "targetMapName": null
-      },
-      {
-       "id": "portal_16",
-       "name": "往青蛙沼澤",
-       "x": 7240,
-       "y": 7380,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_17",
-       "name": "往雜貨店",
-       "x": 3720,
-       "y": 3860,
-       "targetMapId": "20001",
-       "targetMapName": "雜貨店"
-      },
-      {
-       "id": "portal_18",
-       "name": "西北方往打鐵舖、裝備店；東北方往魚貨店",
-       "x": 4160,
-       "y": 5880,
-       "targetMapId": "20009",
-       "targetMapName": "打鐵舖"
-      },
-      {
-       "id": "portal_19",
-       "name": "往酒館",
-       "x": 4160,
-       "y": 3440,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_20",
-       "name": "往裁縫店",
-       "x": 4160,
-       "y": 3000,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_21",
-       "name": "往食品店、醫院",
-       "x": 4400,
-       "y": 4080,
-       "targetMapId": "20007",
-       "targetMapName": "醫院"
-      },
-      {
-       "id": "portal_22",
-       "name": "阿米的家",
-       "x": 2560,
-       "y": 1920,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_23",
-       "name": "雲兒的家",
-       "x": 3640,
-       "y": 2140,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_24",
-       "name": "可蜜的家",
-       "x": 2760,
-       "y": 2740,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_25",
-       "name": "卡卡路的家",
-       "x": 5760,
-       "y": 2640,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_26",
-       "name": "拉斐的家",
-       "x": 6320,
-       "y": 3800,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_27",
-       "name": "賽司的家",
-       "x": 4800,
-       "y": 4760,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_28",
-       "name": "特爾凱的家",
-       "x": 6200,
-       "y": 4620,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_29",
-       "name": "排行榜",
-       "x": 3680,
-       "y": 4600,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_30",
-       "name": "心情留言版",
-       "x": 3520,
-       "y": 3560,
-       "targetMapId": "10001",
-       "targetMapName": "吉恩村"
-      },
-      {
-       "id": "portal_31",
-       "name": "天空小屋",
-       "x": 400,
-       "y": 2960,
+       "y": 1040,
        "targetMapId": "10001",
        "targetMapName": "吉恩村"
       }
      ],
      "gatherPoints": {
-      "status": "UNAVAILABLE",
-      "reason": "FX6_NOT_EXTRACTED",
+      "status": "AVAILABLE",
       "points": []
      },
+     "nearbyGatherPoints": [
+      {
+       "id": "gather_10001_starter_mine",
+       "name": "吉恩村礦坑（新手採礦點）",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 3560,
+       "y": 3880,
+       "skillId": 5,
+       "skillName": "挖礦",
+       "requiredToolItemId": 51005,
+       "requiredToolName": "十字鎬",
+       "materials": [
+        {
+         "itemId": 10201,
+         "name": "煤",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10234,
+         "name": "青銅礦",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10208,
+         "name": "銅礦石",
+         "reqLevel": 10
+        },
+        {
+         "itemId": 10209,
+         "name": "鐵礦石",
+         "reqLevel": 20
+        }
+       ],
+       "walkableVerified": true,
+       "source": "CUSTOM_STARTER_LOOP"
+      },
+      {
+       "id": "gather_10001_z1_s1",
+       "name": "吉恩村 伐木點#1",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 4020,
+       "y": 3540,
+       "skillId": 1,
+       "skillName": "伐木",
+       "requiredToolItemId": 51001,
+       "requiredToolName": "伐木斧",
+       "materials": [
+        {
+         "itemId": 10101,
+         "name": "竹子",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10102,
+         "name": "藤條",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10103,
+         "name": "白楊木",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z1_s2",
+       "name": "吉恩村 採集點#1",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 3961,
+       "y": 3673,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10403,
+         "name": "生薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10404,
+         "name": "老薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10405,
+         "name": "黃蔓葵",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z1_s4",
+       "name": "吉恩村 狩獵點#1",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 3750,
+       "y": 3685,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10301,
+         "name": "雞肉",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10302,
+         "name": "豬肉",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z3_s1",
+       "name": "吉恩村 伐木點#3",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 7260,
+       "y": 2000,
+       "skillId": 1,
+       "skillName": "伐木",
+       "requiredToolItemId": 51001,
+       "requiredToolName": "伐木斧",
+       "materials": [
+        {
+         "itemId": 10101,
+         "name": "竹子",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10102,
+         "name": "藤條",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10103,
+         "name": "白楊木",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z3_s2",
+       "name": "吉恩村 採集點#3",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 7201,
+       "y": 2133,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10403,
+         "name": "生薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10404,
+         "name": "老薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10405,
+         "name": "黃蔓葵",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z3_s4",
+       "name": "吉恩村 狩獵點#3",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 7020,
+       "y": 2130,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10301,
+         "name": "雞肉",
+         "reqLevel": 1
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z3_s8",
+       "name": "吉恩村 農事點#3",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 6863,
+       "y": 1966,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51007,
+       "requiredToolName": "剪刀",
+       "materials": [
+        {
+         "itemId": 10401,
+         "name": "蘋果",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10402,
+         "name": "桃子",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z4_s1",
+       "name": "吉恩村 伐木點#4",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 5980,
+       "y": 760,
+       "skillId": 1,
+       "skillName": "伐木",
+       "requiredToolItemId": 51001,
+       "requiredToolName": "伐木斧",
+       "materials": [
+        {
+         "itemId": 10101,
+         "name": "竹子",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10102,
+         "name": "藤條",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10103,
+         "name": "白楊木",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z4_s2",
+       "name": "吉恩村 採集點#4",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 5921,
+       "y": 893,
+       "skillId": 2,
+       "skillName": "採集",
+       "requiredToolItemId": 51002,
+       "requiredToolName": "小藥杵",
+       "materials": [
+        {
+         "itemId": 10403,
+         "name": "生薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10404,
+         "name": "老薑",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10405,
+         "name": "黃蔓葵",
+         "reqLevel": 5
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z4_s4",
+       "name": "吉恩村 狩獵點#4",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 5710,
+       "y": 905,
+       "skillId": 4,
+       "skillName": "狩獵",
+       "requiredToolItemId": 51004,
+       "requiredToolName": "獵刀",
+       "materials": [
+        {
+         "itemId": 10301,
+         "name": "雞肉",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10302,
+         "name": "豬肉",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z4_s8",
+       "name": "吉恩村 農事點#4",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 5583,
+       "y": 726,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51007,
+       "requiredToolName": "剪刀",
+       "materials": [
+        {
+         "itemId": 10401,
+         "name": "蘋果",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10402,
+         "name": "桃子",
+         "reqLevel": 5
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z5_s8",
+       "name": "吉恩村 農事點#5",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 2380,
+       "y": 1880,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51007,
+       "requiredToolName": "剪刀",
+       "materials": [
+        {
+         "itemId": 10603,
+         "name": "羊毛",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z6_s8",
+       "name": "吉恩村 農事點#6",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 6100,
+       "y": 1900,
+       "skillId": 8,
+       "skillName": "農事",
+       "requiredToolItemId": 51009,
+       "requiredToolName": "鋤頭",
+       "materials": [
+        {
+         "itemId": 10605,
+         "name": "稻米",
+         "reqLevel": 15
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z7_s3",
+       "name": "吉恩村 釣魚點#7",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 5700,
+       "y": 6270,
+       "skillId": 3,
+       "skillName": "釣魚",
+       "requiredToolItemId": 51003,
+       "requiredToolName": "釣竿",
+       "materials": [
+        {
+         "itemId": 10501,
+         "name": "雜魚",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10502,
+         "name": "鯉魚",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      },
+      {
+       "id": "gather_10001_z8_s3",
+       "name": "吉恩村 釣魚點#8",
+       "mapId": "10001",
+       "mapName": "吉恩村",
+       "x": 6220,
+       "y": 5970,
+       "skillId": 3,
+       "skillName": "釣魚",
+       "requiredToolItemId": 51003,
+       "requiredToolName": "釣竿",
+       "materials": [
+        {
+         "itemId": 10501,
+         "name": "雜魚",
+         "reqLevel": 1
+        },
+        {
+         "itemId": 10502,
+         "name": "鯉魚",
+         "reqLevel": 10
+        }
+       ],
+       "walkableVerified": true,
+       "source": "EXTRACTED"
+      }
+     ],
+     "recipes": [
+      {
+       "recipeId": 20309,
+       "resultItemId": 20309,
+       "name": "金毛鬼",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 70,
+       "ingredients": [
+        {
+         "itemId": 10420,
+         "name": "碧幽果",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10410,
+         "name": "金猴毛",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 3,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20321,
+       "resultItemId": 20321,
+       "name": "活血劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 25,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20301,
+       "resultItemId": 20301,
+       "name": "恢復劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 30,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10412,
+         "name": "續斷",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      }
+     ],
      "shops": [],
      "inventory": [],
      "activity": {
@@ -1439,32 +3661,333 @@
       "battle": null,
       "command": null
      },
+     "quests": [
+      {
+       "questId": 1,
+       "title": "村長傑夫的新手委託",
+       "npcId": "npc_jeff",
+       "npcName": "吉恩村村長傑夫",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "VISIT_MAPS",
+         "description": "探索吉恩村周邊地圖 (1張)",
+         "current": 1,
+         "required": 1,
+         "met": true
+        }
+       ],
+       "rewardExp": 300,
+       "rewardCoins": 1500
+      },
+      {
+       "questId": 2,
+       "title": "初心者一轉入學試煉",
+       "npcId": "npc_mentor",
+       "npcName": "職業學院導師",
+       "minLevel": 10,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "討伐野外魔物完成入學試煉 (2隻)",
+         "current": 0,
+         "required": 2,
+         "met": false
+        }
+       ],
+       "rewardExp": 1500,
+       "rewardCoins": 5000
+      },
+      {
+       "questId": 3,
+       "title": "聖殿長老二轉進階試煉",
+       "npcId": "npc_shrine",
+       "npcName": "聖殿大長老",
+       "minLevel": 40,
+       "status": "AVAILABLE",
+       "prerequisites": [
+        2
+       ],
+       "objectives": [
+        {
+         "type": "DEFEAT_BOSS",
+         "description": "討伐任一區域首領證明實力 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false
+        }
+       ],
+       "rewardExp": 10000,
+       "rewardCoins": 30000
+      },
+      {
+       "questId": 4,
+       "title": "[重建示範] 微笑森林的糖果屋線索",
+       "npcId": "npc_gretel",
+       "npcName": "葛蕾特 (微笑森林)",
+       "minLevel": 5,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "於微笑森林擊退徘徊魔物 (3隻)",
+         "current": 0,
+         "required": 3,
+         "met": false
+        }
+       ],
+       "rewardExp": 3200,
+       "rewardCoins": 8000
+      },
+      {
+       "questId": 5,
+       "title": "[重建示範] 雙神殿試煉：火與土的認可",
+       "npcId": "npc_temple_sage",
+       "npcName": "火之聖者／土之聖者",
+       "minLevel": 15,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "通過雙神殿周邊魔物試煉 (5隻)",
+         "current": 0,
+         "required": 5,
+         "met": false
+        }
+       ],
+       "rewardExp": 12000,
+       "rewardCoins": 25000
+      },
+      {
+       "questId": 6,
+       "title": "[重建示範] 北綠野生態調查",
+       "npcId": "npc_village_elder",
+       "npcName": "吉恩村長老",
+       "minLevel": 3,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "調查並擊敗北綠野魔物 (3隻)",
+         "current": 0,
+         "required": 3,
+         "met": false
+        }
+       ],
+       "rewardExp": 650,
+       "rewardCoins": 1200
+      },
+      {
+       "questId": 7,
+       "title": "[重建示範] 鐵匠懷懷特的礦石補給",
+       "npcId": "npc_blacksmith_white",
+       "npcName": "鐵匠懷懷特",
+       "minLevel": 6,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "執行工作採集取得礦石原料 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 3560,
+           "y": 3880
+          }
+         ]
+        }
+       ],
+       "rewardExp": 1800,
+       "rewardCoins": 2800
+      },
+      {
+       "questId": 8,
+       "title": "[重建示範] 彩虹城商隊護衛委託",
+       "npcId": "npc_guild_master",
+       "npcName": "冒險公會會長",
+       "minLevel": 12,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "VISIT_MAPS",
+         "description": "巡邏並造訪連通區域地圖 (2張)",
+         "current": 1,
+         "required": 2,
+         "met": false
+        }
+       ],
+       "rewardExp": 5200,
+       "rewardCoins": 6500
+      },
+      {
+       "questId": 9,
+       "title": "[重建示範] 微風洞窟的結晶採集",
+       "npcId": "npc_alchemy_master",
+       "npcName": "煉金大師米露",
+       "minLevel": 18,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "採集洞窟魔力結晶或原料 (2次)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 3560,
+           "y": 3880
+          }
+         ]
+        }
+       ],
+       "rewardExp": 9500,
+       "rewardCoins": 11000
+      },
+      {
+       "questId": 10,
+       "title": "[重建示範] 幻獸保育院的羈絆試煉",
+       "npcId": "npc_pet_keeper",
+       "npcName": "幻獸保育員小雪",
+       "minLevel": 22,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "CAPTURE_PETS",
+         "description": "擁有或累計收服幻獸夥伴 (2隻)",
+         "current": 0,
+         "required": 2,
+         "met": false
+        }
+       ],
+       "rewardExp": 14500,
+       "rewardCoins": 16000
+      },
+      {
+       "questId": 11,
+       "title": "[重建示範] 金銀城外圍的狂暴野獸",
+       "npcId": "npc_royal_commander",
+       "npcName": "金銀城騎士團長",
+       "minLevel": 28,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "鎮壓金銀城外圍狂暴野獸 (8隻)",
+         "current": 0,
+         "required": 8,
+         "met": false
+        }
+       ],
+       "rewardExp": 24000,
+       "rewardCoins": 28000
+      },
+      {
+       "questId": 12,
+       "title": "[重建示範] 童話王國的單機勇者勳章",
+       "npcId": "npc_fairyland_queen",
+       "npcName": "童話王國女王",
+       "minLevel": 35,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "累計討伐童話王國魔物 (12隻)",
+         "current": 0,
+         "required": 12,
+         "met": false
+        },
+        {
+         "type": "CRAFT_COUNT",
+         "description": "親手鍛造或製作裝備/道具 (1次)",
+         "current": 0,
+         "required": 1,
+         "met": false
+        }
+       ],
+       "rewardExp": 45000,
+       "rewardCoins": 50000
+      },
+      {
+       "questId": 13,
+       "title": "[重建示範] 佛洛的南綠野警戒巡邏",
+       "npcId": "npc_10001_02_佛洛",
+       "npcName": "佛洛",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "KILL_MONSTERS",
+         "description": "於吉恩村外圍草地討伐魔物 (2場)",
+         "current": 0,
+         "required": 2,
+         "met": false
+        }
+       ],
+       "rewardExp": 180,
+       "rewardCoins": 400
+      },
+      {
+       "questId": 14,
+       "title": "[重建示範] 伯恩的礦脈補給委託",
+       "npcId": "npc_10001_06_伯恩",
+       "npcName": "伯恩",
+       "minLevel": 1,
+       "status": "AVAILABLE",
+       "objectives": [
+        {
+         "type": "GATHER_COUNT",
+         "description": "實際採集原料 (2次)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 3560,
+           "y": 3880
+          }
+         ]
+        },
+        {
+         "type": "COLLECT_ITEMS",
+         "description": "收集並交付青銅礦 (2個)",
+         "current": 0,
+         "required": 2,
+         "met": false,
+         "targetMaps": [
+          {
+           "mapId": "10001",
+           "mapName": "吉恩村",
+           "reason": "GATHER_POINT",
+           "x": 3560,
+           "y": 3880
+          }
+         ]
+        }
+       ],
+       "rewardExp": 200,
+       "rewardCoins": 500
+      }
+     ],
      "nav": {
       "status": "AVAILABLE",
       "reachableMaps": [
        {
         "mapId": "10001",
         "name": "吉恩村",
-        "hops": 1
-       },
-       {
-        "mapId": "20001",
-        "name": "雜貨店",
-        "hops": 1
-       },
-       {
-        "mapId": "20007",
-        "name": "醫院",
-        "hops": 1
-       },
-       {
-        "mapId": "20009",
-        "name": "打鐵舖",
-        "hops": 1
-       },
-       {
-        "mapId": "FIELD_MEADOW",
-        "name": null,
         "hops": 1
        }
       ],
@@ -1495,17 +4018,8 @@
         "mapId": "20010",
         "name": "吉恩村市鎮中心",
         "targets": [
-         "10001",
-         "20001",
-         "20007",
-         "20009",
-         "FIELD_MEADOW"
+         "10001"
         ]
-       },
-       {
-        "mapId": "FIELD_MEADOW",
-        "name": null,
-        "targets": []
        }
       ]
      }
@@ -1515,7 +4029,7 @@
   {
    "at": 17000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1532,7 +4046,7 @@
   {
    "at": 18500,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1549,7 +4063,7 @@
   {
    "at": 20000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -1577,7 +4091,7 @@
   {
    "at": 23000,
    "message": {
-    "v": 2,
+    "v": 3,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",

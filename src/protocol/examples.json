@@ -1,7 +1,7 @@
 {
   "_comment": "FX1 範例訊息。每個陣列元素都必須通過 guards.ts 對應的型別守衛；fairyland 與 fairyland-family 共用同一份。",
   "heartbeat": {
-    "v": 2,
+    "v": 3,
     "characterId": "char-demo-1",
     "ts": 1700000000000,
     "kind": "heartbeat",
@@ -12,7 +12,7 @@
     "inBattle": false
   },
   "snapshot": {
-    "v": 2,
+    "v": 3,
     "characterId": "char-demo-1",
     "ts": 1700000000100,
     "kind": "snapshot",
@@ -190,7 +190,7 @@
   },
   "events": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001000,
       "kind": "event",
@@ -201,7 +201,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001100,
       "kind": "event",
@@ -217,7 +217,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001200,
       "kind": "event",
@@ -231,7 +231,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001300,
       "kind": "event",
@@ -262,7 +262,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001150,
@@ -286,7 +286,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001160,
@@ -305,7 +305,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001170,
@@ -316,7 +316,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "kind": "event",
       "ts": 1700000001180,
@@ -329,7 +329,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001400,
       "kind": "event",
@@ -340,7 +340,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001500,
       "kind": "event",
@@ -359,7 +359,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001600,
       "kind": "event",
@@ -381,7 +381,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001700,
       "kind": "event",
@@ -393,7 +393,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001800,
       "kind": "event",
@@ -405,7 +405,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000001900,
       "kind": "event",
@@ -422,7 +422,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002000,
       "kind": "event",
@@ -433,7 +433,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002100,
       "kind": "event",
@@ -446,7 +446,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002200,
       "kind": "event",
@@ -458,7 +458,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002250,
       "kind": "event",
@@ -476,7 +476,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002260,
       "kind": "event",
@@ -489,7 +489,7 @@
   ],
   "commands": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002000,
       "kind": "command",
@@ -499,7 +499,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002100,
       "kind": "command",
@@ -512,7 +512,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002200,
       "kind": "command",
@@ -523,7 +523,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002300,
       "kind": "command",
@@ -534,7 +534,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002400,
       "kind": "command",
@@ -545,7 +545,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002500,
       "kind": "command",
@@ -557,7 +557,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002600,
       "kind": "command",
@@ -569,7 +569,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002700,
       "kind": "command",
@@ -580,7 +580,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002800,
       "kind": "command",
@@ -595,7 +595,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002900,
       "kind": "command",
@@ -605,7 +605,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003000,
       "kind": "command",
@@ -618,7 +618,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000002900,
       "kind": "command",
@@ -629,7 +629,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003100,
       "kind": "command",
@@ -640,7 +640,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003200,
       "kind": "command",
@@ -653,7 +653,7 @@
       }
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003300,
       "kind": "command",
@@ -668,7 +668,7 @@
   ],
   "commandResults": [
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003000,
       "kind": "command-result",
@@ -676,7 +676,7 @@
       "status": "ACCEPTED"
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003100,
       "kind": "command-result",
@@ -686,7 +686,7 @@
       "message": "WORK_ONCE 要到 P3 才實作"
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003200,
       "kind": "command-result",
@@ -696,7 +696,7 @@
       "duplicate": true
     },
     {
-      "v": 2,
+      "v": 3,
       "characterId": "char-demo-1",
       "ts": 1700000003300,
       "kind": "command-result",

@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 61e5ac8d0e9da87be315e2ccd65b48af610d4c26
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 57515633f850ee9dc36c8054addee704af3e3553
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -47,12 +47,23 @@ const isBattleUnitSummary = (u: unknown): boolean =>
 const isEnemyState = (e: unknown): boolean =>
   isRec(e) && isNum(e.slot) && isStr(e.id) && isStr(e.name) && isNum(e.hp) && isNum(e.maxHp)
   && optBool(e.isDead) && optBool(e.isDefending) && optBool(e.isChanting) && isStatusArrayOrUndef(e.statuses);
+const isActiveWork = (w: unknown): boolean =>
+  isRec(w) && (w.kind === 'GATHER' || w.kind === 'CRAFT')
+  && optNum(w.skillId) && optNum(w.recipeId) && optNum(w.targetItemId)
+  && isStr(w.label) && isNum(w.startedAt) && isNum(w.endsAt);
+const isTargetMapHint = (h: unknown): boolean =>
+  isRec(h) && isNonEmptyStr(h.mapId) && strOrNull(h.mapName)
+  && (h.reason === 'ENCOUNTER_AREA' || h.reason === 'ENCOUNTER_POOL' || h.reason === 'GATHER_POINT')
+  && optNum(h.x) && optNum(h.y)
+  && (h.pools === undefined || (isArr(h.pools) && h.pools.every(isStr)));
 const isQuestEntry = (q: unknown): boolean =>
   isRec(q) && isNum(q.questId) && isStr(q.title) && isStr(q.npcId) && isStr(q.npcName) && isNum(q.minLevel)
   && ['AVAILABLE', 'IN_PROGRESS', 'READY', 'COMPLETED'].includes(q.status as string)
   && (q.prerequisites === undefined || (isArr(q.prerequisites) && q.prerequisites.every(isNum)))
   && isArr(q.objectives)
-  && q.objectives.every(o => isRec(o) && isStr(o.type) && isStr(o.description) && isNum(o.current) && isNum(o.required) && isBool(o.met))
+  && q.objectives.every(o =>
+    isRec(o) && isStr(o.type) && isStr(o.description) && isNum(o.current) && isNum(o.required) && isBool(o.met)
+    && (o.targetMaps === undefined || (isArr(o.targetMaps) && o.targetMaps.every(isTargetMapHint))))
   && isNum(q.rewardExp) && isNum(q.rewardCoins);
 
 /** 指令內容（不含信封）。 */
@@ -147,6 +158,7 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
     || !numOrNull(c.mp) || !numOrNull(c.maxMp) || !isNum(c.gold) || !isNum(c.x) || !isNum(c.y) || !isNum(c.dir) || !isBool(c.inBattle)
     || !optNum(c.satiety) || !optNum(c.maxSatiety) || !optNum(c.inventoryCount) || !optNum(c.inventoryCap)
     || (c.workSkills !== undefined && !isRec(c.workSkills))
+    || (c.activeWork !== undefined && c.activeWork !== null && !isActiveWork(c.activeWork))
     || (c.weaponFamily !== undefined && !isStr(c.weaponFamily))
     || !optNum(c.familyLevel) || !optNum(c.comboLevel)
     || (c.masteryLevels !== undefined && !isRec(c.masteryLevels))
@@ -177,7 +189,8 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
       isRec(m) && isNonEmptyStr(m.characterId) && strOrNull(m.name) && isNum(m.level)
       && isNonEmptyStr(m.mapId) && strOrNull(m.mapName) && isNum(m.x) && isNum(m.y)
       && isNum(m.gold) && isNum(m.satiety) && isNum(m.inventoryCount) && isNum(m.inventoryCap)
-      && isBool(m.inBattle) && isArr(m.inventory) && m.inventory.every(isItem) && isRec(m.workSkills);
+      && isBool(m.inBattle) && isArr(m.inventory) && m.inventory.every(isItem) && isRec(m.workSkills)
+      && (m.activeWork === undefined || m.activeWork === null || isActiveWork(m.activeWork));
     if (!isRec(f) || !isNonEmptyStr(f.activeCharacterId) || !isNum(f.maxSlots)
       || !isArr(f.members) || !f.members.every(isMember)
       || !isRec(f.warehouse) || !isNum(f.warehouse.gold) || !isNum(f.warehouse.cap)

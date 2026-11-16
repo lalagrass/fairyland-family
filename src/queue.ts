@@ -163,6 +163,8 @@ export class WorkQueue {
   private boughtToolAttempted = new Set<number>();
   private boughtToolAt = new Map<number, number>();
   private navStartedKey: string | null = null;
+  private dialogRetries = 0;
+  private openShopSentAt = 0;
 
   constructor(
     private host: QueueHost,
@@ -202,6 +204,8 @@ export class WorkQueue {
     } else {
       this.jobs.push(job);
     }
+    this.dialogRetries = 0;
+    this.openShopSentAt = 0;
     this.pending = null;
     this.navStartedKey = null;
     this.token++;
@@ -279,6 +283,7 @@ export class WorkQueue {
         this.handleCompleted(e.outcome, e.code, e.message);
         return;
       }
+      if (e.type === 'SHOP_OPENED') this.openShopSentAt = 0;
       if (
         e.type === 'DIALOG_OPENED' ||
         e.type === 'DIALOG_CLOSED' ||
@@ -289,7 +294,8 @@ export class WorkQueue {
         (this.navStartedKey && (e.type === 'COMMAND_COMPLETED' || e.type === 'COMMAND_REJECTED'))
       ) {
         if (!this.pending) {
-          this.scheduleStep(10);
+          const delay = e.type === 'DIALOG_CLOSED' && this.phase === 'WAITING_TOOL_BUY' ? 150 : 10;
+          this.scheduleStep(delay);
         }
       }
       return;
@@ -314,6 +320,25 @@ export class WorkQueue {
 
     if (code === 'GAME_BUSY' || code === 'GAME_NOT_READY' || code === 'IN_BATTLE') {
       this.scheduleStep(RETRY_MS);
+      return;
+    }
+
+    if (
+      (code === 'DIALOG_OPEN' || (code === 'OPTION_NOT_FOUND' && message?.includes('CLOSE_SHOP')))
+      && this.dialogRetries < 3
+    ) {
+      this.dialogRetries += 1;
+      const st = this.host.state();
+      if (st.shop) {
+        this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉殘留商店繼續工作', 'CLOSE_SHOP');
+        return;
+      }
+      if (st.dialog) {
+        this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE' }, '關閉殘留對話繼續工作', 'DIALOG');
+        return;
+      }
+      this.host.send({ type: 'REQUEST_SNAPSHOT' }, '檢查殘留對話狀態');
+      this.scheduleStep(300);
       return;
     }
 
@@ -346,6 +371,7 @@ export class WorkQueue {
     const cur = this.pending;
     this.pending = null;
     if (!cur) return;
+    this.dialogRetries = 0;
 
     if (code === 'ENCOUNTER' || outcome === 'INTERRUPTED') {
       if (code === 'ENCOUNTER') {
@@ -605,6 +631,11 @@ export class WorkQueue {
     if (st.dialog) {
       const openOpt = st.dialog.options.find(o => o.id === 'OPEN_SHOP');
       if (openOpt) {
+        if (Date.now() - this.openShopSentAt < 1000) {
+          this.scheduleStep(100);
+          return;
+        }
+        this.openShopSentAt = Date.now();
         this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'OPEN_SHOP' }, `開啟商店購買 ${toolName}`, 'DIALOG');
       } else {
         this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE' }, '關閉無關對話', 'DIALOG');

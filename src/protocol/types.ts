@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 61e5ac8d0e9da87be315e2ccd65b48af610d4c26
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 57515633f850ee9dc36c8054addee704af3e3553
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -17,7 +17,7 @@
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -188,6 +188,16 @@ export type DataAvailability =
   | 'UNAVAILABLE'          // 宿主端目前沒有這項資料（附 reason）
   | 'RECONSTRUCTED_DEMO';  // 有資料，但屬於重建／示範內容，不是原版提取
 
+export interface SnapshotActiveWork {
+  kind: 'GATHER' | 'CRAFT';
+  skillId?: number;
+  recipeId?: number;
+  targetItemId?: number;
+  label: string;
+  startedAt: number;
+  endsAt: number;
+}
+
 export interface SnapshotCharacter {
   name: string | null;
   level: number;
@@ -205,6 +215,7 @@ export interface SnapshotCharacter {
   inventoryCount?: number;
   inventoryCap?: number;
   workSkills?: Record<number, number>;
+  activeWork?: SnapshotActiveWork | null;
   /** FX8：目前裝備武器系別、該系熟練等級、連擊等級與各系熟練等級。 */
   weaponFamily?: string;
   familyLevel?: number;
@@ -348,6 +359,7 @@ export interface SnapshotFamilyMember {
   inBattle: boolean;
   inventory: SnapshotItem[];
   workSkills: Record<number, number>;
+  activeWork?: SnapshotActiveWork | null;
 }
 
 export interface SnapshotFamilyState {
@@ -423,12 +435,22 @@ export interface SnapshotBattleUnitSummary {
   statuses?: SnapshotBattleStatus[];
 }
 
+export interface SnapshotQuestTargetMapHint {
+  mapId: string;
+  mapName: string | null;
+  reason: 'ENCOUNTER_AREA' | 'ENCOUNTER_POOL' | 'GATHER_POINT';
+  x?: number;
+  y?: number;
+  pools?: string[];
+}
+
 export interface SnapshotQuestObjective {
   type: string;
   description: string;
   current: number;
   required: number;
   met: boolean;
+  targetMaps?: SnapshotQuestTargetMapHint[];
 }
 
 export interface SnapshotQuestEntry {

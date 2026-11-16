@@ -26,6 +26,7 @@ export interface LogEntry {
   tag: LogTag;
   text: string;
   commandId?: string;
+  characterId?: string;
   level: 'info' | 'warn' | 'error';
 }
 
@@ -96,8 +97,22 @@ export function connectionStatus(s: FamilyState, now: number): 'RUNNING' | 'STOP
   return now - s.lastHeartbeatAt <= HEARTBEAT_TIMEOUT_MS ? 'RUNNING' : 'STOPPED';
 }
 
-export function addLog(s: FamilyState, tag: LogTag, text: string, now: number, extra: { commandId?: string; level?: LogEntry['level'] } = {}): FamilyState {
-  const entry: LogEntry = { id: s.logSeq + 1, at: now, tag, text, commandId: extra.commandId, level: extra.level ?? 'info' };
+export function addLog(
+  s: FamilyState,
+  tag: LogTag,
+  text: string,
+  now: number,
+  extra: { commandId?: string; characterId?: string; level?: LogEntry['level'] } = {},
+): FamilyState {
+  const entry: LogEntry = {
+    id: s.logSeq + 1,
+    at: now,
+    tag,
+    text,
+    commandId: extra.commandId,
+    ...(extra.characterId ? { characterId: extra.characterId } : {}),
+    level: extra.level ?? 'info',
+  };
   const log = [...s.log, entry];
   if (log.length > LOG_CAP) log.splice(0, log.length - LOG_CAP);
   return { ...s, log, logSeq: entry.id };
@@ -106,7 +121,10 @@ export function addLog(s: FamilyState, tag: LogTag, text: string, now: number, e
 /** 把「我送出了一個指令」記進狀態（日誌與待回覆表）。 */
 export function applySent(s: FamilyState, msg: CommandMessage, label: string, now: number, expect?: string): FamilyState {
   const exp = expect ?? expectedCode(msg.command);
-  const next = addLog(s, '送出', `${label}　${JSON.stringify(msg.command)}${exp ? `　（預期：${exp}）` : ''}`, now, { commandId: msg.commandId });
+  const next = addLog(s, '送出', `${label}　${JSON.stringify(msg.command)}${exp ? `　（預期：${exp}）` : ''}`, now, {
+    commandId: msg.commandId,
+    characterId: msg.characterId,
+  });
   let out: FamilyState = { ...next, pending: { ...next.pending, [msg.commandId]: { label, sentAt: now, ...(exp ? { expect: exp } : {}) } } };
   const c = msg.command;
   // 送出戰鬥動作後，這一回合就不能再送；結算視窗選項送出後視窗視為關閉（下一份快照會校正）。
@@ -168,7 +186,7 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
     next = { ...next, characterId: raw.characterId, phase: raw.phase, sessionId: raw.sessionId, lastHeartbeatAt: now };
     if (fresh && raw.sessionId !== next.stoppedSessionId) next = { ...next, stoppedSessionId: null };
     if (raw.mapId && !next.location) next = { ...next, location: { mapId: raw.mapId, mapName: null } };
-    if (wasDown && connectionStatus(next, now) === 'RUNNING') next = addLog(next, '連線', '遊戲執行中', now);
+    if (wasDown && connectionStatus(next, now) === 'RUNNING') next = addLog(next, '連線', '遊戲執行中', now, { characterId: raw.characterId });
     return next;
   }
   if (isSnapshotMessage(raw)) {
@@ -191,7 +209,7 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
       ...fromActivity(raw.snapshot),
     };
     const why = { STARTED: '開機', MAP_CHANGED: '換圖', SCENE_RELOADED: '場景重載', REQUESTED: '應要求', PHASE_CHANGED: '階段改變' }[raw.reason];
-    return addLog(next, '快照', `${raw.snapshot.mapName ?? raw.snapshot.mapId}：NPC ${raw.snapshot.npcs.length}／出口 ${raw.snapshot.exits.length}（${why}）`, now, { commandId: raw.inReplyTo });
+    return addLog(next, '快照', `${raw.snapshot.mapName ?? raw.snapshot.mapId}：NPC ${raw.snapshot.npcs.length}／出口 ${raw.snapshot.exits.length}（${why}）`, now, { commandId: raw.inReplyTo, characterId: raw.characterId });
   }
   if (isEventMessage(raw)) return applyEvent(s, raw.characterId, raw.event, now);
   if (isCommandResultMessage(raw)) {
@@ -199,7 +217,7 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
     const ok = raw.status === 'ACCEPTED';
     const inflight = ok && sent?.expect && !raw.duplicate ? { ...s.inflight, [raw.commandId]: { label: sent.label, sentAt: sent.sentAt, expect: sent.expect } } : s.inflight;
     const text = ok ? '結果：已接受' : `結果：被拒絕 ${raw.reasonCode ?? ''}${raw.message ? `（${raw.message}）` : ''}`;
-    return addLog({ ...s, pending: rest, inflight }, '結果', `${text}${raw.duplicate ? '（重送，沿用先前結果）' : ''}`, now, { commandId: raw.commandId, level: ok ? 'info' : 'warn' });
+    return addLog({ ...s, pending: rest, inflight }, '結果', `${text}${raw.duplicate ? '（重送，沿用先前結果）' : ''}`, now, { commandId: raw.commandId, characterId: raw.characterId, level: ok ? 'info' : 'warn' });
   }
   return s; // 自己送出的指令回音或其他人的訊息：忽略
 }
@@ -263,7 +281,7 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
     case 'DIALOG_OPENED': next = { ...next, dialog: { npcId: e.npcId, npcName: e.npcName, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_UPDATED': next = { ...next, dialog: next.dialog && { ...next.dialog, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_CLOSED': next = { ...next, dialog: null }; break;
-    case 'SHOP_OPENED': next = { ...next, shop: { npcId: e.npcId, npcName: e.npcName, goods: e.goods } }; break;
+    case 'SHOP_OPENED': next = { ...next, dialog: null, shop: { npcId: e.npcId, npcName: e.npcName, goods: e.goods } }; break;
     case 'SHOP_CLOSED': next = { ...next, shop: null }; break;
     case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name), enemyStates: [], canFlee: true, ready: false }, battleResult: null, character: next.character && { ...next.character, inBattle: true } }; break;
     case 'BATTLE_TURN_READY':
@@ -344,11 +362,11 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
       const text = sent
         ? `${sent.label}　預期 ${sent.expect}／實際 ${e.code}（${e.outcome}）${match ? ' ✓' : ' ✗ 與預期不同'}${e.message ? `　${e.message}` : ''}`
         : describeEvent(e);
-      return addLog(next, '結果', text, now, { commandId, level: match && e.outcome !== 'FAILED' ? 'info' : 'warn' });
+      return addLog(next, '結果', text, now, { commandId, characterId, level: match && e.outcome !== 'FAILED' ? 'info' : 'warn' });
     }
     default: break;
   }
   // COMMAND_* 事件與 command-result 重複，只留 command-result 在日誌（避免同一件事列兩行），但保留對 pending 的清理由 result 處理。
   if (e.type === 'COMMAND_ACCEPTED' || e.type === 'COMMAND_REJECTED') return next;
-  return addLog(next, '事件', describeEvent(e), now, { commandId, level });
+  return addLog(next, '事件', describeEvent(e), now, { commandId, characterId, level });
 }
