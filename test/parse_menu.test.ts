@@ -26,8 +26,10 @@ assert(sec('animals').items.length > 0, 'animals listed separately');
 assert(sec('goto').items.length > 3 && sec('goto').items.every(i => i.action?.kind === 'NAV' && i.action.goal.kind === 'MAP'), '前往：出口 → 導航到目標地圖');
 const grocery = sec('goto').items.find(i => i.label === '雜貨店')!;
 assert(grocery.action?.kind === 'NAV' && grocery.action.goal.kind === 'MAP' && typeof grocery.action.goal.mapId === 'string', 'exit item targets the exit\'s destination map');
-assert(sec('gather').items.length === 0 && sec('gather').emptyText.includes('尚未提供'), '採集：舊回放快照 UNAVAILABLE 時仍明說');
-assert(sec('nearby').items.length === 0 && sec('nearby').emptyText.includes('尚未提供'), '附近可採：同上');
+const unavailMenu = buildMenu({ ...village, gatherPoints: { status: 'UNAVAILABLE', reason: 'NOT_IMPLEMENTED', points: [] }, nearbyGatherPoints: undefined }, dir.knownElsewhere('10001'));
+const unavailSec = (k: string) => unavailMenu.find(m => m.key === k)!;
+assert(unavailSec('gather').items.length === 0 && unavailSec('gather').emptyText.includes('尚未提供'), '採集：UNAVAILABLE 時仍明說');
+assert(unavailSec('nearby').items.length === 0 && unavailSec('nearby').emptyText.includes('尚未提供'), '附近可採：同上');
 
 const fx6Village: SceneSnapshot = {
   ...village,

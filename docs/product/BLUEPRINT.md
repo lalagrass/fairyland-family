@@ -111,13 +111,13 @@
 | FX11 | **行動佇列（邏輯移至 family 實作）**：`fairyland` 端不建置複雜多步待辦引擎，僅提供單步原子動作完成／失敗事件與狀態快照 | **外掛端行動佇列**（每人待辦清單持久化於 `localStorage`，支援查看、刪除、調整順序與「缺工具先去買」複合行動規劃，某步失敗即暫停並顯示原因） | FX3、FX5 | M1 |
 | FX9 | **之後才需要**：觀察畫面重用 fairyland 的 Canvas 播放事件；多人階段把規則搬到常駐伺服器 | 觀察入口、伺服器版連線 | M1 之後 | M3–M5 |
 
-**實作狀態（2026-11-16，fairyland `61e5ac8`／family `8f9ec03`）**：除 FX9 外都已有可執行版本並合進兩邊 `main`。「完成」指程式與自動測試通過，實機試玩回報的問題記在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §14。
+**實作狀態（2026-11-16，W5 完成）**：除 FX9 外都已有可執行版本，且 W5 支援協定 v3（`activeWork.endsAt`、`targetMaps`）與 React 三欄顯示／全自動任務推進；實機試玩待確認清單記在 fairyland `docs/design/NEXT_PHASE_PLAN.md` §15.5。
 
 | 編號 | 狀態 | 對應 fairyland 階段 | 備註 |
 | --- | --- | --- | --- |
-| FX1、FX2、FX10 | 完成 | P1 | 協定副本用 `npm run sync-protocol` 同步，`check-protocol` 驗證一致 |
-| FX3 | 完成 | P2 | 逃跑公式是宿主佔位值，不是原版數值 |
-| FX5、FX6、FX11 | 完成（資料部分有缺） | P3／G1 | 原版客戶端沒有工作秒數，暫用佔位；外部考據見 NEXT_PHASE_PLAN §14.5 Task C |
+| FX1、FX2、FX10 | 完成（協定 v3） | P1／W5 | 協定副本用 `npm run sync-protocol` 同步，`check-protocol` 驗證一致；W5 加入 `activeWork` 與任務 `targetMaps` |
+| FX3 | 完成（含 D2/D3） | P2／W5 | 逃跑公式是宿主佔位值；W5 移除寫死地圖正則並串接 `QUEST_AUTO` 全自動任務循環 |
+| FX5、FX6、FX11 | 完成（資料部分有缺；含 DV1–DV5） | P3／G1／W5 | 宿主發送 `WORK_STEP_DURATION_MS=1500` 與 `endsAt` 供進度條倒數；外掛換 React 19、一般模式隱藏除錯、三欄＋手機分頁、日誌折疊過濾與背景通知 |
 | FX4、FX7 | 完成 | P4 | 起始 3 人、上限 5 格；同圖家族成員會畫在 fairyland 畫面上（wave 1–2） |
 | FX8 | 完成 | P5 | 文字呈現武器系別、熟練度與連擊等級 |
 | 任務摘要與戰鬥狀態（FX1／FX10 延伸） | 部分完成 | wave 1–2 | 快照帶任務清單與戰鬥狀態；family 有任務面板與「自動接取／推進／回報」，但只涵蓋示範任務，討伐目標的地圖靠名稱猜測 |

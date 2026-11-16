@@ -30,6 +30,7 @@ const controller = new FamilyController(transport, {
     known: controller.directory.knownElsewhere(s.location?.mapId ?? null),
     queue: controller.queueStatus(),
     queues: controller.queueStatuses(),
+    activeQuestId: controller.activeQuest(),
   }),
 });
 controller.start();
