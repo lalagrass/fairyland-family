@@ -19,7 +19,13 @@ const village = readMap('10001');
 const town = readMap('20010');
 const catalog = { maps: { '20001': { name: '雜貨店' }, '20007': { name: '醫院' }, '20009': { name: '打鐵舖' }, '20010': { name: '吉恩村市鎮中心' }, '10001': { name: '吉恩村' } } };
 const profile = { name: '阿草', level: 5, coins: 1200, hp: 90, mp: 40, stats: { str: 8, con: 8, int: 5, agi: 6, cha: 5, luk: 5 }, inventory: [] };
-const snap = (scene: unknown, x: number, y: number) => buildSceneSnapshot({ scene, profile: { ...profile }, position: { x, y, dir: 2 }, catalog });
+// 本 repo 公開：原版提取的完整配方表不放進 fixture，只留前幾筆示範格式（AGENTS.md：不轉載提取資料）。
+const FIXTURE_RECIPE_LIMIT = 3;
+const snap = (scene: unknown, x: number, y: number) => {
+  const s = buildSceneSnapshot({ scene, profile: { ...profile }, position: { x, y, dir: 2 }, catalog });
+  if (Array.isArray(s?.recipes)) s.recipes = s.recipes.slice(0, FIXTURE_RECIPE_LIMIT);
+  return s;
+};
 
 let seq = 0;
 const base = { v: PROTOCOL_VERSION, characterId, ts: 0 };
