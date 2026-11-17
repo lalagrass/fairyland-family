@@ -29,6 +29,10 @@ jobs:
       - name: Check effect scripts
         run: npm run check-effects
 
+      # FM3: the test appearance bundle must cover the imageless martial-artist slot spec.
+      - name: Check appearance bundle against spec
+        run: npm run check-appearance
+
       - name: Build (typecheck + Vite)
         run: npm run build
 
