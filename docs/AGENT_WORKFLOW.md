@@ -6,7 +6,7 @@
 
 ## 1. 去哪裡找工作
 
-- **Roadmap issue**（fairyland repo，標 `roadmap`）列出全部 milestone 的順序與依賴，是唯一的總表。
+- **Roadmap issue**：[lalagrass/fairyland#16](https://github.com/lalagrass/fairyland/issues/16)（標 `roadmap`）列出全部 milestone 的順序與依賴，是唯一的總表。
 - 每個 milestone 是一個 issue（標 `milestone`），內文固定有：目標、範圍、不做的事、驗收、子任務勾選清單、依賴、參考文件。
 - 跨兩個 repo 的 milestone 只開一個 issue（放在主要改動的 repo），兩邊各開一個 PR 都連回這個 issue。
 - 狀態用 label：
