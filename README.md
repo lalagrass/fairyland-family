@@ -40,7 +40,7 @@
 
 優先閱讀來源專案：
 
-- `docs/design/NEXT_PHASE_PLAN.md`：系統改版、後續地圖與戰鬥修正進度。
+- `docs/design/DESIGN.md`：fairyland 的設計、分工與給本 repo 的介面（舊計畫封存在 `docs/history/`）。
 - `docs/importer/MIGRATION_FIDELITY_MATRIX.md`：原版資料、推測與重建規則的界線。
 - `packages/shared/src/data/`：道具、材料、武器、技能等資料。
 - `packages/shared/src/engine/headless_battle_engine.ts`：無頭戰鬥與事件。
@@ -64,7 +64,7 @@
 
 先閱讀本檔、`AGENTS.md` 與藍圖，並在可存取來源 repo 的環境核對程式。若來源不在目前電腦／雲端環境，明確記錄缺少的依賴，不能假定本機絕對路徑在其他環境存在。
 
-目前進度看藍圖 2.5 節的實作狀態表，下一步與試玩回報的問題看 fairyland `docs/design/NEXT_PHASE_PLAN.md` §0 與 §14。改協定一律在 fairyland 改，再於本 repo 執行 `npm run sync-protocol`。角色數不預設為五人，初始名額與解鎖流程依藍圖 9.5 節試驗後決定。交付時附啟動方式、已完成範圍、驗證結果與已知限制。
+目前進度與待辦看 GitHub issue（總表 lalagrass/fairyland#16），agent 協作流程見 `docs/AGENT_WORKFLOW.md`。改協定一律在 fairyland 改，再於本 repo 執行 `npm run sync-protocol`。角色數不預設為五人，初始名額與解鎖流程依藍圖 9.5 節試驗後決定。交付時附啟動方式、已完成範圍、驗證結果與已知限制。
 
 ## P1：與 fairyland 並排執行
 
@@ -95,7 +95,7 @@ npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔
 協定版本 2。宿主（fairyland）真的執行 `WALK_TO`（只限同一張圖）、`TALK_TO_NPC`、`CHOOSE_DIALOG_OPTION`、`ACCEPT_QUEST`、`BUY_ITEM`、`SELL_ITEM`、`BATTLE_ACTION`、`BATTLE_FLEE`；每個指令先回「已接受／被拒絕＋原因碼」，需要時間的再送 `COMMAND_COMPLETED`。`WORK_ONCE` 仍是 `NOT_IMPLEMENTED`（P3）。
 
 - **自動導航**（`src/navigator.ts`）：`前往 村長`＝規劃跨圖路線（協定資料夾的 `planMapRoute`，鄰接來自快照 `nav.portalGraph` 與外掛看過的各圖出口）→ 每張圖用 `WALK_TO` 走到下一個出口 → 換圖後等新快照再繼續 → 抵達後 `TALK_TO_NPC`。遇敵暫停，戰鬥結束從目前位置續走；遊戲回 `GAME_BUSY`（結算視窗還沒關）就每秒重試。重新派發、取消（`停止導航`）或遊戲重啟都會讓舊的完成處理失效。出口走不通（`BLOCKED`、或走到卻沒換圖）會換同一目的地的另一個出口。
-- **自動戰鬥**（`src/battler.ts`）：策略 手動（預設，什麼都不做）／普通攻擊／逃跑，記在 localStorage。只在 `BATTLE_TURN_READY` 出手，同一（場次, 回合）最多一次；非手動策略在戰鬥結束後會送 `RETURN_TO_MAP`／`DEFEAT_RESCUE` 關掉結算視窗。逃跑公式是宿主的**佔位值**（見 fairyland NEXT_PHASE_PLAN §13.6），不是原版數值。
+- **自動戰鬥**（`src/battler.ts`）：策略 手動（預設，什麼都不做）／普通攻擊／逃跑，記在 localStorage。只在 `BATTLE_TURN_READY` 出手，同一（場次, 回合）最多一次；非手動策略在戰鬥結束後會送 `RETURN_TO_MAP`／`DEFEAT_RESCUE` 關掉結算視窗。逃跑公式是宿主的**佔位值**（見 fairyland `docs/history/NEXT_PHASE_PLAN.md` §13.6），不是原版數值。
 - **已知目錄**（`src/directory.ts`）：預設知道村長傑夫在市鎮中心 20010；每份快照看到的 NPC 與出口都會記住（localStorage）。宿主沒有世界目錄，所以沒去過的地方只能靠 `portalGraph` 與這份預設清單。
 - **面板**：對話選項、商店（買／賣）、戰鬥（攻擊／防禦／逃跑、勝敗視窗）、導航狀態與取消、策略下拉；文字輸入與按鈕走同一個 `UiAction`（`src/parse.ts`）。日誌每個指令都顯示「預期 vs 實際」（例如 `預期 MAP_CHANGED／實際 ENCOUNTER ✗`）。
 - **回放模式**（`?replay=1`）只回應 `REQUEST_SNAPSHOT`，其他指令回 `NOT_IMPLEMENTED`（不模擬遊戲）；P2 的真實行為用 fairyland 的 `scripts/plugin_p2_check.mjs` 兩分頁端到端檢查。
@@ -118,7 +118,7 @@ npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔
 ## P5：無職連擊與武器熟練摘要（FX8）
 
 - 角色面板顯示目前裝備武器系別、該系熟練等級與連擊等級（來自 `SnapshotCharacter` 選填欄位）。
-- 戰鬥引擎（`fairyland` 宿主端 `combo.ts` + `headless_battle_engine.ts`）已對齊連擊衰減 `d = 0.80 + 0.015L`、劍技限定擊倒轉目標、跨武器倍率 `0.6x` 與 0 經驗、以及 `ALL` 範圍技不連擊規則；詳細測試與已知差異見 `BLUEPRINT.md` 4.2–4.3 節與 `../fairyland/docs/design/NEXT_PHASE_PLAN.md`。
+- 戰鬥引擎（`fairyland` 宿主端 `combo.ts` + `headless_battle_engine.ts`）已對齊連擊衰減 `d = 0.80 + 0.015L`、劍技限定擊倒轉目標、跨武器倍率 `0.6x` 與 0 經驗、以及 `ALL` 範圍技不連擊規則；詳細測試與已知差異見 `BLUEPRINT.md` 4.2–4.3 節與 `../fairyland/docs/history/NEXT_PHASE_PLAN.md`。
 
 ## Wave 1–2：任務面板與戰鬥狀態
 
