@@ -2,6 +2,7 @@ import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, Snap
 import type { BattleStrategy } from './battler';
 import type { CharacterStrategyConfig } from './automation/strategyStore';
 import type { NavGoal } from './navigator';
+import type { QueueStopConditions } from './queue';
 
 /** 選單與文字輸入共用的「動作」：同一份文字或同一顆按鈕，一定走到同一個動作。 */
 export type UiAction =
@@ -25,6 +26,10 @@ export type UiAction =
     }
   | { kind: 'QUEUE_CRAFT'; recipeId: number; recipeName: string; count: number; label: string; targetCharacterId?: string }
   | { kind: 'QUEUE_STOP'; label: string; targetCharacterId?: string }
+  | { kind: 'QUEUE_REMOVE'; index: number; label: string; targetCharacterId?: string }
+  | { kind: 'QUEUE_REORDER'; fromIndex: number; toIndex: number; label: string; targetCharacterId?: string }
+  | { kind: 'QUEUE_STOP_CONDITIONS'; patch: Partial<QueueStopConditions>; label: string; targetCharacterId?: string }
+  | { kind: 'DISMISS_RECAP'; label: string }
   | { kind: 'QUEST_AUTO'; questId: number; label: string }
   | { kind: 'QUEST_AUTO_STOP'; label: string };
 

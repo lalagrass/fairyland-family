@@ -66,12 +66,18 @@ export type QueueStopReason =
   | 'SHOP_FAILED'
   | 'NAV_FAILED';
 
+export interface QueueStopConditions {
+  stopOnBagFull: boolean;
+  minSatiety: number | null;
+}
+
 export interface QueueStatus {
   phase: QueuePhase;
   jobs: WorkJob[];
   activeJobIndex: number;
   stopReason: QueueStopReason | null;
   text: string;
+  stopConditions?: QueueStopConditions;
 }
 
 export interface QueueHost {
@@ -165,6 +171,7 @@ export class WorkQueue {
   private navStartedKey: string | null = null;
   private dialogRetries = 0;
   private openShopSentAt = 0;
+  private stopConditions: QueueStopConditions = { stopOnBagFull: false, minSatiety: null };
 
   constructor(
     private host: QueueHost,
@@ -181,7 +188,68 @@ export class WorkQueue {
       activeJobIndex: this.activeJobIndex,
       stopReason: this.stopReason,
       text: this.text,
+      stopConditions: { ...this.stopConditions },
     };
+  }
+
+  setStopConditions(patch: Partial<QueueStopConditions>): QueueStopConditions {
+    this.stopConditions = {
+      stopOnBagFull: patch.stopOnBagFull ?? this.stopConditions.stopOnBagFull,
+      minSatiety:
+        patch.minSatiety === undefined
+          ? this.stopConditions.minSatiety
+          : patch.minSatiety === null
+            ? null
+            : Math.max(0, Math.min(99, Math.round(patch.minSatiety))),
+    };
+    this.persist();
+    this.host.onChange();
+    return { ...this.stopConditions };
+  }
+
+  removeJob(index: number): boolean {
+    if (index < 0 || index >= this.jobs.length) return false;
+    this.jobs.splice(index, 1);
+    if (this.jobs.length === 0) {
+      this.stop('USER_STOPPED', '工作佇列已清空');
+      return true;
+    }
+    if (index < this.activeJobIndex) {
+      this.activeJobIndex = Math.max(0, this.activeJobIndex - 1);
+    } else if (index === this.activeJobIndex) {
+      this.pending = null;
+      this.navStartedKey = null;
+      this.activeJobIndex = Math.min(this.activeJobIndex, this.jobs.length - 1);
+      this.token += 1;
+      if (this.isActive()) this.scheduleStep(0);
+    }
+    this.text = this.describeActive();
+    this.persist();
+    this.host.onChange();
+    return true;
+  }
+
+  reorderJob(fromIndex: number, toIndex: number): boolean {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= this.jobs.length ||
+      toIndex < 0 ||
+      toIndex >= this.jobs.length ||
+      fromIndex === toIndex
+    ) {
+      return false;
+    }
+    const activeId = this.jobs[this.activeJobIndex]?.id;
+    const [moved] = this.jobs.splice(fromIndex, 1);
+    this.jobs.splice(toIndex, 0, moved);
+    if (activeId) {
+      const nextIdx = this.jobs.findIndex(j => j.id === activeId);
+      if (nextIdx >= 0) this.activeJobIndex = nextIdx;
+    }
+    this.text = this.describeActive();
+    this.persist();
+    this.host.onChange();
+    return true;
   }
 
   isActive(): boolean {
@@ -308,9 +376,27 @@ export class WorkQueue {
       return;
     }
 
-    if (isSnapshotMessage(m) && this.isActive() && !this.pending) {
-      this.scheduleStep(50);
+    if (isSnapshotMessage(m) && this.isActive()) {
+      if (this.checkStopConditions(this.host.state())) return;
+      if (!this.pending) this.scheduleStep(50);
     }
+  }
+
+  private checkStopConditions(st: FamilyState): boolean {
+    const tgt = this.targetMember(st);
+    if (!tgt) return false;
+    if (this.stopConditions.stopOnBagFull && tgt.inventoryCount >= tgt.inventoryCap) {
+      this.stop('BAG_FULL', '停止條件觸發：背包已滿');
+      return true;
+    }
+    if (
+      this.stopConditions.minSatiety !== null &&
+      tgt.satiety <= this.stopConditions.minSatiety
+    ) {
+      this.stop('NO_STAMINA', `停止條件觸發：飽食度 ${tgt.satiety} ≤ ${this.stopConditions.minSatiety}`);
+      return true;
+    }
+    return false;
   }
 
   private handleRejected(code: string, message?: string): void {
@@ -420,6 +506,8 @@ export class WorkQueue {
     const isViewed = !targetId || targetId === st.characterId;
     if (isViewed) {
       if (!st.snapshot || !st.character) return null;
+      const invUsed =
+        st.character.inventoryCount ?? st.inventory.reduce((sum, i) => sum + i.count, 0);
       return {
         isViewed: true,
         characterId: targetId ?? '',
@@ -429,6 +517,9 @@ export class WorkQueue {
         y: st.character.y,
         inBattle: Boolean(st.battle || st.battleResult),
         inventory: st.inventory,
+        inventoryCount: invUsed,
+        inventoryCap: st.character.inventoryCap ?? 40,
+        satiety: st.character.satiety ?? 100,
       };
     }
     const m = st.members.find(x => x.characterId === targetId);
@@ -442,6 +533,9 @@ export class WorkQueue {
       y: m.y,
       inBattle: m.inBattle,
       inventory: m.inventory,
+      inventoryCount: m.inventoryCount,
+      inventoryCap: m.inventoryCap,
+      satiety: m.satiety,
     };
   }
 
@@ -494,6 +588,8 @@ export class WorkQueue {
       this.stop('DONE_TARGET', '工作佇列全部目標已完成');
       return;
     }
+
+    if (this.checkStopConditions(st)) return;
 
     if (job.kind === 'CRAFT') {
       if (tgt.isViewed && st.shop) {
@@ -745,6 +841,7 @@ export class WorkQueue {
           phase: this.phase,
           stopReason: this.stopReason,
           text: this.text,
+          stopConditions: this.stopConditions,
         })
       );
     } catch {
@@ -762,6 +859,15 @@ export class WorkQueue {
       if (typeof parsed.phase === 'string') this.phase = parsed.phase as QueuePhase;
       this.stopReason = parsed.stopReason ?? null;
       if (typeof parsed.text === 'string') this.text = parsed.text;
+      if (parsed.stopConditions && typeof parsed.stopConditions === 'object') {
+        this.stopConditions = {
+          stopOnBagFull: Boolean(parsed.stopConditions.stopOnBagFull),
+          minSatiety:
+            typeof parsed.stopConditions.minSatiety === 'number'
+              ? parsed.stopConditions.minSatiety
+              : null,
+        };
+      }
     } catch {
       /* ignore corrupt storage */
     }

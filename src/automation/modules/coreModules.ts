@@ -97,6 +97,21 @@ export function createWorkQueueModule(getQueueFor: (charId?: string | null) => W
         target.stop('USER_STOPPED');
         return { handled: true, error: null };
       }
+      if (action.kind === 'QUEUE_REMOVE') {
+        const target = getQueueFor(action.targetCharacterId ?? ctx.state().characterId);
+        target.removeJob(action.index);
+        return { handled: true, error: null };
+      }
+      if (action.kind === 'QUEUE_REORDER') {
+        const target = getQueueFor(action.targetCharacterId ?? ctx.state().characterId);
+        target.reorderJob(action.fromIndex, action.toIndex);
+        return { handled: true, error: null };
+      }
+      if (action.kind === 'QUEUE_STOP_CONDITIONS') {
+        const target = getQueueFor(action.targetCharacterId ?? ctx.state().characterId);
+        target.setStopConditions(action.patch);
+        return { handled: true, error: null };
+      }
       return { handled: false, error: null };
     },
   };

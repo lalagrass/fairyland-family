@@ -25,6 +25,7 @@ import { Directory } from './directory';
 import { AutoNavigator, type NavStatus } from './navigator';
 import { WorkNotifier, type NotificationAdapter } from './notify';
 import { parseInput, type UiAction } from './parse';
+import { RecapTracker, type WelcomeRecapSummary } from './dv7_recap';
 import { WorkQueue, type QueueStatus } from './queue';
 import { CharacterAppearanceStore } from './render/appearanceStore';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
@@ -57,7 +58,9 @@ export class FamilyController {
   readonly queue: WorkQueue;
   readonly strategyStore: CharacterStrategyStore;
   readonly appearanceStore: CharacterAppearanceStore;
+  readonly recapTracker: RecapTracker;
   readonly automation = new AutomationRegistry();
+  private latestRecap: WelcomeRecapSummary | null = null;
   private readonly questModule: QuestBehaviorModule;
   private queues = new Map<string, WorkQueue>();
   private notifier: WorkNotifier;
@@ -78,6 +81,7 @@ export class FamilyController {
     this.directory = new Directory(opts.storage ?? null);
     this.strategyStore = new CharacterStrategyStore(opts.storage ?? null);
     this.appearanceStore = new CharacterAppearanceStore(opts.storage ?? null);
+    this.recapTracker = new RecapTracker(opts.storage ?? null);
     this.notifier = new WorkNotifier(opts.notification);
 
     const host = {
@@ -201,6 +205,7 @@ export class FamilyController {
   coordinatorMode(): CoordinatorMode { return this.automation.getCoordinatorMode(); }
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
   charAppearances(): Record<string, string> { return this.appearanceStore.snapshotAll(); }
+  welcomeRecap(): WelcomeRecapSummary | null { return this.latestRecap; }
 
   queueStatus(): QueueStatus {
     const cid = this.state.characterId;
@@ -215,6 +220,8 @@ export class FamilyController {
   private receive(raw: unknown): void {
     const now = this.now();
     this.state = applyMessage(this.state, raw, now);
+    const recap = this.recapTracker.evaluateOnState(this.state, now);
+    if (recap) this.latestRecap = recap;
     if (this.state.characterId && this.state.characterId !== this.lastTrackedCharacterId) {
       this.lastTrackedCharacterId = this.state.characterId;
       const saved = this.strategyStore.snapshotAll()[this.state.characterId];
@@ -340,6 +347,11 @@ export class FamilyController {
     if (action.kind === 'CHAR_APPEARANCE_UPDATE') {
       this.appearanceStore.set(action.characterId, action.appearanceId);
       this.state = addLog(this.state, '系統', action.label, this.now());
+      this.emit();
+      return null;
+    }
+    if (action.kind === 'DISMISS_RECAP') {
+      this.latestRecap = null;
       this.emit();
       return null;
     }
