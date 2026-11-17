@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 57515633f850ee9dc36c8054addee704af3e3553
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 12fbb324c7260eb1c5dd0a5d916fcddd86d3e632
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -17,7 +17,7 @@
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -61,8 +61,10 @@ export interface BattleActionSpec {
 export interface BattleActionCommand { type: 'BATTLE_ACTION'; battleId?: number; action: BattleActionSpec }
 /** 戰鬥逃跑（單回合）：成功與否由宿主逃跑引擎擲骰，結果見 BATTLE_ENDED（outcome FLEE）或下一個 BATTLE_TURN_READY。 */
 export interface BattleFleeCommand { type: 'BATTLE_FLEE'; battleId?: number }
-/** 要求宿主立刻廣播一份完整場景快照（P1 唯一會被執行的指令）。 */
-export interface RequestSnapshotCommand { type: 'REQUEST_SNAPSHOT' }
+/** 要求宿主立刻廣播一份完整場景快照（可選 includeStatic 一併帶靜態資料）。 */
+export interface RequestSnapshotCommand { type: 'REQUEST_SNAPSHOT'; includeStatic?: boolean }
+/** 要求宿主送一次靜態資料（FX15：配方、傳送門圖、技能表、FX12 素材約定）。 */
+export interface RequestStaticDataCommand { type: 'REQUEST_STATIC_DATA' }
 /** 切換 2D 畫面目前觀察中的家族角色（FX4）。 */
 export interface SwitchViewCharacterCommand { type: 'SWITCH_VIEW_CHARACTER'; characterId: string }
 /** 將物品或金幣存入家族共用倉庫（FX7；以信封 `characterId` 決定操作者）。 */
@@ -86,6 +88,7 @@ export type PluginCommand =
   | BattleActionCommand
   | BattleFleeCommand
   | RequestSnapshotCommand
+  | RequestStaticDataCommand
   | SwitchViewCharacterCommand
   | WarehouseDepositCommand
   | WarehouseWithdrawCommand
@@ -93,7 +96,7 @@ export type PluginCommand =
 
 export const PLUGIN_COMMAND_TYPES = [
   'WALK_TO', 'TALK_TO_NPC', 'CHOOSE_DIALOG_OPTION', 'ACCEPT_QUEST', 'BUY_ITEM', 'SELL_ITEM',
-  'WORK_ONCE', 'BATTLE_ACTION', 'BATTLE_FLEE', 'REQUEST_SNAPSHOT',
+  'WORK_ONCE', 'BATTLE_ACTION', 'BATTLE_FLEE', 'REQUEST_SNAPSHOT', 'REQUEST_STATIC_DATA',
   'SWITCH_VIEW_CHARACTER', 'WAREHOUSE_DEPOSIT', 'WAREHOUSE_WITHDRAW', 'GAME_COMMAND',
 ] as const;
 export type PluginCommandType = (typeof PLUGIN_COMMAND_TYPES)[number];
@@ -198,6 +201,21 @@ export interface SnapshotActiveWork {
   endsAt: number;
 }
 
+export type CharacterVisualAction = 'IDLE' | 'WALK' | 'WORK' | 'BATTLE';
+
+export interface SnapshotMovePath {
+  waypoints: Array<{ x: number; y: number }>;
+  startedAt: number;
+  endsAt: number;
+  speedPxPerSec?: number;
+}
+
+export interface SnapshotRampTint {
+  hair: [number, number, number];
+  skin: [number, number, number];
+  outfit: [number, number, number];
+}
+
 export interface SnapshotCharacter {
   name: string | null;
   level: number;
@@ -210,6 +228,12 @@ export interface SnapshotCharacter {
   y: number;
   dir: number;
   inBattle: boolean;
+  /** FX13：畫面狀態（外觀模型、武器、染色、目前動作、移動路徑與時間）。 */
+  modelId?: string;
+  weaponModel?: string;
+  tint?: SnapshotRampTint;
+  action?: CharacterVisualAction;
+  movePath?: SnapshotMovePath | null;
   satiety?: number;
   maxSatiety?: number;
   inventoryCount?: number;
@@ -352,6 +376,12 @@ export interface SnapshotFamilyMember {
   mapName: string | null;
   x: number;
   y: number;
+  dir?: number;
+  modelId?: string;
+  weaponModel?: string;
+  tint?: SnapshotRampTint;
+  action?: CharacterVisualAction;
+  movePath?: SnapshotMovePath | null;
   gold: number;
   satiety: number;
   inventoryCount: number;
@@ -402,8 +432,8 @@ export interface SceneSnapshot {
     /** 地圖像素寬高，供外掛估距離。 */
     pixelWidth: number | null;
     pixelHeight: number | null;
-    /** 世界目錄的地圖鄰接（沒有世界目錄時只有目前地圖與其直接出口）。 */
-    portalGraph: SnapshotPortalNode[];
+    /** v4 起改於 STATIC_DATA 連線時送一次（Snapshot 可省略以瘦身）；測試或舊夾具可選附帶。 */
+    portalGraph?: SnapshotPortalNode[];
   };
 }
 
@@ -413,7 +443,14 @@ export interface SceneSnapshot {
 
 export interface DialogOption { id: string; label: string }
 
-export interface BattleEnemyBrief { id: string; name: string; level: number | null }
+export interface BattleEnemyBrief {
+  id: string;
+  name: string;
+  level: number | null;
+  slot?: number;
+  modelId?: string;
+  colorTint?: string;
+}
 /** 回合就緒時敵人的即時狀態（只列存活者）。 */
 export interface SnapshotBattleStatus {
   type: string;
@@ -429,6 +466,11 @@ export interface SnapshotBattleUnitSummary {
   maxHp: number;
   mp?: number;
   maxMp?: number;
+  slot?: number;
+  row?: 'FRONT' | 'BACK';
+  modelId?: string;
+  weaponModel?: string;
+  colorTint?: string;
   isDead?: boolean;
   isDefending?: boolean;
   isChanting?: boolean;
@@ -472,10 +514,34 @@ export interface BattleEnemyState {
   name: string;
   hp: number;
   maxHp: number;
+  row?: 'FRONT' | 'BACK';
+  modelId?: string;
+  colorTint?: string;
   isDead?: boolean;
   isDefending?: boolean;
   isChanting?: boolean;
   statuses?: SnapshotBattleStatus[];
+}
+
+/** FX14：戰鬥時間軸事件單項（供 family FM2 播放動畫與特效）。 */
+export interface BattleTimelineItem {
+  tMs: number;
+  type: string;
+  actorId?: string;
+  targetId?: string;
+  targetIds?: string[];
+  actionName?: string;
+  skillId?: number;
+  effectId?: string;
+  damage?: number;
+  heal?: number;
+  isCrit?: boolean;
+  isCombo?: boolean;
+  comboIndex?: number;
+  comboTotal?: number;
+  statusType?: string;
+  isCaptured?: boolean;
+  message?: string;
 }
 
 export type LocationChangeCause = 'LOAD' | 'MAP_CHANGE' | 'WARP';
@@ -485,14 +551,15 @@ export type GameEvent =
   | { type: 'GAME_STARTED'; sessionId: string }
   | { type: 'GAME_STOPPED'; sessionId: string; reason: 'PAGE_HIDE' | 'UNLOAD' | 'SHUTDOWN' }
   | { type: 'LOCATION_CHANGED'; mapId: string; mapName: string | null; fromMapId: string | null; x: number; y: number; cause: LocationChangeCause }
-  | { type: 'MOVED'; mapId: string; x: number; y: number; dir: number }
+  | { type: 'MOVED'; mapId: string; x: number; y: number; dir: number; action?: CharacterVisualAction; movePath?: SnapshotMovePath | null }
   | { type: 'DIALOG_OPENED'; npcId: string; npcName: string; role: string | null; lines: string[]; options: DialogOption[]; optionsAvailable: boolean }
   | { type: 'DIALOG_UPDATED'; npcId: string; lines: string[]; options: DialogOption[] }
   | { type: 'DIALOG_CLOSED'; npcId: string }
   | { type: 'SHOP_OPENED'; npcId: string; npcName: string; goods: SnapshotShopGood[] }
   | { type: 'SHOP_CLOSED'; npcId: string }
-  | { type: 'BATTLE_STARTED'; battleId: number; mapId: string; enemies: BattleEnemyBrief[] }
+  | { type: 'BATTLE_STARTED'; battleId: number; mapId: string; enemies: BattleEnemyBrief[]; allies?: SnapshotBattleUnitSummary[] }
   | { type: 'BATTLE_ENDED'; battleId: number; outcome: BattleOutcome }
+  | { type: 'BATTLE_TIMELINE'; battleId: number; round: number; events: BattleTimelineItem[] }
   | {
       type: 'BATTLE_TURN_READY';
       battleId: number;
@@ -512,7 +579,7 @@ export type GameEvent =
 
 export const GAME_EVENT_TYPES = [
   'GAME_STARTED', 'GAME_STOPPED', 'LOCATION_CHANGED', 'MOVED', 'DIALOG_OPENED', 'DIALOG_UPDATED', 'DIALOG_CLOSED',
-  'SHOP_OPENED', 'SHOP_CLOSED', 'BATTLE_STARTED', 'BATTLE_ENDED', 'BATTLE_TURN_READY', 'INVENTORY_CHANGED', 'GOLD_CHANGED',
+  'SHOP_OPENED', 'SHOP_CLOSED', 'BATTLE_STARTED', 'BATTLE_ENDED', 'BATTLE_TIMELINE', 'BATTLE_TURN_READY', 'INVENTORY_CHANGED', 'GOLD_CHANGED',
   'WAREHOUSE_CHANGED', 'ACTIVE_CHARACTER_CHANGED',
   'COMMAND_ACCEPTED', 'COMMAND_REJECTED', 'COMMAND_COMPLETED',
 ] as const;
@@ -530,6 +597,51 @@ export interface EnvelopeBase {
   ts: number;
 }
 
+/** FX12：同源、唯讀、有版本的素材清單與圖層／混色約定。 */
+export interface StaticAssetManifest {
+  version: string;
+  baseUrl: string;
+  readOnly: true;
+  paths: {
+    spriteManifest: string;
+    spriteAtlas: string;
+    mapScene: string;
+    mapAsset: string;
+    spellManifest: string;
+    spellAtlas: string;
+    worldCatalog: string;
+    battleBg: string;
+    itemIcon: string;
+    digitsManifest: string;
+  };
+  spriteLayerOrder: string[];
+  supportedBlendModes: Array<'normal' | 'additive' | 'screen' | 'luma_alpha'>;
+}
+
+/** FX15：技能表摘要（供 family FM3 顯示對照與戰鬥面板查表）。 */
+export interface StaticSkillSummary {
+  id: number;
+  name: string;
+  kind: 'SKILL' | 'SPELL';
+  mpCost: number;
+  targetScope: string;
+  maxTargets?: number;
+  element?: string;
+  animId?: string;
+  weaponFamily?: string;
+  reqLevel?: number;
+}
+
+/** FX15／B9：連線時送一次的靜態資料（配方、地圖與傳送點鄰接、技能表、FX12 素材約定）。 */
+export interface StaticDataPayload {
+  schema: 'static-data';
+  version: string;
+  recipes: SnapshotWorkRecipe[];
+  portalGraph: SnapshotPortalNode[];
+  skills: StaticSkillSummary[];
+  assets: StaticAssetManifest;
+}
+
 export interface HeartbeatMessage extends EnvelopeBase {
   kind: 'heartbeat';
   /** 每次載入遊戲頁面產生一個，外掛用來分辨「同一個分頁」與「重開」。 */
@@ -539,6 +651,8 @@ export interface HeartbeatMessage extends EnvelopeBase {
   mapId: string | null;
   phase: 'OPENING' | 'PLAYING';
   inBattle: boolean;
+  /** FX16：宿主處於 `?clock=1` 只當時鐘模式（不畫畫面）。 */
+  clockOnly?: boolean;
 }
 
 export type SnapshotReason = 'STARTED' | 'MAP_CHANGED' | 'SCENE_RELOADED' | 'REQUESTED' | 'PHASE_CHANGED';
@@ -550,6 +664,13 @@ export interface SnapshotMessage extends EnvelopeBase {
   /** 回應 REQUEST_SNAPSHOT 時帶該指令的 commandId。 */
   inReplyTo?: string;
   snapshot: SceneSnapshot;
+}
+
+export interface StaticDataMessage extends EnvelopeBase {
+  kind: 'static-data';
+  seq: number;
+  inReplyTo?: string;
+  staticData: StaticDataPayload;
 }
 
 export interface EventMessage extends EnvelopeBase {
@@ -577,9 +698,10 @@ export interface CommandResultMessage extends EnvelopeBase {
 export type PluginMessage =
   | HeartbeatMessage
   | SnapshotMessage
+  | StaticDataMessage
   | EventMessage
   | CommandMessage
   | CommandResultMessage;
 
-export const MESSAGE_KINDS = ['heartbeat', 'snapshot', 'event', 'command', 'command-result'] as const;
+export const MESSAGE_KINDS = ['heartbeat', 'snapshot', 'static-data', 'event', 'command', 'command-result'] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];

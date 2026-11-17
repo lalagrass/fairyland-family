@@ -2,16 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROTOCOL_VERSION, isCommandMessage, isEventMessage, isHeartbeatMessage, isCommandResultMessage, isSnapshotMessage, isPluginMessage } from '../src/protocol/index';
+import { PROTOCOL_VERSION, isCommandMessage, isEventMessage, isHeartbeatMessage, isCommandResultMessage, isSnapshotMessage, isStaticDataMessage, isPluginMessage } from '../src/protocol/index';
 import ex from '../src/protocol/examples.json';
 import { assert, done, suite } from './helpers';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 suite('vendored protocol examples pass the vendored guards');
-assert(PROTOCOL_VERSION === 3, 'protocol version 3');
+assert(PROTOCOL_VERSION === 4, 'protocol version 4');
 assert(isHeartbeatMessage(ex.heartbeat), 'heartbeat');
 assert(isSnapshotMessage(ex.snapshot), 'snapshot');
+assert(isStaticDataMessage(ex.staticData), 'staticData');
 assert(ex.events.every(isEventMessage), 'events');
 assert(ex.commands.every(isCommandMessage), 'commands');
 assert(ex.commandResults.every(isCommandResultMessage), 'command results');

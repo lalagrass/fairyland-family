@@ -5,6 +5,7 @@ import {
   isEventMessage,
   isPluginMessage,
   isSnapshotMessage,
+  isStaticDataMessage,
   type CommandMessage,
   type PluginCommand,
   type PluginMessage,
@@ -154,8 +155,11 @@ export class FamilyController {
     const now = this.now();
     this.state = applyMessage(this.state, raw, now);
     if (isPluginMessage(raw)) {
+      if (isStaticDataMessage(raw)) {
+        this.directory.learnPortalGraph(raw.staticData.portalGraph);
+      }
       if (raw.kind === 'snapshot') {
-        this.directory.learn(raw.snapshot);
+        this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
         for (const m of raw.snapshot.family?.members ?? []) this.getOrCreateQueue(m.characterId);
       }
       if (this.sendDepth > 0 || this.agentQueue.length) { this.agentQueue.push(raw); this.after(0, () => this.flushAgents()); }
@@ -212,11 +216,12 @@ export class FamilyController {
       this.lastStatus = st;
       if (st === 'STOPPED') this.state = addLog(this.state, '連線', '遊戲未執行', now, { level: 'warn' });
     }
-    // 連上（或遊戲重開）就主動要一份快照，等於「接上當下進度」。
+    // 連上（或遊戲重開）就主動要一份快照（首次連線時附帶 includeStatic 領取一次 FX15 靜態資料）。
     if (st === 'RUNNING' && this.state.sessionId && this.lastRequestedSession !== this.state.sessionId && this.state.phase === 'PLAYING') {
+      const needStatic = this.lastRequestedSession === null || !this.state.staticData;
       this.lastRequestedSession = this.state.sessionId;
       this.emit();
-      this.send({ type: 'REQUEST_SNAPSHOT' }, '要求快照（連線）');
+      this.send(needStatic ? { type: 'REQUEST_SNAPSHOT', includeStatic: true } : { type: 'REQUEST_SNAPSHOT' }, '要求快照（連線）');
       return;
     }
     this.emit();
@@ -575,7 +580,7 @@ export class FamilyController {
     const s = this.state;
     const r = parseInput(text, s.snapshot, {
       mapId: s.location?.mapId, dialogOptions: s.dialog?.options, enemies: s.battle?.enemyStates, battleId: s.battle?.battleId ?? null, inventory: s.inventory,
-      members: s.members, warehouse: s.warehouse,
+      members: s.members, warehouse: s.warehouse, recipes: s.staticData?.recipes,
       findNpc: q => this.directory.findNpc(q), findMap: q => this.directory.findMap(q),
     });
     if (!r.ok) return r.error;

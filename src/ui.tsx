@@ -285,12 +285,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   }, [snap, aux.known]);
 
   const craftItems: MenuItem[] = useMemo(() => {
-    if (!snap?.recipes || snap.recipes.length === 0) return [];
+    const recipes = snap?.recipes ?? state.staticData?.recipes ?? [];
+    if (recipes.length === 0) return [];
     const invMap = new Map(state.inventory.map(i => [i.itemId, i.count]));
-    const hasAll = (r: (typeof snap.recipes)[number]) =>
+    const hasAll = (r: (typeof recipes)[number]) =>
       r.ingredients.every(i => i.itemId !== null && (invMap.get(i.itemId) ?? 0) >= i.count);
-    const priority = snap.recipes.filter(r => r.recipeId === 20901 || r.recipeId === 40101 || hasAll(r));
-    const picked = [...priority, ...snap.recipes.filter(r => !priority.includes(r))].slice(0, 12);
+    const priority = recipes.filter(r => r.recipeId === 20901 || r.recipeId === 40101 || hasAll(r));
+    const picked = [...priority, ...recipes.filter(r => !priority.includes(r))].slice(0, 12);
     return picked.map(r => ({
       label: `製作：${r.name}`,
       hint: r.ingredients.map(i => `${i.name}×${i.count}`).join('+'),
@@ -302,7 +303,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
         label: `製作：${r.name}`,
       },
     }));
-  }, [snap?.recipes, state.inventory]);
+  }, [snap?.recipes, state.staticData?.recipes, state.inventory]);
 
   const collapsedLogs = useMemo(
     () => collapseAndFilterLogs(state.log, { devMode, tagFilter, charFilter }),
@@ -354,6 +355,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           {running ? '遊戲執行中' : '遊戲未執行'}
         </span>
         <span className="pill mode">{modeLabel}</span>
+        {state.clockOnly && <span className="pill ok" data-testid="clock-only-pill">時鐘模式</span>}
         {devMode && <span className="pill warn">開發者模式</span>}
         {devMode && (
           <span className="muted" data-testid="session">

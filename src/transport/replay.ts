@@ -4,9 +4,11 @@ import {
   isEventMessage,
   isHeartbeatMessage,
   isSnapshotMessage,
+  isStaticDataMessage,
   type CommandMessage,
   type PluginMessage,
   type SceneSnapshot,
+  type StaticDataPayload,
 } from '../protocol/index';
 import type { Transport } from './types';
 
@@ -53,6 +55,7 @@ export class ReplayTransport implements Transport {
   private seq = 100000;
   private sessionId = 'replay-session';
   private latestSnapshot: SceneSnapshot | null = null;
+  private latestStaticData: StaticDataPayload | null = null;
   private seen = new Map<string, { status: 'ACCEPTED' | 'REJECTED'; reasonCode?: string }>();
   private readonly speed: number;
   private readonly loop: boolean;
@@ -76,6 +79,7 @@ export class ReplayTransport implements Transport {
     const steps = this.fixture.steps;
     this.sessionId = `replay-${this.sch.now().toString(36)}`;
     this.latestSnapshot = null;
+    this.latestStaticData = null;
     this.mapId = null;
     this.beat();
     this.hb = this.sch.setInterval(() => this.beat(), this.heartbeatMs);
@@ -97,6 +101,7 @@ export class ReplayTransport implements Transport {
 
   private deliver(m: PluginMessage): void {
     if (isSnapshotMessage(m)) { this.latestSnapshot = m.snapshot; this.mapId = m.snapshot.mapId; }
+    if (isStaticDataMessage(m)) { this.latestStaticData = m.staticData; }
     if (isEventMessage(m)) {
       const e = m.event;
       if (e.type === 'LOCATION_CHANGED') this.mapId = e.mapId;
@@ -117,7 +122,8 @@ export class ReplayTransport implements Transport {
     let out: { status: 'ACCEPTED' | 'REJECTED'; reasonCode?: string; message?: string };
     if (msg.characterId !== this.fixture.characterId) out = { status: 'REJECTED', reasonCode: 'WRONG_CHARACTER' };
     else if (msg.command.type === 'REQUEST_SNAPSHOT') out = this.latestSnapshot ? { status: 'ACCEPTED' } : { status: 'REJECTED', reasonCode: 'GAME_NOT_READY' };
-    else out = { status: 'REJECTED', reasonCode: 'NOT_IMPLEMENTED', message: `回放模式只支援 REQUEST_SNAPSHOT，不執行 ${msg.command.type}` };
+    else if (msg.command.type === 'REQUEST_STATIC_DATA') out = this.latestStaticData ? { status: 'ACCEPTED' } : { status: 'REJECTED', reasonCode: 'GAME_NOT_READY' };
+    else out = { status: 'REJECTED', reasonCode: 'NOT_IMPLEMENTED', message: `回放模式只支援 REQUEST_SNAPSHOT / REQUEST_STATIC_DATA，不執行 ${msg.command.type}` };
     if (out.reasonCode !== 'GAME_NOT_READY') this.seen.set(msg.commandId, out);
     const t = () => this.sch.now();
     this.emit({ ...base, ts: t(), kind: 'command-result', commandId: msg.commandId, ...out } as PluginMessage);
@@ -127,8 +133,13 @@ export class ReplayTransport implements Transport {
         ? { type: 'COMMAND_ACCEPTED', commandId: msg.commandId }
         : { type: 'COMMAND_REJECTED', commandId: msg.commandId, reasonCode: out.reasonCode, ...(out.message ? { message: out.message } : {}) },
     } as PluginMessage);
-    if (out.status === 'ACCEPTED' && this.latestSnapshot) {
+    if (out.status === 'ACCEPTED' && msg.command.type === 'REQUEST_SNAPSHOT' && this.latestSnapshot) {
       this.emit({ ...base, ts: t(), kind: 'snapshot', seq: ++this.seq, reason: 'REQUESTED', inReplyTo: msg.commandId, snapshot: this.latestSnapshot });
+      if (msg.command.includeStatic && this.latestStaticData) {
+        this.emit({ ...base, ts: t(), kind: 'static-data', seq: ++this.seq, inReplyTo: msg.commandId, staticData: this.latestStaticData });
+      }
+    } else if (out.status === 'ACCEPTED' && msg.command.type === 'REQUEST_STATIC_DATA' && this.latestStaticData) {
+      this.emit({ ...base, ts: t(), kind: 'static-data', seq: ++this.seq, inReplyTo: msg.commandId, staticData: this.latestStaticData });
     }
   }
 

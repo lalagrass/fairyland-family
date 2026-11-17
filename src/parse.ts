@@ -1,4 +1,4 @@
-import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotFamilyMember, SnapshotItem } from './protocol/index';
+import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotFamilyMember, SnapshotItem, SnapshotWorkRecipe } from './protocol/index';
 import type { BattleStrategy } from './battler';
 import type { NavGoal } from './navigator';
 
@@ -39,6 +39,7 @@ export interface ParseContext {
   inventory?: SnapshotItem[];
   members?: SnapshotFamilyMember[];
   warehouse?: { gold: number; cap: number; items: SnapshotItem[] } | null;
+  recipes?: SnapshotWorkRecipe[];
   /** 已知（看過的）NPC／地圖，用來解析「前往 村長」這種不在目前地圖的目標。 */
   findNpc?: (q: string) => Array<{ name: string; mapId: string }>;
   findMap?: (q: string) => Array<{ mapId: string; name: string }>;
@@ -306,8 +307,8 @@ export function parseInput(text: string, snap: SceneSnapshot | null, ctx: ParseC
 
     case '製作': case '冶煉': case '鍛造': case '調配': case '料理': case 'craft': {
       if (!snap) return fail('還沒有場景快照（遊戲未執行或場景載入中）');
-      const recipes = snap.recipes ?? [];
-      if (recipes.length === 0) return fail('目前快照沒有配方目錄');
+      const recipes = snap.recipes ?? ctx.recipes ?? [];
+      if (recipes.length === 0) return fail('目前尚未載入配方目錄（請等待靜態資料同步）');
       const parts = rest.split(' ').filter(Boolean);
       if (!parts.length) return fail(`用法：${verb} <配方名稱或編號> [數量]`);
       let count = 1;

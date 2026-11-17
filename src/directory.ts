@@ -1,4 +1,4 @@
-import type { MapAdjacency, SceneSnapshot } from './protocol/index';
+import type { MapAdjacency, SceneSnapshot, SnapshotPortalNode } from './protocol/index';
 
 /** 外掛自己「看過」的世界：每張地圖的名稱、NPC 與出口。宿主沒有世界目錄，所以跨圖資料只能一張一張學。 */
 export interface DirNpc { name: string; mapId: string; mapName: string | null; role?: string | null; seed?: boolean }
@@ -26,22 +26,26 @@ export class Directory {
     } catch { this.maps = {}; }
   }
 
-  /** 從一份快照學到這張圖的 NPC、出口，以及快照附帶的世界鄰接。 */
-  learn(snap: SceneSnapshot): void {
-    const targets: Record<string, string | null> = {};
-    for (const e of snap.exits) targets[e.targetMapId] = e.targetMapName;
-    this.maps[snap.mapId] = {
-      mapId: snap.mapId, name: snap.mapName, targets,
-      npcs: snap.npcs.filter(n => n.talkable).map(n => ({ id: n.id, name: n.name, role: n.role })),
-    };
-    for (const node of snap.nav.portalGraph) {
-      if (node.mapId === snap.mapId) continue;
+  /** 從靜態資料或快照學到世界鄰接（FX15：portalGraph 已移至 static-data，不一定在每份快照內）。 */
+  learnPortalGraph(graph: SnapshotPortalNode[]): void {
+    for (const node of graph) {
       const m = this.maps[node.mapId] ?? { mapId: node.mapId, name: node.name, npcs: [], targets: {} };
       if (node.name && !m.name) m.name = node.name;
       for (const t of node.targets) if (!(t in m.targets)) m.targets[t] = null;
       this.maps[node.mapId] = m;
     }
     try { this.storage?.setItem(KEY, JSON.stringify(this.maps)); } catch { /* 無法儲存不影響功能 */ }
+  }
+
+  /** 從一份快照學到這張圖的 NPC、出口，以及快照附帶的世界鄰接。 */
+  learn(snap: SceneSnapshot, fallbackGraph?: SnapshotPortalNode[]): void {
+    const targets: Record<string, string | null> = {};
+    for (const e of snap.exits) targets[e.targetMapId] = e.targetMapName;
+    this.maps[snap.mapId] = {
+      mapId: snap.mapId, name: snap.mapName, targets,
+      npcs: snap.npcs.filter(n => n.talkable).map(n => ({ id: n.id, name: n.name, role: n.role })),
+    };
+    this.learnPortalGraph(snap.nav.portalGraph ?? fallbackGraph ?? []);
   }
 
   mapName(mapId: string): string | null {
@@ -72,7 +76,7 @@ export class Directory {
     const add = (from: string, to: string) => { (adj[from] ??= []); if (!adj[from].includes(to)) adj[from].push(to); };
     for (const m of Object.values(this.maps)) for (const t of Object.keys(m.targets)) add(m.mapId, t);
     if (snap) {
-      for (const n of snap.nav.portalGraph) for (const t of n.targets) add(n.mapId, t);
+      for (const n of snap.nav.portalGraph ?? []) for (const t of n.targets) add(n.mapId, t);
       for (const e of snap.exits) add(snap.mapId, e.targetMapId);
     }
     return adj;
