@@ -1,5 +1,10 @@
 import type { StaticAssetManifest } from '../protocol/index';
 import { formatAssetUrl, type SpriteModelManifest } from './appearance';
+import {
+  parseLdtkDecorations,
+  type LdtkProject,
+  type MapDecorationItem,
+} from './ldtkLoader';
 
 export interface MapGroundCell {
   tile_file?: string;
@@ -61,6 +66,8 @@ export class RuntimeAssetLoader {
   private mapInflight = new Map<string, Promise<RuntimeMapScene | null>>();
   private spriteCache = new Map<string, SpriteModelManifest | null>();
   private spriteInflight = new Map<string, Promise<SpriteModelManifest | null>>();
+  private ldtkCache = new Map<string, MapDecorationItem[]>();
+  private ldtkInflight = new Map<string, Promise<MapDecorationItem[]>>();
 
   getMap(mapId: string): RuntimeMapScene | null | undefined {
     return this.mapCache.get(mapId);
@@ -68,6 +75,34 @@ export class RuntimeAssetLoader {
 
   getSprite(modelId: string): SpriteModelManifest | null | undefined {
     return this.spriteCache.get(modelId);
+  }
+
+  getDecorations(mapId: string): MapDecorationItem[] {
+    return this.ldtkCache.get(mapId) ?? [];
+  }
+
+  async loadDecorations(mapId: string): Promise<MapDecorationItem[]> {
+    if (!mapId) return [];
+    const hit = this.ldtkCache.get(mapId);
+    if (hit) return hit;
+    const inflight = this.ldtkInflight.get(mapId);
+    if (inflight) return inflight;
+
+    const url = `/family/assets/maps/${mapId}_decor.ldtk`;
+    const p = this.fetchJson<LdtkProject>(url)
+      .then(proj => {
+        const items = proj ? parseLdtkDecorations(proj) : [];
+        this.ldtkCache.set(mapId, items);
+        this.ldtkInflight.delete(mapId);
+        return items;
+      })
+      .catch(() => {
+        this.ldtkCache.set(mapId, []);
+        this.ldtkInflight.delete(mapId);
+        return [];
+      });
+    this.ldtkInflight.set(mapId, p);
+    return p;
   }
 
   async loadMap(mapId: string, assets?: StaticAssetManifest): Promise<RuntimeMapScene | null> {
