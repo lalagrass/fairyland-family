@@ -128,11 +128,12 @@
 | 任務摘要與戰鬥狀態（FX1／FX10 延伸） | 部分完成 | wave 1–2 | 快照帶任務清單與戰鬥狀態；family 有任務面板與「自動接取／推進／回報」，但只涵蓋示範任務，討伐目標的地圖靠名稱猜測 |
 | FX9 | 未開始 | P6 | 觀察畫面與常駐伺服器 |
 
-**第五輪分工（2026-11-17，【提案】）**：fairyland 以百分百還原為目標（改回原版 `classic` 規則、模擬伺服器層補攻略數值、還原度報表），並提供給本 repo 的介面。**本 repo 承擔文字介面、自動化（以前的外掛）、多角色與所有新畫面**，只改顯示、不改遊戲規則。本 repo 公開，**不放任何原版素材、提取資料或考據數值**，執行時從同源的 fairyland 開發伺服器讀取（FX12）。
+**第五輪分工（2026-11-17，【定案】）**：fairyland 以百分百還原為目標（改回原版 `classic` 規則、模擬伺服器層補攻略數值、還原度報表），並提供給本 repo 的介面。**本 repo 承擔文字介面、自動化（以前的外掛）、多角色與所有新畫面**，只改顯示、不改遊戲規則。本 repo 公開，**不放任何原版素材、提取資料或考據數值**，執行時從同源的 fairyland 開發伺服器讀取（FX12）。
 
 - 框架：沿用 React 19＋Vite；CSS Grid＋container queries 做寬／窄兩種版面；Radix UI 無樣式元件；PixiJS v8 畫遊戲畫面；自訂「外觀提供者」介面讓每個角色各自選原版或新外觀；3D 武俠模型用 Blender 渲染成圖集；自動化改成行為模組（例如 XState）。
 - Milestone：FM1 版面殼＋原版畫面 → FM2 戰鬥與特效 → FM3 可替換外觀 → FM4 現代地圖顯示 → FM6 顯示第二波；FM-A 自動化模組化、FM5 武俠角色（以武鬥家為範圍：素材清單當必做項目，新角色原創）平行。
-- 開源外掛只參考做法、不複製程式碼；本 repo 還沒有 LICENSE，待決定。
+- 開源外掛只參考做法、不複製程式碼；授權：程式碼 MIT、美術保留權利（`LICENSE`）。
+- 協作：一個 milestone 一個 GitHub issue，流程見 `docs/AGENT_WORKFLOW.md`。
 - 手機版面先做，真正在手機上玩需要中繼服務（backlog）。
 
 詳見 fairyland `docs/design/NEXT_PHASE_PLAN.md` §17。下表的 W8–W14 已由 §17 取代；FX9 改由 FX12–FX14 取代。
@@ -458,7 +459,7 @@
 
 | 日期 | 決定 | 取代 | 原因 |
 | --- | --- | --- | --- |
-| 2026-11-17 | 【提案】fairyland 百分百還原（`classic`、模擬伺服器層）與宿主介面；文字介面、自動化、多角色與新畫面（觀察、戰鬥、地圖顯示、武俠外觀、AI 美術）全部在本 repo，只改顯示不改規則；原版素材執行時從 fairyland 同源讀取，不進本 repo（fairyland NEXT_PHASE_PLAN §17） | 第三輪把 `packages/render`、地圖新格式、武俠角色放在 fairyland | Yuying 要 fairyland 保持完全復刻、畫面優化都發生在 family |
+| 2026-11-17 | fairyland 百分百還原（`classic`、模擬伺服器層）與宿主介面；文字介面、自動化、多角色與新畫面（觀察、戰鬥、地圖顯示、武俠外觀、AI 美術）全部在本 repo，只改顯示不改規則；原版素材執行時從 fairyland 同源讀取，不進本 repo（fairyland NEXT_PHASE_PLAN §17） | 第三輪把 `packages/render`、地圖新格式、武俠角色放在 fairyland | Yuying 要 fairyland 保持完全復刻、畫面優化都發生在 family |
 | 2026-11-16 | 現階段只做吉恩村生活圈、以本機分頁為時鐘；地圖改走現代架構（自有世界格式、連續世界、可編輯、會變化）；新角色走中國傳統武俠，參考《活俠傳》畫風（只參考風格）。設計在 fairyland `docs/design/WORLD_AND_WUXIA_DIRECTION.md` | 第二輪排程中的綠夫村／伊利村擴展、常駐宿主與手機版 | Yuying 想先把單一地區與畫面做好，並把遊戲轉向自己的武俠風格 |
 | 2026-11-16 | 宿主快照揭露任務清單與戰鬥即時狀態，任務面板與自動任務放在 family（fairyland NEXT_PHASE_PLAN §14.4、§14.7）；fairyland 一般遊玩隱藏委託總覽與自動戰術鈕；同一張圖上的家族成員也畫在 fairyland 畫面上 | fairyland NPC 對話框內建委託總覽、戰鬥 HUD 自動戰術鈕；2D 畫面只畫當前觀看的角色 | 維持純淨宿主：宿主只給唯讀狀態與單步指令，自動流程在外掛；試玩時三個角色在同一張圖卻互相看不見 |
 | 2026-11-15 | 完成 `G2` 吉恩村單區貫通里程碑（`codex/g2-gien-vertical-slice`）：外掛端修正 `strategy` 下拉 DOM 重建並通過 `ui_strategy.test.ts`（5/5）與雙分頁實測 `plugin_g2_check.mjs`（17/17）；宿主端完成人類固定出生吉恩村、`XY1..XYk` 原版遇敵矩形與 `ChiefDialog` 導航對齊 | — | 先把吉恩村＋外掛自動戰鬥完全走通並建立 Custom Patch Ledger，為 `R1／R2` 工具反哺比對建立基準 |

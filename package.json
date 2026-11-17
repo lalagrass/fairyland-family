@@ -1,6 +1,7 @@
 {
   "name": "fairyland-family",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "童話家族：fairyland 的智慧文字外掛（P1：遊戲 → 文字的唯讀對照）",
