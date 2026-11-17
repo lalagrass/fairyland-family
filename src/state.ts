@@ -8,7 +8,9 @@ import {
   isStaticDataMessage,
   type CommandMessage,
   type GameEvent,
+  type BattleEnemyBrief,
   type BattleEnemyState,
+  type BattleTimelineItem,
   type DialogOption,
   type PluginCommand,
   type SceneSnapshot,
@@ -55,10 +57,18 @@ export interface FamilyState {
     round: number | null;
     enemies: string[];
     enemyStates: BattleEnemyState[];
+    enemyVisuals?: BattleEnemyBrief[];
+    allies?: SnapshotBattleUnitSummary[];
     player?: SnapshotBattleUnitSummary;
     pet?: SnapshotBattleUnitSummary | null;
     canFlee: boolean;
     ready: boolean;
+    timeline?: {
+      battleId: number;
+      round: number;
+      events: BattleTimelineItem[];
+      receivedAt: number;
+    } | null;
   } | null;
   /** 戰鬥後的勝敗結算視窗（要送 RETURN_TO_MAP／DEFEAT_RESCUE 才會關）。 */
   battleResult: 'VICTORY' | 'DEFEAT' | null;
@@ -294,13 +304,63 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
     case 'GAME_STARTED': next = { ...next, sessionId: e.sessionId, stoppedSessionId: null, dialog: null, shop: null, battle: null, battleResult: null, pending: {}, inflight: {} }; break;
     case 'GAME_STOPPED': next = { ...next, stoppedSessionId: e.sessionId, dialog: null, shop: null, battle: null, inflight: {} }; break;
     case 'LOCATION_CHANGED': next = { ...next, location: { mapId: e.mapId, mapName: e.mapName }, character: next.character && { ...next.character, x: e.x, y: e.y }, eventMirror: { ...next.eventMirror, mapId: e.mapId, mapName: e.mapName, x: e.x, y: e.y }, dialog: null, shop: null }; break;
-    case 'MOVED': next = { ...next, character: next.character && { ...next.character, x: e.x, y: e.y, dir: e.dir }, eventMirror: { ...next.eventMirror, x: e.x, y: e.y } }; break;
+    case 'MOVED':
+      next = {
+        ...next,
+        character: next.character && {
+          ...next.character,
+          x: e.x,
+          y: e.y,
+          dir: e.dir,
+          ...(e.action !== undefined ? { action: e.action } : {}),
+          ...(e.movePath !== undefined ? { movePath: e.movePath } : {}),
+        },
+        eventMirror: { ...next.eventMirror, x: e.x, y: e.y },
+      };
+      break;
     case 'DIALOG_OPENED': next = { ...next, dialog: { npcId: e.npcId, npcName: e.npcName, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_UPDATED': next = { ...next, dialog: next.dialog && { ...next.dialog, lines: e.lines, options: e.options } }; break;
     case 'DIALOG_CLOSED': next = { ...next, dialog: null }; break;
     case 'SHOP_OPENED': next = { ...next, dialog: null, shop: { npcId: e.npcId, npcName: e.npcName, goods: e.goods } }; break;
     case 'SHOP_CLOSED': next = { ...next, shop: null }; break;
-    case 'BATTLE_STARTED': next = { ...next, battle: { battleId: e.battleId, round: null, enemies: e.enemies.map(n => n.name), enemyStates: [], canFlee: true, ready: false }, battleResult: null, character: next.character && { ...next.character, inBattle: true } }; break;
+    case 'BATTLE_STARTED':
+      next = {
+        ...next,
+        battle: {
+          battleId: e.battleId,
+          round: null,
+          enemies: e.enemies.map(n => n.name),
+          enemyStates: [],
+          enemyVisuals: e.enemies,
+          ...(e.allies ? { allies: e.allies } : {}),
+          canFlee: true,
+          ready: false,
+          timeline: null,
+        },
+        battleResult: null,
+        character: next.character && { ...next.character, inBattle: true },
+      };
+      break;
+    case 'BATTLE_TIMELINE':
+      if (!next.battle || next.battle.battleId === e.battleId) {
+        next = {
+          ...next,
+          battle: {
+            battleId: e.battleId,
+            round: e.round,
+            enemies: next.battle?.enemies ?? [],
+            enemyStates: next.battle?.enemyStates ?? [],
+            ...(next.battle?.enemyVisuals ? { enemyVisuals: next.battle.enemyVisuals } : {}),
+            ...(next.battle?.allies ? { allies: next.battle.allies } : {}),
+            ...(next.battle?.player ? { player: next.battle.player } : {}),
+            ...(next.battle?.pet !== undefined ? { pet: next.battle.pet } : {}),
+            canFlee: next.battle?.canFlee ?? true,
+            ready: false,
+            timeline: { battleId: e.battleId, round: e.round, events: e.events, receivedAt: now },
+          },
+        };
+      }
+      break;
     case 'BATTLE_TURN_READY':
       next = {
         ...next,
@@ -309,10 +369,13 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
           round: e.round,
           enemies: e.enemies.map(n => n.name),
           enemyStates: e.enemies,
+          ...(next.battle?.enemyVisuals ? { enemyVisuals: next.battle.enemyVisuals } : {}),
+          ...(next.battle?.allies ? { allies: next.battle.allies } : {}),
           ...(e.player ? { player: e.player } : {}),
           ...(e.pet !== undefined ? { pet: e.pet } : {}),
           canFlee: e.canFlee,
           ready: true,
+          timeline: next.battle?.timeline ?? null,
         },
         character: next.character && {
           ...next.character,

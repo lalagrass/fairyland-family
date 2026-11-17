@@ -102,7 +102,16 @@ export function GameViewport({
         <div ref={canvasHostRef} className="pixi-host" />
         {!stageInfo.ready && (
           <div className="stage-fallback" data-testid="stage-fallback">
-            {snap ? (
+            {state.battle ? (
+              <>
+                <div className="stage-fallback-title" data-testid="stage-battle-badge">
+                  {`戰鬥舞台 #${state.battle.battleId}${state.battle.round ? ` 第 ${state.battle.round} 回合` : ''}`}
+                </div>
+                <div className="muted">
+                  {`敵方：${state.battle.enemies.join('、') || '遇敵中'}${state.battle.timeline ? `（時間軸事件 ${state.battle.timeline.events.length} 筆）` : ''}`}
+                </div>
+              </>
+            ) : snap ? (
               <>
                 <div className="stage-fallback-title">{`${snap.mapName}（${snap.mapId}）`}</div>
                 <div className="muted">
