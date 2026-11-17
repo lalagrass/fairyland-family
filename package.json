@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts && tsx test/ui_strategy.test.ts && tsx test/w5_ui_quest.test.ts && tsx test/fm1_render_and_layout.test.ts && tsx test/fm2_battle_and_effects.test.ts && tsx test/fm_a_automation.test.ts && tsx test/fm3_appearance.test.ts && tsx test/fm4_modern_map.test.ts && tsx test/fm6_display_wave2.test.ts",
+    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts && tsx test/ui_strategy.test.ts && tsx test/w5_ui_quest.test.ts && tsx test/fm1_render_and_layout.test.ts && tsx test/fm2_battle_and_effects.test.ts && tsx test/fm_a_automation.test.ts && tsx test/fm3_appearance.test.ts && tsx test/fm4_modern_map.test.ts && tsx test/fm6_display_wave2.test.ts && tsx test/fm7_panels.test.ts",
     "sync-protocol": "node scripts/sync-protocol.mjs",
     "check-protocol": "node scripts/sync-protocol.mjs --check",
     "check-assets": "node scripts/check-no-original-assets.mjs",
@@ -26,8 +26,13 @@
     "vite": "^6.0.7"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@radix-ui/react-dialog": "^1.3.1",
+    "@radix-ui/react-popover": "^1.3.1",
     "@radix-ui/react-tabs": "^1.2.1",
+    "@tanstack/react-table": "^9.3.1",
+    "@tanstack/react-virtual": "^3.14.26",
     "pixi.js": "^8.23.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

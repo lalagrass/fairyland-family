@@ -216,6 +216,19 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 #log .log-repeat { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 999px; font-size: 11px; background: rgba(124,183,255,.18); color: var(--acc); }
 #log .cid { color: var(--dim); }
 
+.fm7-toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.fm7-toolbar input { flex: 1 1 120px; min-width: 0; background: #10151c; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+.fm7-mark { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.fm7-scroll { max-height: 240px; min-height: 72px; overflow: auto; position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 4px; min-width: 0; }
+.fm7-scroll.fm7-over { border-color: var(--acc); }
+.fm7-row { display: flex; gap: 6px; align-items: center; min-height: 32px; max-width: 100%; }
+.fm7-row button { min-width: 0; }
+.fm7-drag { flex: 1; text-align: left; min-width: 0; }
+.fm7-detail { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; z-index: 30; }
+.fm7-stats { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.fm7-stats th, .fm7-stats td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--line); font-weight: 500; }
+.fm7-skill { min-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 @media (max-width: 959px) {
   #app { padding-bottom: 72px; }
   .mobile-tabs {
