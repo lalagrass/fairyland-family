@@ -5,6 +5,7 @@ import {
   isEventMessage,
   isHeartbeatMessage,
   isSnapshotMessage,
+  isStaticDataMessage,
   type CommandMessage,
   type GameEvent,
   type BattleEnemyState,
@@ -16,6 +17,7 @@ import {
   type SnapshotFamilyMember,
   type SnapshotItem,
   type SnapshotShopGood,
+  type StaticDataPayload,
 } from './protocol/index';
 
 export type LogTag = '連線' | '事件' | '快照' | '送出' | '結果' | '系統';
@@ -41,6 +43,10 @@ export interface FamilyState {
   location: { mapId: string; mapName: string | null } | null;
   snapshot: SceneSnapshot | null;
   snapshotAt: number | null;
+  /** FX15：連線時領取一次的靜態資料（配方、傳送圖、技能、素材清單）。 */
+  staticData: StaticDataPayload | null;
+  /** FX16：宿主是否處於 ?clock=1 無畫面時鐘模式。 */
+  clockOnly: boolean;
   character: SnapshotCharacter | null;
   dialog: { npcId: string; npcName: string; lines: string[]; options: DialogOption[] } | null;
   shop: { npcId: string; npcName: string; goods: SnapshotShopGood[] } | null;
@@ -83,7 +89,7 @@ const LOG_CAP = 300;
 export function initialState(): FamilyState {
   return {
     lastHeartbeatAt: null, sessionId: null, stoppedSessionId: null, phase: null, characterId: null, location: null,
-    snapshot: null, snapshotAt: null, character: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [],
+    snapshot: null, snapshotAt: null, staticData: null, clockOnly: false, character: null, dialog: null, shop: null, battle: null, battleResult: null, inventory: [],
     members: [], activeCharacterId: null, warehouse: null,
     eventMirror: { mapId: null, mapName: null, gold: null, x: null, y: null, inventoryCount: null },
     pending: {}, inflight: {}, log: [], logSeq: 0,
@@ -157,6 +163,7 @@ export function describeEvent(e: GameEvent): string {
     case 'SHOP_OPENED': return `商店開啟：${e.npcName}（${e.goods.length} 項商品）`;
     case 'SHOP_CLOSED': return '商店關閉';
     case 'BATTLE_STARTED': return `遭遇戰鬥 #${e.battleId}：${e.enemies.map(n => n.name).join('、') || '？'}`;
+    case 'BATTLE_TIMELINE': return `戰鬥 #${e.battleId} 第 ${e.round} 回合演出（${e.events.length} 步）`;
     case 'BATTLE_ENDED': return `戰鬥 #${e.battleId} 結束：${e.outcome === 'WIN' ? '勝利' : e.outcome === 'LOSE' ? '落敗' : e.outcome === 'FLEE' ? '逃跑' : '未知'}`;
     case 'BATTLE_TURN_READY': return `戰鬥 #${e.battleId} 第 ${e.round} 回合就緒：${e.enemies.map(n => `${n.name}(${n.hp}/${n.maxHp})`).join('、')}${e.canFlee ? '' : '（不可逃跑）'}`;
     case 'INVENTORY_CHANGED': return `道具變動：${e.changes.map(c => `#${c.itemId} ${c.delta >= 0 ? '+' : ''}${c.delta}（共 ${c.count}）`).join('、')}`;
@@ -183,11 +190,21 @@ export function applyMessage(s: FamilyState, raw: unknown, now: number): FamilyS
     if (s.characterId !== null && s.characterId !== raw.characterId) next = resetForNewCharacter(next, raw.characterId);
     const fresh = raw.sessionId !== s.sessionId;
     const wasDown = connectionStatus(s, now) === 'STOPPED';
-    next = { ...next, characterId: raw.characterId, phase: raw.phase, sessionId: raw.sessionId, lastHeartbeatAt: now };
+    next = { ...next, characterId: raw.characterId, phase: raw.phase, sessionId: raw.sessionId, clockOnly: Boolean(raw.clockOnly), lastHeartbeatAt: now };
     if (fresh && raw.sessionId !== next.stoppedSessionId) next = { ...next, stoppedSessionId: null };
     if (raw.mapId && !next.location) next = { ...next, location: { mapId: raw.mapId, mapName: null } };
     if (wasDown && connectionStatus(next, now) === 'RUNNING') next = addLog(next, '連線', '遊戲執行中', now, { characterId: raw.characterId });
     return next;
+  }
+  if (isStaticDataMessage(raw)) {
+    const next = { ...s, staticData: raw.staticData };
+    return addLog(
+      next,
+      '快照',
+      `靜態資料已同步（配方 ${raw.staticData.recipes.length}、地圖 ${raw.staticData.portalGraph.length}、技能 ${raw.staticData.skills.length}）`,
+      now,
+      { commandId: raw.inReplyTo, characterId: raw.characterId },
+    );
   }
   if (isSnapshotMessage(raw)) {
     let next = s.characterId !== null && s.characterId !== raw.characterId ? resetForNewCharacter(s, raw.characterId) : s;

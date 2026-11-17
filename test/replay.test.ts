@@ -89,13 +89,17 @@ suite('controller on top of the replay: connected, snapshot, menu click is rejec
   assert(c.status() === 'RUNNING', 'replay shows 遊戲執行中');
   sch.advance(1000);
   assert(c.state.snapshot?.mapId === '10001', 'snapshot arrives');
-  assert(c.state.log.some(l => l.tag === '送出' && l.text.includes('要求快照')), 'family asked for a snapshot when connecting');
+  assert(c.state.staticData !== null && c.state.staticData.recipes.length > 0, 'staticData arrives on connect');
+  assert(c.state.log.some(l => l.tag === '送出' && l.text.includes('要求快照') && l.text.includes('includeStatic')), 'family asked for snapshot+staticData when connecting');
+  const sdId = c.send({ type: 'REQUEST_STATIC_DATA' }, '要求靜態資料');
+  assert(!!sdId && c.state.log.some(l => l.tag === '結果' && l.commandId === sdId && l.text.includes('已接受')), 'REQUEST_STATIC_DATA accepted in replay');
   const id = c.send({ type: 'TALK_TO_NPC', npcId: c.state.snapshot!.npcs[0].id }, '對話：測試');
   assert(!!id, 'command was sent');
   const res = c.state.log.find(l => l.tag === '結果' && l.commandId === id);
   assert(!!res && res.text.includes('NOT_IMPLEMENTED'), 'the rejection is shown in the log with the same commandId');
   sch.advance(30000);
   assert(c.state.snapshot?.mapId === '20010' && c.state.location?.mapId === '20010', 'family follows the map change in the replay');
+  assert(c.state.log.some(l => l.tag === '事件' && l.text.includes('回合演出')), 'BATTLE_TIMELINE event logged');
   tr.stop();
 }
 done();

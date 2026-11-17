@@ -1,13 +1,13 @@
 {
  "format": "fairyland-replay/1",
  "description": "吉恩村→市鎮中心的示範序列：走路、阿爾對話、一場戰鬥、金錢道具、換圖、村長對話。快照來自真實地圖資料；事件順序為手排。回放模式只回應 REQUEST_SNAPSHOT，其他指令回 NOT_IMPLEMENTED（不模擬遊戲）。",
- "protocolVersion": 3,
+ "protocolVersion": 4,
  "characterId": "replay-char-1",
  "steps": [
   {
    "at": 0,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -19,13 +19,243 @@
    }
   },
   {
+   "at": 30,
+   "message": {
+    "v": 4,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "static-data",
+    "seq": 2,
+    "staticData": {
+     "schema": "static-data",
+     "version": "4.0.0",
+     "recipes": [
+      {
+       "recipeId": 20309,
+       "resultItemId": 20309,
+       "name": "金毛鬼",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 70,
+       "ingredients": [
+        {
+         "itemId": 10420,
+         "name": "碧幽果",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10410,
+         "name": "金猴毛",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 3,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20321,
+       "resultItemId": 20321,
+       "name": "活血劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 25,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 10406,
+         "name": "半夏",
+         "count": 2,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      },
+      {
+       "recipeId": 20301,
+       "resultItemId": 20301,
+       "name": "恢復劑",
+       "skillId": 0,
+       "skillName": "調配",
+       "reqLevel": 30,
+       "ingredients": [
+        {
+         "itemId": 10413,
+         "name": "蜂蜜",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 10412,
+         "name": "續斷",
+         "count": 4,
+         "resolved": true
+        },
+        {
+         "itemId": 20501,
+         "name": "米酒",
+         "count": 2,
+         "resolved": true
+        }
+       ],
+       "unresolvedIngredients": []
+      }
+     ],
+     "portalGraph": [
+      {
+       "mapId": "10001",
+       "name": "吉恩村",
+       "targets": []
+      },
+      {
+       "mapId": "20001",
+       "name": "雜貨店",
+       "targets": []
+      },
+      {
+       "mapId": "20007",
+       "name": "醫院",
+       "targets": []
+      },
+      {
+       "mapId": "20009",
+       "name": "打鐵舖",
+       "targets": []
+      },
+      {
+       "mapId": "20010",
+       "name": "吉恩村市鎮中心",
+       "targets": []
+      }
+     ],
+     "skills": [
+      {
+       "id": 101,
+       "name": "魔刃術",
+       "kind": "SPELL",
+       "mpCost": 5,
+       "targetScope": "SINGLE",
+       "maxTargets": 1,
+       "element": "金",
+       "animId": "sp045",
+       "reqLevel": 1
+      },
+      {
+       "id": 102,
+       "name": "裂金刀",
+       "kind": "SPELL",
+       "mpCost": 10,
+       "targetScope": "SINGLE",
+       "maxTargets": 1,
+       "element": "金",
+       "animId": "sp046",
+       "reqLevel": 5
+      },
+      {
+       "id": 103,
+       "name": "金光盾",
+       "kind": "SPELL",
+       "mpCost": 10,
+       "targetScope": "SELF",
+       "maxTargets": 1,
+       "element": "金",
+       "animId": "sp047",
+       "reqLevel": 12
+      },
+      {
+       "id": 104,
+       "name": "金芒術",
+       "kind": "SPELL",
+       "mpCost": 15,
+       "targetScope": "SINGLE",
+       "maxTargets": 1,
+       "element": "金",
+       "animId": "sp048",
+       "reqLevel": 24
+      },
+      {
+       "id": 105,
+       "name": "多重裂金刀",
+       "kind": "SPELL",
+       "mpCost": 35,
+       "targetScope": "ROW",
+       "maxTargets": 5,
+       "element": "金",
+       "animId": "sp049",
+       "reqLevel": 36
+      },
+      {
+       "id": 201,
+       "name": "巨木之擊",
+       "kind": "SPELL",
+       "mpCost": 10,
+       "targetScope": "SINGLE",
+       "maxTargets": 1,
+       "element": "木",
+       "animId": "sp055",
+       "reqLevel": 5
+      }
+     ],
+     "assets": {
+      "version": "4.0.0",
+      "baseUrl": "/assets",
+      "readOnly": true,
+      "paths": {
+       "spriteManifest": "/assets/sprites/{modelId}/manifest.json",
+       "spriteAtlas": "/assets/sprites/{modelId}/{atlasFile}",
+       "mapScene": "/assets/maps/{mapId}/map_{mapId}.json",
+       "mapAsset": "/assets/maps/{mapId}/{file}",
+       "spellManifest": "/assets/spells/{spellId}/manifest.json",
+       "spellAtlas": "/assets/spells/{spellId}/{atlasFile}",
+       "worldCatalog": "/assets/world/world_catalog.json",
+       "battleBg": "/assets/battlegrounds/{bgFile}",
+       "itemIcon": "/assets/items/{itemId}.png",
+       "digitsManifest": "/assets/ui/digits/digits_manifest.json"
+      },
+      "spriteLayerOrder": [
+       "body",
+       "hair",
+       "head",
+       "armor",
+       "cape",
+       "weapon",
+       "offhand"
+      ],
+      "supportedBlendModes": [
+       "normal",
+       "additive",
+       "screen",
+       "luma_alpha"
+      ]
+     }
+    }
+   }
+  },
+  {
    "at": 60,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 2,
+    "seq": 3,
     "event": {
      "type": "LOCATION_CHANGED",
      "mapId": "10001",
@@ -40,11 +270,11 @@
   {
    "at": 120,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
-    "seq": 3,
+    "seq": 4,
     "reason": "STARTED",
     "snapshot": {
      "schema": "scene-snapshot",
@@ -62,6 +292,9 @@
       "y": 3740,
       "dir": 2,
       "inBattle": false,
+      "modelId": "PHM011",
+      "weaponModel": "WP01",
+      "action": "IDLE",
       "satiety": 100,
       "maxSatiety": 100,
       "inventoryCount": 0,
@@ -1591,95 +1824,6 @@
        "source": "EXTRACTED"
       }
      ],
-     "recipes": [
-      {
-       "recipeId": 20309,
-       "resultItemId": 20309,
-       "name": "金毛鬼",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 70,
-       "ingredients": [
-        {
-         "itemId": 10420,
-         "name": "碧幽果",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10410,
-         "name": "金猴毛",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10406,
-         "name": "半夏",
-         "count": 3,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      },
-      {
-       "recipeId": 20321,
-       "resultItemId": 20321,
-       "name": "活血劑",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 25,
-       "ingredients": [
-        {
-         "itemId": 10413,
-         "name": "蜂蜜",
-         "count": 2,
-         "resolved": true
-        },
-        {
-         "itemId": 10406,
-         "name": "半夏",
-         "count": 2,
-         "resolved": true
-        },
-        {
-         "itemId": 20501,
-         "name": "米酒",
-         "count": 2,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      },
-      {
-       "recipeId": 20301,
-       "resultItemId": 20301,
-       "name": "恢復劑",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 30,
-       "ingredients": [
-        {
-         "itemId": 10413,
-         "name": "蜂蜜",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10412,
-         "name": "續斷",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 20501,
-         "name": "米酒",
-         "count": 2,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      }
-     ],
      "shops": [
       {
        "npcId": "npc_10001_01_收破爛阿利",
@@ -2600,153 +2744,7 @@
        }
       ],
       "pixelWidth": 8000,
-      "pixelHeight": 8000,
-      "portalGraph": [
-       {
-        "mapId": "10001",
-        "name": "吉恩村",
-        "targets": [
-         "10004",
-         "10005",
-         "10011",
-         "20001",
-         "20002",
-         "20003",
-         "20004",
-         "20005",
-         "20006",
-         "20007",
-         "20008",
-         "20009",
-         "20010",
-         "20011",
-         "20012",
-         "20013",
-         "20014",
-         "20026",
-         "20027",
-         "20028",
-         "20029",
-         "20030",
-         "20680"
-        ]
-       },
-       {
-        "mapId": "10004",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "10005",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "10011",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20001",
-        "name": "雜貨店",
-        "targets": []
-       },
-       {
-        "mapId": "20002",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20003",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20004",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20005",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20006",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20007",
-        "name": "醫院",
-        "targets": []
-       },
-       {
-        "mapId": "20008",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20009",
-        "name": "打鐵舖",
-        "targets": []
-       },
-       {
-        "mapId": "20010",
-        "name": "吉恩村市鎮中心",
-        "targets": []
-       },
-       {
-        "mapId": "20011",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20012",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20013",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20014",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20026",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20027",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20028",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20029",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20030",
-        "name": null,
-        "targets": []
-       },
-       {
-        "mapId": "20680",
-        "name": null,
-        "targets": []
-       }
-      ]
+      "pixelHeight": 8000
      }
     }
    }
@@ -2754,24 +2752,7 @@
   {
    "at": 2000,
    "message": {
-    "v": 3,
-    "characterId": "replay-char-1",
-    "ts": 0,
-    "kind": "event",
-    "seq": 4,
-    "event": {
-     "type": "MOVED",
-     "mapId": "10001",
-     "x": 3700,
-     "y": 3700,
-     "dir": 2
-    }
-   }
-  },
-  {
-   "at": 2600,
-   "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2779,16 +2760,32 @@
     "event": {
      "type": "MOVED",
      "mapId": "10001",
-     "x": 3500,
-     "y": 3650,
-     "dir": 2
+     "x": 3700,
+     "y": 3700,
+     "dir": 2,
+     "action": "WALK",
+     "movePath": {
+      "waypoints": [
+       {
+        "x": 3880,
+        "y": 3740
+       },
+       {
+        "x": 3700,
+        "y": 3700
+       }
+      ],
+      "startedAt": 1400,
+      "endsAt": 2000,
+      "speedPxPerSec": 300
+     }
     }
    }
   },
   {
-   "at": 3200,
+   "at": 2600,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2796,20 +2793,39 @@
     "event": {
      "type": "MOVED",
      "mapId": "10001",
+     "x": 3500,
+     "y": 3650,
+     "dir": 2,
+     "action": "WALK"
+    }
+   }
+  },
+  {
+   "at": 3200,
+   "message": {
+    "v": 4,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 7,
+    "event": {
+     "type": "MOVED",
+     "mapId": "10001",
      "x": 3300,
      "y": 3600,
-     "dir": 2
+     "dir": 2,
+     "action": "IDLE"
     }
    }
   },
   {
    "at": 4500,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 7,
+    "seq": 8,
     "event": {
      "type": "DIALOG_OPENED",
      "npcId": "npc_10001_00_阿爾",
@@ -2834,11 +2850,11 @@
   {
    "at": 7000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 8,
+    "seq": 9,
     "event": {
      "type": "DIALOG_CLOSED",
      "npcId": "npc_10001_00_阿爾"
@@ -2848,11 +2864,11 @@
   {
    "at": 8000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 9,
+    "seq": 10,
     "event": {
      "type": "BATTLE_STARTED",
      "battleId": 1,
@@ -2861,7 +2877,20 @@
       {
        "id": "e1",
        "name": "土來姆",
-       "level": 2
+       "level": 2,
+       "modelId": "MBS101"
+      }
+     ],
+     "allies": [
+      {
+       "id": "player",
+       "name": "阿草",
+       "hp": 90,
+       "maxHp": 90,
+       "mp": 40,
+       "maxMp": 40,
+       "modelId": "PHM011",
+       "weaponModel": "WP01"
       }
      ]
     }
@@ -2870,11 +2899,11 @@
   {
    "at": 8100,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 10,
+    "seq": 11,
     "event": {
      "type": "BATTLE_TURN_READY",
      "battleId": 1,
@@ -2885,7 +2914,8 @@
        "id": "e1",
        "name": "土來姆",
        "hp": 30,
-       "maxHp": 30
+       "maxHp": 30,
+       "modelId": "MBS101"
       }
      ],
      "canFlee": true
@@ -2893,13 +2923,38 @@
    }
   },
   {
-   "at": 10000,
+   "at": 9200,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 11,
+    "seq": 12,
+    "event": {
+     "type": "BATTLE_TIMELINE",
+     "battleId": 1,
+     "round": 1,
+     "events": [
+      {
+       "tMs": 250,
+       "type": "ATTACK_HIT",
+       "actorId": "player",
+       "targetId": "e1",
+       "actionName": "普通攻擊",
+       "damage": 18
+      }
+     ]
+    }
+   }
+  },
+  {
+   "at": 10000,
+   "message": {
+    "v": 4,
+    "characterId": "replay-char-1",
+    "ts": 0,
+    "kind": "event",
+    "seq": 13,
     "event": {
      "type": "BATTLE_TURN_READY",
      "battleId": 1,
@@ -2910,7 +2965,8 @@
        "id": "e1",
        "name": "土來姆",
        "hp": 12,
-       "maxHp": 30
+       "maxHp": 30,
+       "modelId": "MBS101"
       }
      ],
      "canFlee": true
@@ -2920,11 +2976,11 @@
   {
    "at": 12000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 12,
+    "seq": 14,
     "event": {
      "type": "BATTLE_ENDED",
      "battleId": 1,
@@ -2935,11 +2991,11 @@
   {
    "at": 12500,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 13,
+    "seq": 15,
     "event": {
      "type": "GOLD_CHANGED",
      "gold": 1350,
@@ -2950,11 +3006,11 @@
   {
    "at": 12600,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 14,
+    "seq": 16,
     "event": {
      "type": "INVENTORY_CHANGED",
      "changes": [
@@ -2970,11 +3026,11 @@
   {
    "at": 15000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 15,
+    "seq": 17,
     "event": {
      "type": "LOCATION_CHANGED",
      "mapId": "20010",
@@ -2989,11 +3045,11 @@
   {
    "at": 15400,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
-    "seq": 16,
+    "seq": 18,
     "reason": "MAP_CHANGED",
     "snapshot": {
      "schema": "scene-snapshot",
@@ -3011,6 +3067,9 @@
       "y": 1040,
       "dir": 2,
       "inBattle": false,
+      "modelId": "PHM011",
+      "weaponModel": "WP01",
+      "action": "IDLE",
       "satiety": 100,
       "maxSatiety": 100,
       "inventoryCount": 0,
@@ -3563,95 +3622,6 @@
        "source": "EXTRACTED"
       }
      ],
-     "recipes": [
-      {
-       "recipeId": 20309,
-       "resultItemId": 20309,
-       "name": "金毛鬼",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 70,
-       "ingredients": [
-        {
-         "itemId": 10420,
-         "name": "碧幽果",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10410,
-         "name": "金猴毛",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10406,
-         "name": "半夏",
-         "count": 3,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      },
-      {
-       "recipeId": 20321,
-       "resultItemId": 20321,
-       "name": "活血劑",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 25,
-       "ingredients": [
-        {
-         "itemId": 10413,
-         "name": "蜂蜜",
-         "count": 2,
-         "resolved": true
-        },
-        {
-         "itemId": 10406,
-         "name": "半夏",
-         "count": 2,
-         "resolved": true
-        },
-        {
-         "itemId": 20501,
-         "name": "米酒",
-         "count": 2,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      },
-      {
-       "recipeId": 20301,
-       "resultItemId": 20301,
-       "name": "恢復劑",
-       "skillId": 0,
-       "skillName": "調配",
-       "reqLevel": 30,
-       "ingredients": [
-        {
-         "itemId": 10413,
-         "name": "蜂蜜",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 10412,
-         "name": "續斷",
-         "count": 4,
-         "resolved": true
-        },
-        {
-         "itemId": 20501,
-         "name": "米酒",
-         "count": 2,
-         "resolved": true
-        }
-       ],
-       "unresolvedIngredients": []
-      }
-     ],
      "shops": [],
      "inventory": [],
      "activity": {
@@ -3992,36 +3962,7 @@
        }
       ],
       "pixelWidth": 3200,
-      "pixelHeight": 2400,
-      "portalGraph": [
-       {
-        "mapId": "10001",
-        "name": "吉恩村",
-        "targets": []
-       },
-       {
-        "mapId": "20001",
-        "name": "雜貨店",
-        "targets": []
-       },
-       {
-        "mapId": "20007",
-        "name": "醫院",
-        "targets": []
-       },
-       {
-        "mapId": "20009",
-        "name": "打鐵舖",
-        "targets": []
-       },
-       {
-        "mapId": "20010",
-        "name": "吉恩村市鎮中心",
-        "targets": [
-         "10001"
-        ]
-       }
-      ]
+      "pixelHeight": 2400
      }
     }
    }
@@ -4029,11 +3970,11 @@
   {
    "at": 17000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 17,
+    "seq": 19,
     "event": {
      "type": "MOVED",
      "mapId": "20010",
@@ -4046,11 +3987,11 @@
   {
    "at": 18500,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 18,
+    "seq": 20,
     "event": {
      "type": "MOVED",
      "mapId": "20010",
@@ -4063,11 +4004,11 @@
   {
    "at": 20000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 19,
+    "seq": 21,
     "event": {
      "type": "DIALOG_OPENED",
      "npcId": "npc_20010_01_村長傑夫",
@@ -4091,11 +4032,11 @@
   {
    "at": 23000,
    "message": {
-    "v": 3,
+    "v": 4,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
-    "seq": 20,
+    "seq": 22,
     "event": {
      "type": "DIALOG_CLOSED",
      "npcId": "npc_20010_01_村長傑夫"

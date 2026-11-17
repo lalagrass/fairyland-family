@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 57515633f850ee9dc36c8054addee704af3e3553
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 12fbb324c7260eb1c5dd0a5d916fcddd86d3e632
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -21,6 +21,7 @@ import {
   type PluginMessage,
   type SceneSnapshot,
   type SnapshotMessage,
+  type StaticDataMessage,
 } from './types.js';
 
 type Rec = Record<string, unknown>;
@@ -32,21 +33,47 @@ const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFin
 const isBool = (x: unknown): x is boolean => typeof x === 'boolean';
 const isArr = (x: unknown): x is unknown[] => Array.isArray(x);
 const optNum = (x: unknown): boolean => x === undefined || isNum(x);
+const optStr = (x: unknown): boolean => x === undefined || isStr(x);
 const strOrNull = (x: unknown): boolean => x === null || isStr(x);
 const numOrNull = (x: unknown): boolean => x === null || isNum(x);
 const isOption = (o: unknown): boolean => isRec(o) && isStr(o.id) && isStr(o.label);
 const optBool = (x: unknown): boolean => x === undefined || isBool(x);
+const VISUAL_ACTIONS = ['IDLE', 'WALK', 'WORK', 'BATTLE'];
+const isVisualActionOrUndef = (x: unknown): boolean => x === undefined || VISUAL_ACTIONS.includes(x as string);
+const isTriplet = (x: unknown): boolean => isArr(x) && x.length === 3 && x.every(isNum);
+const isRampTintOrUndef = (x: unknown): boolean =>
+  x === undefined || (isRec(x) && isTriplet(x.hair) && isTriplet(x.skin) && isTriplet(x.outfit));
+const isMovePath = (p: unknown): boolean =>
+  isRec(p)
+  && isArr(p.waypoints)
+  && p.waypoints.every(w => isRec(w) && isNum(w.x) && isNum(w.y))
+  && isNum(p.startedAt)
+  && isNum(p.endsAt)
+  && optNum(p.speedPxPerSec);
+const isMovePathOrNullOrUndef = (x: unknown): boolean => x === undefined || x === null || isMovePath(x);
 const isBattleStatus = (s: unknown): boolean =>
   isRec(s) && isNonEmptyStr(s.type) && isNum(s.duration) && optNum(s.value) && optNum(s.stacks);
 const isStatusArrayOrUndef = (x: unknown): boolean =>
   x === undefined || (isArr(x) && x.every(isBattleStatus));
 const isBattleUnitSummary = (u: unknown): boolean =>
   isRec(u) && isStr(u.id) && isStr(u.name) && isNum(u.hp) && isNum(u.maxHp)
-  && optNum(u.mp) && optNum(u.maxMp) && optBool(u.isDead) && optBool(u.isDefending) && optBool(u.isChanting)
+  && optNum(u.mp) && optNum(u.maxMp) && optNum(u.slot)
+  && (u.row === undefined || u.row === 'FRONT' || u.row === 'BACK')
+  && optStr(u.modelId) && optStr(u.weaponModel) && optStr(u.colorTint)
+  && optBool(u.isDead) && optBool(u.isDefending) && optBool(u.isChanting)
   && isStatusArrayOrUndef(u.statuses);
 const isEnemyState = (e: unknown): boolean =>
   isRec(e) && isNum(e.slot) && isStr(e.id) && isStr(e.name) && isNum(e.hp) && isNum(e.maxHp)
+  && (e.row === undefined || e.row === 'FRONT' || e.row === 'BACK')
+  && optStr(e.modelId) && optStr(e.colorTint)
   && optBool(e.isDead) && optBool(e.isDefending) && optBool(e.isChanting) && isStatusArrayOrUndef(e.statuses);
+const isTimelineItem = (t: unknown): boolean =>
+  isRec(t) && isNum(t.tMs) && isNonEmptyStr(t.type)
+  && optStr(t.actorId) && optStr(t.targetId)
+  && (t.targetIds === undefined || (isArr(t.targetIds) && t.targetIds.every(isStr)))
+  && optStr(t.actionName) && optNum(t.skillId) && optStr(t.effectId)
+  && optNum(t.damage) && optNum(t.heal) && optBool(t.isCrit) && optBool(t.isCombo)
+  && optNum(t.comboIndex) && optNum(t.comboTotal) && optStr(t.statusType) && optBool(t.isCaptured) && optStr(t.message);
 const isActiveWork = (w: unknown): boolean =>
   isRec(w) && (w.kind === 'GATHER' || w.kind === 'CRAFT')
   && optNum(w.skillId) && optNum(w.recipeId) && optNum(w.targetItemId)
@@ -84,7 +111,8 @@ export function isPluginCommand(x: unknown): x is PluginCommand {
         && optNum(a.targetSlot) && optNum(a.skillId) && optNum(a.spellId) && optNum(a.itemId) && optNum(a.sealStoneId);
     }
     case 'BATTLE_FLEE': return optNum(x.battleId);
-    case 'REQUEST_SNAPSHOT': return true;
+    case 'REQUEST_SNAPSHOT': return optBool(x.includeStatic);
+    case 'REQUEST_STATIC_DATA': return true;
     case 'SWITCH_VIEW_CHARACTER': return isNonEmptyStr(x.characterId);
     case 'WAREHOUSE_DEPOSIT':
     case 'WAREHOUSE_WITHDRAW':
@@ -104,7 +132,9 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'LOCATION_CHANGED':
       return isNonEmptyStr(x.mapId) && strOrNull(x.mapName) && strOrNull(x.fromMapId) && isNum(x.x) && isNum(x.y)
         && ['LOAD', 'MAP_CHANGE', 'WARP'].includes(x.cause as string);
-    case 'MOVED': return isNonEmptyStr(x.mapId) && isNum(x.x) && isNum(x.y) && isNum(x.dir);
+    case 'MOVED':
+      return isNonEmptyStr(x.mapId) && isNum(x.x) && isNum(x.y) && isNum(x.dir)
+        && isVisualActionOrUndef(x.action) && isMovePathOrNullOrUndef(x.movePath);
     case 'DIALOG_OPENED':
       return isStr(x.npcId) && isStr(x.npcName) && strOrNull(x.role) && isArr(x.lines) && x.lines.every(isStr)
         && isArr(x.options) && x.options.every(isOption) && isBool(x.optionsAvailable);
@@ -116,8 +146,11 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'SHOP_CLOSED': return isStr(x.npcId);
     case 'BATTLE_STARTED':
       return isNum(x.battleId) && isNonEmptyStr(x.mapId) && isArr(x.enemies)
-        && x.enemies.every(e => isRec(e) && isStr(e.id) && isStr(e.name) && numOrNull(e.level));
+        && x.enemies.every(e => isRec(e) && isStr(e.id) && isStr(e.name) && numOrNull(e.level) && optNum(e.slot) && optStr(e.modelId) && optStr(e.colorTint))
+        && (x.allies === undefined || (isArr(x.allies) && x.allies.every(isBattleUnitSummary)));
     case 'BATTLE_ENDED': return isNum(x.battleId) && ['WIN', 'LOSE', 'FLEE', 'UNKNOWN'].includes(x.outcome as string);
+    case 'BATTLE_TIMELINE':
+      return isNum(x.battleId) && isNum(x.round) && isArr(x.events) && x.events.every(isTimelineItem);
     case 'BATTLE_TURN_READY':
       return isNum(x.battleId) && isNum(x.round) && isArr(x.enemies) && x.enemies.every(isEnemyState) && isBool(x.canFlee)
         && (x.player === undefined || isBattleUnitSummary(x.player))
@@ -156,6 +189,8 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   const c = x.character;
   if (!isRec(c) || !strOrNull(c.name) || !isNum(c.level) || !numOrNull(c.hp) || !numOrNull(c.maxHp)
     || !numOrNull(c.mp) || !numOrNull(c.maxMp) || !isNum(c.gold) || !isNum(c.x) || !isNum(c.y) || !isNum(c.dir) || !isBool(c.inBattle)
+    || !optStr(c.modelId) || !optStr(c.weaponModel) || !isRampTintOrUndef(c.tint)
+    || !isVisualActionOrUndef(c.action) || !isMovePathOrNullOrUndef(c.movePath)
     || !optNum(c.satiety) || !optNum(c.maxSatiety) || !optNum(c.inventoryCount) || !optNum(c.inventoryCap)
     || (c.workSkills !== undefined && !isRec(c.workSkills))
     || (c.activeWork !== undefined && c.activeWork !== null && !isActiveWork(c.activeWork))
@@ -180,7 +215,7 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   if (!isRec(n) || !AVAIL.includes(n.status as string) || !isArr(n.reachableMaps)
     || !n.reachableMaps.every(m => isRec(m) && isNonEmptyStr(m.mapId) && strOrNull(m.name) && isNum(m.hops))
     || !numOrNull(n.pixelWidth) || !numOrNull(n.pixelHeight)
-    || !isArr(n.portalGraph) || !n.portalGraph.every(p => isRec(p) && isNonEmptyStr(p.mapId) && strOrNull(p.name) && isArr(p.targets) && p.targets.every(isStr))) return false;
+    || (n.portalGraph !== undefined && (!isArr(n.portalGraph) || !n.portalGraph.every(p => isRec(p) && isNonEmptyStr(p.mapId) && strOrNull(p.name) && isArr(p.targets) && p.targets.every(isStr))))) return false;
   if (!isArr(x.inventory) || !x.inventory.every(i => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count))) return false;
   if (x.family !== undefined) {
     const f = x.family;
@@ -188,6 +223,8 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
     const isMember = (m: unknown): boolean =>
       isRec(m) && isNonEmptyStr(m.characterId) && strOrNull(m.name) && isNum(m.level)
       && isNonEmptyStr(m.mapId) && strOrNull(m.mapName) && isNum(m.x) && isNum(m.y)
+      && optNum(m.dir) && optStr(m.modelId) && optStr(m.weaponModel) && isRampTintOrUndef(m.tint)
+      && isVisualActionOrUndef(m.action) && isMovePathOrNullOrUndef(m.movePath)
       && isNum(m.gold) && isNum(m.satiety) && isNum(m.inventoryCount) && isNum(m.inventoryCap)
       && isBool(m.inBattle) && isArr(m.inventory) && m.inventory.every(isItem) && isRec(m.workSkills)
       && (m.activeWork === undefined || m.activeWork === null || isActiveWork(m.activeWork));
@@ -214,15 +251,41 @@ function isEnvelope(x: unknown): x is Rec & { v: number; characterId: string; ts
   return isRec(x) && isNum(x.v) && isNonEmptyStr(x.characterId) && isNum(x.ts) && isStr(x.kind);
 }
 
+const isPortalNode = (p: unknown): boolean =>
+  isRec(p) && isNonEmptyStr(p.mapId) && strOrNull(p.name) && isArr(p.targets) && p.targets.every(isStr);
+
+const isStaticSkillSummary = (s: unknown): boolean =>
+  isRec(s) && isNum(s.id) && isStr(s.name) && (s.kind === 'SKILL' || s.kind === 'SPELL')
+  && isNum(s.mpCost) && isStr(s.targetScope) && optNum(s.maxTargets) && optStr(s.element)
+  && optStr(s.animId) && optStr(s.weaponFamily) && optNum(s.reqLevel);
+
+const isStaticAssetManifest = (a: unknown): boolean =>
+  isRec(a) && isStr(a.version) && isStr(a.baseUrl) && a.readOnly === true && isRec(a.paths)
+  && isStr(a.paths.spriteManifest) && isStr(a.paths.spriteAtlas) && isStr(a.paths.mapScene) && isStr(a.paths.mapAsset)
+  && isStr(a.paths.spellManifest) && isStr(a.paths.spellAtlas) && isStr(a.paths.worldCatalog)
+  && isStr(a.paths.battleBg) && isStr(a.paths.itemIcon) && isStr(a.paths.digitsManifest)
+  && isArr(a.spriteLayerOrder) && a.spriteLayerOrder.every(isStr)
+  && isArr(a.supportedBlendModes) && a.supportedBlendModes.every(b => ['normal', 'additive', 'screen', 'luma_alpha'].includes(b as string));
+
 export function isHeartbeatMessage(x: unknown): x is HeartbeatMessage {
   return isEnvelope(x) && x.kind === 'heartbeat' && isNonEmptyStr(x.sessionId) && isNum(x.seq)
-    && strOrNull(x.mapId) && (x.phase === 'OPENING' || x.phase === 'PLAYING') && isBool(x.inBattle);
+    && strOrNull(x.mapId) && (x.phase === 'OPENING' || x.phase === 'PLAYING') && isBool(x.inBattle) && optBool(x.clockOnly);
 }
 
 export function isSnapshotMessage(x: unknown): x is SnapshotMessage {
   return isEnvelope(x) && x.kind === 'snapshot' && isNum(x.seq)
     && ['STARTED', 'MAP_CHANGED', 'SCENE_RELOADED', 'REQUESTED', 'PHASE_CHANGED'].includes(x.reason as string)
     && (x.inReplyTo === undefined || isStr(x.inReplyTo)) && isSceneSnapshot(x.snapshot);
+}
+
+export function isStaticDataMessage(x: unknown): x is StaticDataMessage {
+  if (!isEnvelope(x) || x.kind !== 'static-data' || !isNum(x.seq) || !(x.inReplyTo === undefined || isStr(x.inReplyTo))) return false;
+  const d = x.staticData;
+  return isRec(d) && d.schema === 'static-data' && isStr(d.version)
+    && isArr(d.recipes) && d.recipes.every(isWorkRecipe)
+    && isArr(d.portalGraph) && d.portalGraph.every(isPortalNode)
+    && isArr(d.skills) && d.skills.every(isStaticSkillSummary)
+    && isStaticAssetManifest(d.assets);
 }
 
 export function isEventMessage(x: unknown): x is EventMessage {
@@ -242,7 +305,7 @@ export function isCommandResultMessage(x: unknown): x is CommandResultMessage {
 
 /** 任一種協定訊息（不檢查版本號是否相容，見 `isCompatibleVersion`）。 */
 export function isPluginMessage(x: unknown): x is PluginMessage {
-  return isHeartbeatMessage(x) || isSnapshotMessage(x) || isEventMessage(x) || isCommandMessage(x) || isCommandResultMessage(x);
+  return isHeartbeatMessage(x) || isSnapshotMessage(x) || isStaticDataMessage(x) || isEventMessage(x) || isCommandMessage(x) || isCommandResultMessage(x);
 }
 
 /** 目前只有一版；日後相容規則改在這裡。 */
