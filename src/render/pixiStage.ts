@@ -16,6 +16,7 @@ import {
   type AppearanceProvider,
 } from './appearance';
 import { RuntimeAssetLoader, type RuntimeMapScene } from './assetLoader';
+import { BattleStageRenderer } from './battleStage';
 import {
   computeIntegerScale,
   interpolateMemberPosition,
@@ -45,8 +46,10 @@ export class PixiStageController {
   private worldContainer = new Container();
   private groundLayer = new Container();
   private entityLayer = new Container();
+  private battleLayer = new Container();
   private uiOverlay = new Container();
   private loader = new RuntimeAssetLoader();
+  private battleRenderer = new BattleStageRenderer();
   private textureCache = new Map<string, Texture>();
   private textureInflight = new Map<string, Promise<Texture | null>>();
   private subTextureCache = new Map<string, Texture>();
@@ -93,7 +96,8 @@ export class PixiStageController {
 
       this.entityLayer.sortableChildren = true;
       this.worldContainer.addChild(this.groundLayer, this.entityLayer, this.uiOverlay);
-      app.stage.addChild(this.worldContainer);
+      this.battleLayer.visible = false;
+      app.stage.addChild(this.worldContainer, this.battleLayer);
 
       app.ticker.add(() => this.renderFrame());
       this.initialized = true;
@@ -176,6 +180,27 @@ export class PixiStageController {
     const nowMs = Date.now();
     const viewW = Math.max(1, this.app.screen.width);
     const viewH = Math.max(1, this.app.screen.height);
+
+    // 戰鬥畫面模式（FM2）：切換至獨立 BattleStageRenderer 播放 FX14 時間軸與特效腳本
+    if (state.battle) {
+      this.worldContainer.visible = false;
+      this.battleLayer.visible = true;
+      this.battleRenderer.render({
+        container: this.battleLayer,
+        state,
+        nowMs,
+        viewW,
+        viewH,
+        provider,
+        getSpriteManifest: id => this.loader.getSprite(id) ?? null,
+        ensureSpriteLoaded: (id, assets) => void this.loader.loadSprite(id, assets),
+        getTexture: url => this.getOrLoadTexture(url),
+      });
+      return;
+    }
+
+    this.worldContainer.visible = true;
+    this.battleLayer.visible = false;
     const intScale =
       zoomSetting === 'auto' ? computeIntegerScale(viewW, viewH) : zoomSetting;
     if (intScale !== this.currentScale) {
