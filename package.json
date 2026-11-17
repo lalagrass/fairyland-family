@@ -9,11 +9,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts && tsx test/ui_strategy.test.ts && tsx test/w5_ui_quest.test.ts && tsx test/fm1_render_and_layout.test.ts && tsx test/fm2_battle_and_effects.test.ts && tsx test/fm_a_automation.test.ts",
+    "test": "tsx test/protocol.test.ts && tsx test/state.test.ts && tsx test/parse_menu.test.ts && tsx test/replay.test.ts && tsx test/agents.test.ts && tsx test/queue.test.ts && tsx test/family_p4.test.ts && tsx test/ui_strategy.test.ts && tsx test/w5_ui_quest.test.ts && tsx test/fm1_render_and_layout.test.ts && tsx test/fm2_battle_and_effects.test.ts && tsx test/fm_a_automation.test.ts && tsx test/fm3_appearance.test.ts",
     "sync-protocol": "node scripts/sync-protocol.mjs",
     "check-protocol": "node scripts/sync-protocol.mjs --check",
     "check-assets": "node scripts/check-no-original-assets.mjs",
-    "check-effects": "node scripts/check-effects.mjs"
+    "check-effects": "node scripts/check-effects.mjs",
+    "check-appearance": "node scripts/appearance_spec/check_appearance_spec.mjs public/assets/appearances/wuxia_test --json"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

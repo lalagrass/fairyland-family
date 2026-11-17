@@ -10,6 +10,7 @@ export type UiAction =
   | { kind: 'NAV_CANCEL'; label: string }
   | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string }
   | { kind: 'CHAR_STRATEGY_UPDATE'; characterId: string; patch: Partial<CharacterStrategyConfig>; label: string }
+  | { kind: 'CHAR_APPEARANCE_UPDATE'; characterId: string; appearanceId: string; label: string }
   | {
       kind: 'QUEUE_GATHER';
       skillId: number;

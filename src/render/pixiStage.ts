@@ -11,9 +11,12 @@ import {
 } from 'pixi.js';
 import type { FamilyState } from '../state';
 import {
+  getAppearanceProvider,
   originalAppearanceProvider,
   type AppearanceLayerPlan,
   type AppearanceProvider,
+  type AppearanceRenderPlan,
+  type VectorShapeLayer,
 } from './appearance';
 import { RuntimeAssetLoader, type RuntimeMapScene } from './assetLoader';
 import { BattleStageRenderer } from './battleStage';
@@ -32,6 +35,7 @@ export interface StageSyncInput {
   state: FamilyState;
   watchCharacterId: string | null;
   zoomSetting: ZoomSetting;
+  appearances?: Record<string, string>;
   provider?: AppearanceProvider;
 }
 
@@ -172,8 +176,10 @@ export class PixiStageController {
 
   private renderFrame(): void {
     if (!this.initialized || !this.app || !this.latestInput) return;
-    const { state, watchCharacterId, zoomSetting } = this.latestInput;
-    const provider = this.latestInput.provider ?? originalAppearanceProvider;
+    const { state, watchCharacterId, zoomSetting, appearances } = this.latestInput;
+    const defaultProvider = this.latestInput.provider ?? originalAppearanceProvider;
+    const resolveProviderFor = (charId: string) =>
+      appearances?.[charId] ? getAppearanceProvider(appearances[charId]) : defaultProvider;
     const snap = state.snapshot;
     if (!snap) return;
 
@@ -181,7 +187,7 @@ export class PixiStageController {
     const viewW = Math.max(1, this.app.screen.width);
     const viewH = Math.max(1, this.app.screen.height);
 
-    // 戰鬥畫面模式（FM2）：切換至獨立 BattleStageRenderer 播放 FX14 時間軸與特效腳本
+    // 戰鬥畫面模式（FM2/FM3）：切換至獨立 BattleStageRenderer 播放 FX14 時間軸與每角色外觀＋技能顯示對照
     if (state.battle) {
       this.worldContainer.visible = false;
       this.battleLayer.visible = true;
@@ -191,7 +197,8 @@ export class PixiStageController {
         nowMs,
         viewW,
         viewH,
-        provider,
+        appearances,
+        provider: defaultProvider,
         getSpriteManifest: id => this.loader.getSprite(id) ?? null,
         ensureSpriteLoaded: (id, assets) => void this.loader.loadSprite(id, assets),
         getTexture: url => this.getOrLoadTexture(url),
@@ -234,7 +241,7 @@ export class PixiStageController {
       logicalW,
       logicalH,
       nowMs,
-      provider,
+      resolveProviderFor,
     );
   }
 
@@ -305,7 +312,7 @@ export class PixiStageController {
     logicalW: number,
     logicalH: number,
     nowMs: number,
-    provider: AppearanceProvider,
+    resolveProviderFor: (charId: string) => AppearanceProvider,
   ): void {
     const removed = this.entityLayer.removeChildren();
     for (const child of removed) child.destroy({ children: true });
@@ -342,10 +349,11 @@ export class PixiStageController {
         this.entityLayer.addChild(g);
       }
 
+      const npcProvider = originalAppearanceProvider;
       for (const npc of scene.npcs ?? []) {
         const modelId = npc.runtime_model || npc.model || '';
         const manifest = modelId ? this.loader.getSprite(modelId) ?? null : null;
-        const plan = provider.resolveCharacter(
+        const plan = npcProvider.resolveCharacter(
           {
             id: npc.id,
             name: npc.name,
@@ -358,11 +366,11 @@ export class PixiStageController {
           manifest,
           assets,
         );
-        this.addCharacterContainer(npc.world_x, npc.world_y, npc.name, plan.layers, false, 0xf2d388);
+        this.addCharacterContainer(npc.world_x, npc.world_y, npc.name, plan, false, 0xf2d388);
       }
     }
 
-    // 2. 家族成員（同地圖即時插值移動／工作／方向；若 members 尚未包含當前角色也補上 snapshot.character）
+    // 2. 家族成員（每個成員可各自用「原版」或「新外觀」，同畫面同時存在）
     const sameMapMembers = state.members.filter(m => m.mapId === snap.mapId);
     const renderedIds = new Set<string>();
     for (const m of sameMapMembers) {
@@ -383,7 +391,8 @@ export class PixiStageController {
       const weaponModel = isActiveChar ? snap.character.weaponModel : m.weaponModel;
       const tint = isActiveChar ? snap.character.tint : m.tint;
       const manifest = this.loader.getSprite(modelId) ?? null;
-      const plan = provider.resolveCharacter(
+      const memberProvider = resolveProviderFor(m.characterId);
+      const plan = memberProvider.resolveCharacter(
         {
           id: m.characterId,
           name: m.name ?? m.characterId,
@@ -402,7 +411,7 @@ export class PixiStageController {
         pose.x,
         pose.y,
         m.name ?? m.characterId,
-        plan.layers,
+        plan,
         m.characterId === watchedId,
         m.characterId === watchedId ? 0x7cb7ff : 0x5fd38d,
       );
@@ -416,7 +425,7 @@ export class PixiStageController {
       );
       const modelId = c.modelId ?? 'PHM011';
       const manifest = this.loader.getSprite(modelId) ?? null;
-      const plan = provider.resolveCharacter(
+      const plan = resolveProviderFor(activeId).resolveCharacter(
         {
           id: activeId,
           name: c.name ?? activeId,
@@ -435,7 +444,7 @@ export class PixiStageController {
         pose.x,
         pose.y,
         c.name ?? activeId,
-        plan.layers,
+        plan,
         activeId === watchedId,
         0x7cb7ff,
       );
@@ -446,7 +455,7 @@ export class PixiStageController {
     x: number,
     y: number,
     label: string,
-    layers: AppearanceLayerPlan[],
+    plan: AppearanceRenderPlan,
     isWatched: boolean,
     labelColor: number,
   ): void {
@@ -466,7 +475,7 @@ export class PixiStageController {
     }
 
     let drewAnyLayer = false;
-    for (const layer of layers) {
+    for (const layer of plan.layers) {
       const tex = this.sliceTexture(layer);
       if (!tex) continue;
       const sp = new Sprite(tex);
@@ -476,6 +485,13 @@ export class PixiStageController {
         sp.tint = Number.parseInt(layer.tintColor.slice(1), 16);
       }
       c.addChild(sp);
+      drewAnyLayer = true;
+    }
+
+    if (plan.vectorLayers && plan.vectorLayers.length > 0) {
+      const g = new Graphics();
+      drawVectorLayers(g, plan.vectorLayers);
+      c.addChild(g);
       drewAnyLayer = true;
     }
 
@@ -507,6 +523,25 @@ export class PixiStageController {
     if (this.app) {
       this.app.destroy(true);
       this.app = null;
+    }
+  }
+}
+
+export function drawVectorLayers(g: Graphics, shapes: VectorShapeLayer[]): void {
+  for (const s of shapes) {
+    const fill = Number.parseInt(s.fillHex.replace(/^#/, ''), 16);
+    const stroke = s.strokeHex ? Number.parseInt(s.strokeHex.replace(/^#/, ''), 16) : undefined;
+    if (s.shape === 'circle') {
+      g.circle(s.x, s.y, s.radius ?? 6).fill(fill);
+      if (stroke !== undefined) g.stroke({ color: stroke, width: 1.5 });
+    } else if (s.shape === 'rect') {
+      g.rect(s.x, s.y, s.w ?? 16, s.h ?? 16).fill(fill);
+      if (stroke !== undefined) g.stroke({ color: stroke, width: 1 });
+    } else if (s.shape === 'diamond') {
+      const hw = (s.w ?? 20) / 2;
+      const hh = (s.h ?? 24) / 2;
+      g.poly([s.x, s.y - hh, s.x + hw, s.y, s.x, s.y + hh, s.x - hw, s.y]).fill(fill);
+      if (stroke !== undefined) g.stroke({ color: stroke, width: 1.5 });
     }
   }
 }

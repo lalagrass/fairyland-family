@@ -2,12 +2,17 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FamilyState } from '../state';
 import { selectCameraTarget } from './extrapolation';
 import { PixiStageController, type ZoomSetting } from './pixiStage';
-import { originalAppearanceProvider, type AppearanceProvider } from './appearance';
+import {
+  getAppearanceProvider,
+  originalAppearanceProvider,
+  type AppearanceProvider,
+} from './appearance';
 
 export interface GameViewportProps {
   state: FamilyState;
   watchCharacterId: string | null;
   onSelectWatchCharacter: (id: string) => void;
+  appearances?: Record<string, string>;
   provider?: AppearanceProvider;
 }
 
@@ -15,6 +20,7 @@ export function GameViewport({
   state,
   watchCharacterId,
   onSelectWatchCharacter,
+  appearances,
   provider = originalAppearanceProvider,
 }: GameViewportProps) {
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
@@ -39,12 +45,16 @@ export function GameViewport({
   }, []);
 
   useEffect(() => {
-    stageRef.current?.update({ state, watchCharacterId, zoomSetting, provider });
-  }, [state, watchCharacterId, zoomSetting, provider]);
+    stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, provider });
+  }, [state, watchCharacterId, zoomSetting, appearances, provider]);
 
   const target = useMemo(() => selectCameraTarget(state, watchCharacterId), [state, watchCharacterId]);
   const snap = state.snapshot;
   const activeId = state.activeCharacterId ?? state.characterId ?? snap?.family?.activeCharacterId ?? '';
+  const watchedProvider = useMemo(() => {
+    const id = target?.characterId ?? activeId;
+    return appearances?.[id] ? getAppearanceProvider(appearances[id]) : provider;
+  }, [appearances, target?.characterId, activeId, provider]);
   const members = state.members;
 
   return (
@@ -93,7 +103,7 @@ export function GameViewport({
             </select>
           </label>
           <span className="pill mode" data-testid="appearance-badge">
-            {`外觀：${provider.label}`}
+            {`外觀：${watchedProvider.label}`}
           </span>
         </div>
       </div>

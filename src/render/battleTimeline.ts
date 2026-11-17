@@ -8,6 +8,7 @@ import type {
 } from '../protocol/index';
 import { defaultEffectRegistry } from './effects/registry';
 import type { EffectScript } from './effects/schema';
+import { resolveSkillDisplay } from './skillDisplayMap';
 
 export interface BattleUnitRenderState {
   id: string;
@@ -72,6 +73,7 @@ export interface BattlePlaybackPlan {
   events: BattleTimelineItem[];
   totalDurationMs: number;
   skillsCatalog: StaticSkillSummary[];
+  attackerAppearanceId?: string;
 }
 
 const ALLY_SLOTS = [
@@ -98,6 +100,7 @@ export function buildBattlePlayback(params: {
   events: BattleTimelineItem[];
   playerModelId?: string;
   skillsCatalog?: StaticSkillSummary[];
+  attackerAppearanceId?: string;
 }): BattlePlaybackPlan {
   const units: BattleUnitSeed[] = [];
 
@@ -159,6 +162,7 @@ export function buildBattlePlayback(params: {
     events: [...params.events].sort((a, b) => a.tMs - b.tMs),
     totalDurationMs: Math.max(800, maxT + 750),
     skillsCatalog: params.skillsCatalog ?? [],
+    attackerAppearanceId: params.attackerAppearanceId,
   };
 }
 
@@ -221,10 +225,26 @@ export function evaluateBattleFrame(plan: BattlePlaybackPlan, elapsedMs: number)
         actor.y += Math.round(dirSign * lunge * 16);
       }
 
-      const script = defaultEffectRegistry.resolve(
-        { skillId: ev.skillId, actionName: ev.actionName, effectId: ev.effectId },
+      const appId = actor?.side === 'ally' ? (plan.attackerAppearanceId ?? 'original') : 'original';
+      const mappedDisplay = resolveSkillDisplay(appId, ev.skillId, ev.actionName);
+      let script = defaultEffectRegistry.resolve(
+        { skillId: ev.skillId, actionName: mappedDisplay.displayName, effectId: ev.effectId },
         plan.skillsCatalog,
       );
+      if (mappedDisplay.overrideScriptId) {
+        const overridden = defaultEffectRegistry.listAll().find(x => x.id === mappedDisplay.overrideScriptId);
+        if (overridden) script = overridden;
+      }
+      if (actor && localMs < 360 && mappedDisplay.displayName) {
+        popups.push({
+          key: `skill-${i}`,
+          x: actor.x,
+          y: Math.round(actor.y - 68),
+          text: `${mappedDisplay.iconGlyph} ${mappedDisplay.displayName}`,
+          color: '#7cb7ff',
+          progress: localMs / 420,
+        });
+      }
       if (localMs >= 0 && localMs <= script.durationMs) {
         effects.push({
           key: `fx-${i}-${ev.tMs}`,
