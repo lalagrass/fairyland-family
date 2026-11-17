@@ -1,0 +1,526 @@
+{
+  "schemaVersion": 1,
+  "targetRole": "martial_artist",
+  "variants": [
+    {
+      "id": "PHF013",
+      "race": "PH",
+      "gender": "F",
+      "tier": 1
+    },
+    {
+      "id": "PHF023",
+      "race": "PH",
+      "gender": "F",
+      "tier": 1
+    },
+    {
+      "id": "PHM013",
+      "race": "PH",
+      "gender": "M",
+      "tier": 1
+    },
+    {
+      "id": "PHM023",
+      "race": "PH",
+      "gender": "M",
+      "tier": 1
+    },
+    {
+      "id": "PHF033",
+      "race": "PH",
+      "gender": "F",
+      "tier": 2
+    },
+    {
+      "id": "PHF043",
+      "race": "PH",
+      "gender": "F",
+      "tier": 2
+    },
+    {
+      "id": "PHM033",
+      "race": "PH",
+      "gender": "M",
+      "tier": 2
+    },
+    {
+      "id": "PHM043",
+      "race": "PH",
+      "gender": "M",
+      "tier": 2
+    }
+  ],
+  "directions": [
+    "S",
+    "SW",
+    "W",
+    "NW",
+    "N",
+    "NE",
+    "E",
+    "SE"
+  ],
+  "equipmentLayerSlots": [
+    {
+      "slot": "body",
+      "required": true,
+      "zIndex": 10
+    },
+    {
+      "slot": "hair",
+      "required": true,
+      "zIndex": 20
+    },
+    {
+      "slot": "head",
+      "required": false,
+      "zIndex": 30
+    },
+    {
+      "slot": "armor",
+      "required": true,
+      "zIndex": 40
+    },
+    {
+      "slot": "cape",
+      "required": false,
+      "zIndex": 50
+    },
+    {
+      "slot": "weapon",
+      "required": true,
+      "zIndex": 60
+    },
+    {
+      "slot": "offhand",
+      "required": false,
+      "zIndex": 70
+    }
+  ],
+  "actions": [
+    {
+      "actionId": 0,
+      "key": "idle_static",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 1,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 1,
+      "key": "walk_slow",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 2,
+      "key": "run",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 3,
+      "key": "walk_alt",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 4,
+      "key": "battle_ready",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 5,
+      "key": "attack_1",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 6,
+      "key": "attack_2",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 7,
+      "key": "cast_1",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 8,
+      "key": "cast_2",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 9,
+      "key": "defend",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 2,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 10,
+      "key": "hit",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 2,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 11,
+      "key": "emote_1",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 12,
+      "key": "emote_2",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 13,
+      "key": "emote_3",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 0,
+      "speed": 8
+    },
+    {
+      "actionId": 14,
+      "key": "evade",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 15,
+      "key": "stun",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 4,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 16,
+      "key": "down",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 17,
+      "key": "down_alt_1",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 18,
+      "key": "down_alt_2",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 19,
+      "key": "stand_interact",
+      "required": false,
+      "directions": 8,
+      "minFramesPerDirection": 9,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 20,
+      "key": "work_cycle",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 9,
+      "loop": 1,
+      "speed": 8
+    },
+    {
+      "actionId": 21,
+      "key": "idle_breathe",
+      "required": true,
+      "directions": 8,
+      "minFramesPerDirection": 8,
+      "loop": 0,
+      "speed": 8
+    }
+  ],
+  "weaponVisualLayers": [
+    "WP01",
+    "WP02",
+    "WP03",
+    "WP04",
+    "WP05",
+    "WP06",
+    "WP07",
+    "WP08",
+    "WP09",
+    "WP10",
+    "WP11",
+    "WP12",
+    "WP13",
+    "WP14",
+    "WP15",
+    "WP16",
+    "WP17",
+    "WP18",
+    "WP19",
+    "WP20",
+    "WP21",
+    "WP22",
+    "WP23",
+    "WP24",
+    "WP25",
+    "WP26",
+    "WP27",
+    "WP28"
+  ],
+  "skills": [
+    {
+      "skillId": 2001,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp090",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2002,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp128",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2003,
+      "kind": "SKILL",
+      "targetScope": "CROSS",
+      "effectKey": "sp130",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2004,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp128",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2005,
+      "kind": "SKILL",
+      "targetScope": "ROW",
+      "effectKey": "sp130",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2006,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp128",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2027,
+      "kind": "SKILL",
+      "targetScope": "SELF",
+      "effectKey": "sp129",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2081,
+      "kind": "SKILL",
+      "targetScope": "SELF",
+      "effectKey": "sp129",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2082,
+      "kind": "SKILL",
+      "targetScope": "SELF",
+      "effectKey": "sp129",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2083,
+      "kind": "SKILL",
+      "targetScope": "SELF",
+      "effectKey": "sp129",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2084,
+      "kind": "SKILL",
+      "targetScope": "SELF",
+      "effectKey": "sp129",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": true
+    },
+    {
+      "skillId": 2085,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp246",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2086,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp247",
+      "inClassicT1": false,
+      "inClassicT2": false,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2251,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp126",
+      "inClassicT1": true,
+      "inClassicT2": true,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2252,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp127",
+      "inClassicT1": false,
+      "inClassicT2": true,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2261,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp129",
+      "inClassicT1": true,
+      "inClassicT2": true,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2263,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp129",
+      "inClassicT1": true,
+      "inClassicT2": true,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 2294,
+      "kind": "SKILL",
+      "targetScope": "SINGLE",
+      "effectKey": "sp128",
+      "inClassicT1": true,
+      "inClassicT2": true,
+      "inRevampFist": false
+    },
+    {
+      "skillId": 401,
+      "kind": "SPELL",
+      "targetScope": "SINGLE",
+      "effectKey": null,
+      "inClassicT1": true,
+      "inClassicT2": true,
+      "inRevampFist": false
+    }
+  ],
+  "portraitSlots": [
+    "create_human_m",
+    "create_human_f",
+    "hud_avatar_t1",
+    "hud_avatar_t2"
+  ],
+  "iconSlots": [
+    "weapon_fist_icon",
+    "skill_fist_icon",
+    "skill_qi_icon"
+  ],
+  "sfxSlots": [
+    "1601",
+    "2104",
+    "2201",
+    "2202",
+    "2203",
+    "2301",
+    "2302",
+    "2305",
+    "2401"
+  ]
+}

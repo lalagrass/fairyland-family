@@ -26,6 +26,7 @@ import { AutoNavigator, type NavStatus } from './navigator';
 import { WorkNotifier, type NotificationAdapter } from './notify';
 import { parseInput, type UiAction } from './parse';
 import { WorkQueue, type QueueStatus } from './queue';
+import { CharacterAppearanceStore } from './render/appearanceStore';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
 import type { Transport } from './transport/types';
 
@@ -55,6 +56,7 @@ export class FamilyController {
   readonly battler: AutoBattler;
   readonly queue: WorkQueue;
   readonly strategyStore: CharacterStrategyStore;
+  readonly appearanceStore: CharacterAppearanceStore;
   readonly automation = new AutomationRegistry();
   private readonly questModule: QuestBehaviorModule;
   private queues = new Map<string, WorkQueue>();
@@ -75,6 +77,7 @@ export class FamilyController {
     this.after = opts.after ?? ((ms, fn) => setTimeout(fn, ms));
     this.directory = new Directory(opts.storage ?? null);
     this.strategyStore = new CharacterStrategyStore(opts.storage ?? null);
+    this.appearanceStore = new CharacterAppearanceStore(opts.storage ?? null);
     this.notifier = new WorkNotifier(opts.notification);
 
     const host = {
@@ -197,6 +200,7 @@ export class FamilyController {
   activeQuest(): number | null { return this.questModule.getActiveQuestId(); }
   coordinatorMode(): CoordinatorMode { return this.automation.getCoordinatorMode(); }
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
+  charAppearances(): Record<string, string> { return this.appearanceStore.snapshotAll(); }
 
   queueStatus(): QueueStatus {
     const cid = this.state.characterId;
@@ -329,6 +333,12 @@ export class FamilyController {
       if (action.patch.battleStrategy && action.characterId === (this.state.characterId ?? this.state.activeCharacterId)) {
         this.battler.setStrategy(updated.battleStrategy);
       }
+      this.state = addLog(this.state, '系統', action.label, this.now());
+      this.emit();
+      return null;
+    }
+    if (action.kind === 'CHAR_APPEARANCE_UPDATE') {
+      this.appearanceStore.set(action.characterId, action.appearanceId);
       this.state = addLog(this.state, '系統', action.label, this.now());
       this.emit();
       return null;

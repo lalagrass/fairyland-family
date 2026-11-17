@@ -59,6 +59,20 @@ export interface AppearanceLayerPlan {
   tintColor?: string;
 }
 
+export type AppearanceId = 'original' | 'wuxia-test' | string;
+
+export interface VectorShapeLayer {
+  slot: string;
+  shape: 'rect' | 'circle' | 'diamond';
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  radius?: number;
+  fillHex: string;
+  strokeHex?: string;
+}
+
 export interface AppearanceRenderPlan {
   providerId: string;
   modelId: string;
@@ -66,6 +80,7 @@ export interface AppearanceRenderPlan {
   frameNumber: number;
   pixelScale: number;
   layers: AppearanceLayerPlan[];
+  vectorLayers?: VectorShapeLayer[];
   fallbackLabel: string;
 }
 
@@ -232,3 +247,118 @@ export class OriginalAppearanceProvider implements AppearanceProvider {
 }
 
 export const originalAppearanceProvider = new OriginalAppearanceProvider();
+
+const DIR_VECTORS: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],    // 0 S
+  [-0.7, 0.7], // 1 SW
+  [-1, 0],   // 2 W
+  [-0.7, -0.7], // 3 NW
+  [0, -1],   // 4 N
+  [0.7, -0.7], // 5 NE
+  [1, 0],    // 6 E
+  [0.7, 0.7], // 7 SE
+];
+
+/**
+ * 第二套外觀提供者（FM3 原創幾何測試外觀，含多圖層／8 方向／走路・工作・戰鬥姿態；零原版圖檔）。
+ */
+export class WuxiaTestAppearanceProvider implements AppearanceProvider {
+  readonly id = 'wuxia-test';
+  readonly label = '新武俠（幾何測試）';
+
+  resolveSpriteManifestUrl(): string {
+    return '/family/assets/appearances/wuxia_test/manifest.json';
+  }
+
+  resolveCharacter(input: AppearanceInput): AppearanceRenderPlan {
+    const dirIdx = ((input.dir % 8) + 8) % 8;
+    const [fx, fy] = DIR_VECTORS[dirIdx];
+    const phase = (input.nowMs % 640) / 640;
+    const wave = Math.sin(phase * Math.PI * 2);
+
+    const isWalk = input.action === 1 || input.action === 2;
+    const isWork = input.action === 20;
+    const isBattle = input.action >= 4 && input.action <= 10;
+
+    const bobY = isWalk ? Math.round(Math.abs(wave) * -4) : isWork ? Math.round(wave * 3) : 0;
+    const fistPush = isBattle ? 12 + Math.round(Math.max(0, wave) * 6) : isWork ? 10 + Math.round(wave * 5) : 7;
+    const cloakColor = rgbTupleToHex(input.tint?.outfit) ?? '#2f6fed';
+    const hairColor = rgbTupleToHex(input.tint?.hair) ?? '#1e2633';
+
+    const vectorLayers: VectorShapeLayer[] = [
+      // 武者長衫軀幹
+      {
+        slot: 'body',
+        shape: 'diamond',
+        x: 0,
+        y: -18 + bobY,
+        w: 22,
+        h: 28,
+        fillHex: cloakColor,
+        strokeHex: '#e4eaf3',
+      },
+      // 護甲腰帶
+      {
+        slot: 'armor',
+        shape: 'rect',
+        x: -10,
+        y: -14 + bobY,
+        w: 20,
+        h: 6,
+        fillHex: '#ffcb6b',
+        strokeHex: '#332200',
+      },
+      // 頭部
+      {
+        slot: 'head',
+        shape: 'circle',
+        x: 0,
+        y: -36 + bobY,
+        radius: 9,
+        fillHex: '#f6d1b0',
+        strokeHex: '#202630',
+      },
+      // 髮髻 / 頭帶朝向指示
+      {
+        slot: 'hair',
+        shape: 'circle',
+        x: Math.round(-fx * 4),
+        y: Math.round(-41 + bobY - fy * 2),
+        radius: 5,
+        fillHex: hairColor,
+      },
+      // 主武器雙拳拳套（朝 8 方向延伸，走路／工作／出招帶律動）
+      {
+        slot: 'weapon',
+        shape: 'circle',
+        x: Math.round(fx * fistPush + (isWalk ? wave * 4 : 0)),
+        y: Math.round(-20 + bobY + fy * fistPush * 0.6),
+        radius: isBattle ? 6 : 5,
+        fillHex: isWork ? '#5fd3c7' : '#ff8c42',
+        strokeHex: '#ffffff',
+      },
+    ];
+
+    return {
+      providerId: this.id,
+      modelId: 'wuxia_test',
+      resolvedAction: input.action,
+      frameNumber: Math.floor(phase * 4) + 1,
+      pixelScale: 1,
+      layers: [],
+      vectorLayers,
+      fallbackLabel: input.name || 'wuxia_test',
+    };
+  }
+}
+
+export const wuxiaTestAppearanceProvider = new WuxiaTestAppearanceProvider();
+
+export const APPEARANCE_PROVIDERS: readonly AppearanceProvider[] = [
+  originalAppearanceProvider,
+  wuxiaTestAppearanceProvider,
+];
+
+export function getAppearanceProvider(id?: string | null): AppearanceProvider {
+  return APPEARANCE_PROVIDERS.find(p => p.id === id) ?? originalAppearanceProvider;
+}

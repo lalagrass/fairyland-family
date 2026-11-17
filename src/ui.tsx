@@ -9,6 +9,7 @@ import type {
   SnapshotBattleStatus,
   SnapshotBattleUnitSummary,
 } from './protocol/index';
+import { APPEARANCE_PROVIDERS } from './render/appearance';
 import { GameViewport } from './render/GameViewport';
 import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
@@ -48,6 +49,7 @@ export interface UiAux {
   devMode?: boolean;
   activeQuestId?: number | null;
   charStrategies?: Record<string, CharacterStrategyConfig>;
+  appearances?: Record<string, string>;
   coordinatorMode?: CoordinatorMode;
   modules?: Array<{ id: string; label: string }>;
 }
@@ -458,12 +460,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
       </Tabs.Root>
 
       <div className="layout-grid">
-        {/* 中上欄（手機分頁：畫面）：PixiJS 原版畫面 */}
+        {/* 中上欄（手機分頁：畫面）：PixiJS 原版＋新外觀畫面 */}
         <div className={`col col-stage ${mobileTab !== 'stage' ? 'col-hidden-mobile' : ''}`}>
           <GameViewport
             state={state}
             watchCharacterId={effectiveWatchId}
             onSelectWatchCharacter={id => setWatchCharacterId(id)}
+            appearances={aux.appearances}
           />
         </div>
 
@@ -491,6 +494,24 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                         <span>{`體 ${m.satiety}`}</span>
                         <span>{`袋 ${m.inventoryCount}/${m.inventoryCap}`}</span>
                         <span className="muted">{qText}</span>
+                        <select
+                          aria-label={`${m.name ?? m.characterId} 外觀選擇`}
+                          data-testid="member-appearance-select"
+                          data-character-id={m.characterId}
+                          value={aux.appearances?.[m.characterId] ?? 'original'}
+                          onChange={e =>
+                            handleAction({
+                              kind: 'CHAR_APPEARANCE_UPDATE',
+                              characterId: m.characterId,
+                              appearanceId: e.currentTarget.value,
+                              label: `${m.name ?? m.characterId} 外觀改為 ${e.currentTarget.value}`,
+                            })
+                          }
+                        >
+                          {APPEARANCE_PROVIDERS.map(p => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className={`item ${isWatched ? 'tab-active' : ''}`}

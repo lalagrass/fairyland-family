@@ -2,12 +2,14 @@ import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { StaticAssetManifest } from '../protocol/index';
 import type { FamilyState } from '../state';
 import {
+  getAppearanceProvider,
   originalAppearanceProvider,
   type AppearanceProvider,
   type SpriteModelManifest,
 } from './appearance';
 import { buildBattlePlayback, evaluateBattleFrame } from './battleTimeline';
 import { visualActionToCode } from './extrapolation';
+import { drawVectorLayers } from './pixiStage';
 import { EffectPlayer } from './effects/effectPlayer';
 
 export const BATTLE_ARENA_W = 800;
@@ -22,13 +24,15 @@ export class BattleStageRenderer {
     nowMs: number;
     viewW: number;
     viewH: number;
+    appearances?: Record<string, string>;
     provider?: AppearanceProvider;
     getSpriteManifest: (modelId: string) => SpriteModelManifest | null;
     ensureSpriteLoaded: (modelId: string, assets?: StaticAssetManifest) => void;
     getTexture: (url: string) => Texture | null;
   }): void {
-    const { container, state, nowMs, viewW, viewH, getSpriteManifest, ensureSpriteLoaded, getTexture } = params;
-    const provider = params.provider ?? originalAppearanceProvider;
+    const { container, state, nowMs, viewW, viewH, appearances, getSpriteManifest, ensureSpriteLoaded, getTexture } = params;
+    const defaultProvider = params.provider ?? originalAppearanceProvider;
+    const activeCharId = state.characterId ?? state.activeCharacterId ?? 'active';
     const battle = state.battle;
     if (!battle) return;
 
@@ -48,6 +52,7 @@ export class BattleStageRenderer {
     arena.addChild(bg);
 
     const tl = battle.timeline;
+    const attackerAppearanceId = appearances?.[activeCharId] ?? defaultProvider.id;
     const plan = buildBattlePlayback({
       round: tl?.round ?? battle.round ?? 1,
       player: battle.player,
@@ -58,6 +63,7 @@ export class BattleStageRenderer {
       events: tl?.events ?? [],
       playerModelId: state.snapshot?.character.modelId,
       skillsCatalog: state.staticData?.skills ?? [],
+      attackerAppearanceId,
     });
 
     const elapsedMs = tl ? Math.max(0, nowMs - tl.receivedAt) : 0;
@@ -69,12 +75,16 @@ export class BattleStageRenderer {
     const posMap = new Map<string, { x: number; y: number }>();
     for (const u of frame.units) posMap.set(u.id, { x: u.x, y: u.y });
 
-    // 1. 單位（依 Y 排序）
+    // 1. 單位（依 Y 排序，每個角色可用各自選定的外觀）
     const sortedUnits = [...frame.units].sort((a, b) => a.y - b.y);
     for (const u of sortedUnits) {
+      const unitProvider =
+        u.side === 'ally'
+          ? getAppearanceProvider(appearances?.[u.id] ?? appearances?.[activeCharId] ?? defaultProvider.id)
+          : originalAppearanceProvider;
       ensureSpriteLoaded(u.modelId, assets);
       const manifest = getSpriteManifest(u.modelId);
-      const renderPlan = provider.resolveCharacter(
+      const renderPlan = unitProvider.resolveCharacter(
         {
           id: u.id,
           name: u.name,
@@ -97,7 +107,11 @@ export class BattleStageRenderer {
       shadow.ellipse(0, 0, 20, 8).fill({ color: 0x000000, alpha: 0.4 });
       unitBox.addChild(shadow);
 
-      if (renderPlan.layers.length === 0) {
+      if (renderPlan.vectorLayers && renderPlan.vectorLayers.length > 0) {
+        const g = new Graphics();
+        drawVectorLayers(g, renderPlan.vectorLayers);
+        unitBox.addChild(g);
+      } else if (renderPlan.layers.length === 0) {
         const body = new Graphics();
         body.circle(0, -24, 15).fill(u.side === 'ally' ? 0x5fd38d : 0xff7b7b);
         unitBox.addChild(body);
