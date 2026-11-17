@@ -37,6 +37,11 @@ import type { CoordinatorMode } from './automation/types';
 import { buildPaletteSuggestions } from './dv6_palette';
 import type { WelcomeRecapSummary } from './dv7_recap';
 import { initialState, type FamilyState, type LogTag } from './state';
+import { CharacterStats } from './panels/CharacterStats';
+import { ItemColumn } from './panels/ItemColumn';
+import { ItemMoveRoot } from './panels/ItemMoveRoot';
+import { PanelMark } from './panels/marks';
+import { SkillPanel } from './panels/SkillPanel';
 
 type Perform = (action: UiAction) => string | null;
 type SubmitText = (text: string) => string | null;
@@ -695,9 +700,20 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             )}
           </section>
 
+          <ItemMoveRoot onCommand={(command, label) => handleAction(cmdAction(command, label))}>
+          <section data-testid="inventory-panel">
+            <h2><PanelMark kind="bag" />物品欄</h2>
+            <ItemColumn
+              bin="bag"
+              items={state.inventory}
+              running={running}
+              rowTestId="wh-deposit-item"
+              emptyText="背包是空的"
+            />
+          </section>
           <section data-testid="warehouse-panel">
             <div className="panel-head-row">
-              <h2>家族共用倉庫</h2>
+              <h2><PanelMark kind="warehouse" />家族共用倉庫</h2>
               {(!wh || (wh.gold === 0 && wh.items.length === 0)) && (
                 <button
                   type="button"
@@ -739,68 +755,23 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                     取 500 金
                   </button>
                 </div>
-                <div className="items">
-                  {wh.items.length === 0 ? (
-                    <span className="muted">倉庫物品：空</span>
-                  ) : (
-                    wh.items.map(it => (
-                      <button
-                        key={it.itemId}
-                        type="button"
-                        className="item"
-                        data-testid="wh-withdraw-item"
-                        data-item-id={String(it.itemId)}
-                        disabled={!running}
-                        onClick={() =>
-                          handleAction(
-                            cmdAction(
-                              { type: 'WAREHOUSE_WITHDRAW', itemId: it.itemId, count: 1 },
-                              `取倉 ${it.name ?? it.itemId} ×1`,
-                            ),
-                          )
-                        }
-                      >
-                        {`取 ${it.name ?? `#${it.itemId}`} ×${it.count}`}
-                      </button>
-                    ))
-                  )}
-                </div>
-                {state.inventory.length > 0 && (
-                  <>
-                    <div className="muted">目前角色背包（點一下存倉 ×1）：</div>
-                    <div className="items">
-                      {state.inventory.map(it => (
-                        <button
-                          key={it.itemId}
-                          type="button"
-                          className="item"
-                          data-testid="wh-deposit-item"
-                          data-item-id={String(it.itemId)}
-                          disabled={!running}
-                          onClick={() =>
-                            handleAction(
-                              cmdAction(
-                                { type: 'WAREHOUSE_DEPOSIT', itemId: it.itemId, count: 1 },
-                                `存倉 ${it.name ?? it.itemId} ×1`,
-                              ),
-                            )
-                          }
-                        >
-                          {`存 ${it.name ?? `#${it.itemId}`} ×${it.count}`}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <ItemColumn
+                  bin="warehouse"
+                  items={wh.items}
+                  running={running}
+                  rowTestId="wh-withdraw-item"
+                  emptyText="倉庫物品：空"
+                />
               </>
             )}
           </section>
+          </ItemMoveRoot>
         </div>
 
         {/* 中欄：目前角色（含立繪預留框） + 導航 + 任務 + 互動與策略 + 場景選單 + 文字輸入 */}
         <div className={`col col-active ${mobileTab !== 'active' ? 'col-hidden-mobile' : ''}`}>
           <section data-testid="character">
-            <h2>角色</h2>
+            <h2><PanelMark kind="character" />角色</h2>
             {c ? (
               <div className="hero-card">
                 <PortraitSlot name={c.name} characterId={state.characterId} size="lg" />
@@ -840,6 +811,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                     <UnitStatusRow title="出戰寵" unit={(c.activePet ?? state.battle?.pet)!} testid="pet-status-row" />
                   )}
                 </div>
+                <CharacterStats character={c} />
               </div>
             ) : (
               <div className="muted">{running ? '等待快照…' : '（沒有角色資料；請先開啟 fairyland 遊戲分頁）'}</div>
@@ -850,6 +822,8 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               </div>
             )}
           </section>
+
+          <SkillPanel skills={state.staticData?.skills ?? []} />
 
           <section data-testid="nav-panel">
             <h2>自動導航</h2>
