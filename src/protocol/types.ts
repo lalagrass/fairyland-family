@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 12fbb324c7260eb1c5dd0a5d916fcddd86d3e632
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 78ea40f9b6fb792d0516c0af9144d4dbd520fa8b
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -240,6 +240,9 @@ export interface SnapshotCharacter {
   inventoryCap?: number;
   workSkills?: Record<number, number>;
   activeWork?: SnapshotActiveWork | null;
+  /** FL1：目前規則卡匣與職業名稱（classic 顯示職業，revamp 顯示武器族與連擊）。 */
+  ruleset?: 'classic' | 'revamp';
+  className?: string;
   /** FX8：目前裝備武器系別、該系熟練等級、連擊等級與各系熟練等級。 */
   weaponFamily?: string;
   familyLevel?: number;
