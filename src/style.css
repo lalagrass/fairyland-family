@@ -104,6 +104,48 @@ header h1 { font-size: 18px; margin: 0; }
 }
 .radix-dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .radix-dialog-head h2 { margin: 0; font-size: 15px; }
+
+.palette-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; max-height: 280px; overflow-y: auto; }
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  width: 100%;
+  background: var(--panel-soft);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.palette-item.palette-active, .palette-item:hover { border-color: var(--acc); background: rgba(124,183,255,.12); }
+.palette-item small { margin-left: auto; }
+
+.recap-card { margin: 10px 0; border-color: rgba(95,211,141,.4); background: rgba(95,211,141,.08); }
+.recap-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+
+.panel-head-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.panel-head-row h2 { margin: 0; }
+.panel-toggle-btn { font-size: 11px; padding: 1px 7px; }
+.panel-collapsed-note { font-size: 12px; margin-top: 4px; }
+
+.queue-stop-conds { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 6px 0; font-size: 12px; }
+.queue-cards-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.queue-job-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  cursor: grab;
+}
+.queue-job-card.queue-job-active { border-color: var(--acc); }
+.queue-job-title { font-size: 12px; word-break: break-word; }
+.queue-job-actions { display: flex; gap: 4px; flex-shrink: 0; }
 section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 section h2 { font-size: 13px; margin: 0 0 6px; color: var(--dim); font-weight: 600; letter-spacing: .04em; }
 

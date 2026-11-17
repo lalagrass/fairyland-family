@@ -34,6 +34,8 @@ import {
   type CharacterStrategyConfig,
 } from './automation/strategyStore';
 import type { CoordinatorMode } from './automation/types';
+import { buildPaletteSuggestions } from './dv6_palette';
+import type { WelcomeRecapSummary } from './dv7_recap';
 import { initialState, type FamilyState, type LogTag } from './state';
 
 type Perform = (action: UiAction) => string | null;
@@ -50,6 +52,7 @@ export interface UiAux {
   activeQuestId?: number | null;
   charStrategies?: Record<string, CharacterStrategyConfig>;
   appearances?: Record<string, string>;
+  welcomeRecap?: WelcomeRecapSummary | null;
   coordinatorMode?: CoordinatorMode;
   modules?: Array<{ id: string; label: string }>;
 }
@@ -220,6 +223,11 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [mobileTab, setMobileTab] = useState<MobileTab>('active');
   const [watchCharacterId, setWatchCharacterId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [paletteIdx, setPaletteIdx] = useState(0);
+  const [dragJobIdx, setDragJobIdx] = useState<number | null>(null);
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [tagFilter, setTagFilter] = useState<LogTag | 'ALL'>('ALL');
   const [charFilter, setCharFilter] = useState<string | 'ALL'>('ALL');
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermissionState>(() => getNotificationPermission());
@@ -240,6 +248,26 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
     const id = setInterval(() => setNowTick(Date.now()), 250);
     return () => clearInterval(id);
   }, [hasActiveCountdown]);
+
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+        ev.preventDefault();
+        setPaletteOpen(prev => !prev);
+        setPaletteIdx(0);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const paletteItems = useMemo(
+    () => buildPaletteSuggestions(state, paletteQuery),
+    [state, paletteQuery],
+  );
+
+  const togglePanel = (key: string) =>
+    setExpandedPanels(prev => ({ ...prev, [key]: !prev[key] }));
 
   const handleAction = (action: UiAction) => {
     const err = perform(action);
@@ -388,6 +416,92 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           </span>
         )}
         <div className="header-actions">
+          <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}>
+            <Dialog.Trigger asChild>
+              <button
+                type="button"
+                className="item"
+                data-testid="palette-open-btn"
+                onClick={() => setPaletteOpen(true)}
+              >
+                指令面板 (Ctrl+K)
+              </button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="radix-dialog-overlay" />
+              <Dialog.Content className="radix-dialog-content palette-dialog" data-testid="command-palette">
+                <div className="radix-dialog-head">
+                  <Dialog.Title>快速指令面板 (Ctrl+K)</Dialog.Title>
+                  <Dialog.Close asChild>
+                    <button type="button" className="item">關閉 (Esc)</button>
+                  </Dialog.Close>
+                </div>
+                <Dialog.Description className="muted">
+                  方向鍵選取、Tab 自動完成、Enter 直接執行（全程免滑鼠）
+                </Dialog.Description>
+                <input
+                  type="text"
+                  autoFocus
+                  data-testid="palette-input"
+                  placeholder="搜尋：前往 村長、採集 青銅礦、快照、停止工作…"
+                  value={paletteQuery}
+                  onChange={e => {
+                    setPaletteQuery(e.currentTarget.value);
+                    setPaletteIdx(0);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setPaletteIdx(i => (paletteItems.length ? (i + 1) % paletteItems.length : 0));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setPaletteIdx(i =>
+                        paletteItems.length ? (i - 1 + paletteItems.length) % paletteItems.length : 0,
+                      );
+                    } else if (e.key === 'Tab' && paletteItems[paletteIdx]) {
+                      e.preventDefault();
+                      setPaletteQuery(paletteItems[paletteIdx].commandText);
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const chosen = paletteItems[paletteIdx];
+                      if (chosen?.action) {
+                        handleAction(chosen.action);
+                        setPaletteOpen(false);
+                        setPaletteQuery('');
+                      } else if (paletteQuery.trim()) {
+                        const err = submit(paletteQuery.trim());
+                        if (!err) {
+                          setPaletteOpen(false);
+                          setPaletteQuery('');
+                        }
+                      }
+                    }
+                  }}
+                />
+                <div className="palette-list" data-testid="palette-list">
+                  {paletteItems.map((it, idx) => (
+                    <button
+                      key={it.id}
+                      type="button"
+                      className={`palette-item ${idx === paletteIdx ? 'palette-active' : ''}`}
+                      data-testid="palette-item"
+                      onClick={() => {
+                        if (it.action) handleAction(it.action);
+                        else submit(it.commandText);
+                        setPaletteOpen(false);
+                        setPaletteQuery('');
+                      }}
+                    >
+                      <span className="pill">{it.category}</span>
+                      <span>{it.label}</span>
+                      <small className="muted">{it.hint}</small>
+                    </button>
+                  ))}
+                  {paletteItems.length === 0 && <div className="muted">找不到符合的指令，按 Enter 直接送出文字指令</div>}
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
           <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
             <Dialog.Trigger asChild>
               <button type="button" className="item" data-testid="help-dialog-btn">
@@ -458,6 +572,37 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           </Tabs.Trigger>
         </Tabs.List>
       </Tabs.Root>
+
+      {aux.welcomeRecap && (
+        <section className="recap-card" data-testid="welcome-recap-card">
+          <div className="recap-head">
+            <strong>{`歡迎回來，${aux.welcomeRecap.characterName}（離開 ${aux.welcomeRecap.awayText}）`}</strong>
+            <button
+              type="button"
+              className="item"
+              data-testid="welcome-recap-dismiss"
+              onClick={() => handleAction({ kind: 'DISMISS_RECAP', label: '收起回來摘要' })}
+            >
+              收起摘要
+            </button>
+          </div>
+          <div className="char">
+            {aux.welcomeRecap.mapTransition && <span>{`位置變化：${aux.welcomeRecap.mapTransition}`}</span>}
+            {aux.welcomeRecap.levelDelta !== 0 && (
+              <span>{`等級 ${aux.welcomeRecap.levelDelta > 0 ? `+${aux.welcomeRecap.levelDelta}` : aux.welcomeRecap.levelDelta}`}</span>
+            )}
+            {aux.welcomeRecap.goldDelta !== 0 && (
+              <span>{`金錢 ${aux.welcomeRecap.goldDelta > 0 ? `+${aux.welcomeRecap.goldDelta}` : aux.welcomeRecap.goldDelta}`}</span>
+            )}
+            {aux.welcomeRecap.itemDeltas.map(d => (
+              <span key={d.name}>{`${d.name} ${d.delta > 0 ? `+${d.delta}` : d.delta}`}</span>
+            ))}
+          </div>
+          {aux.welcomeRecap.highlights.length > 0 && (
+            <div className="muted">{`離線動態：${aux.welcomeRecap.highlights.join(' ｜ ')}`}</div>
+          )}
+        </section>
+      )}
 
       <div className="layout-grid">
         {/* 中上欄（手機分頁：畫面）：PixiJS 原版＋新外觀畫面 */}
@@ -551,8 +696,24 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           </section>
 
           <section data-testid="warehouse-panel">
-            <h2>家族共用倉庫</h2>
-            {!wh ? (
+            <div className="panel-head-row">
+              <h2>家族共用倉庫</h2>
+              {(!wh || (wh.gold === 0 && wh.items.length === 0)) && (
+                <button
+                  type="button"
+                  className="item panel-toggle-btn"
+                  data-testid="toggle-warehouse-panel"
+                  onClick={() => togglePanel('warehouse')}
+                >
+                  {expandedPanels['warehouse'] ? '收起' : '展開（目前為空）'}
+                </button>
+              )}
+            </div>
+            {(!wh || (wh.gold === 0 && wh.items.length === 0)) && !expandedPanels['warehouse'] ? (
+              <div className="muted panel-collapsed-note" data-testid="collapsed-warehouse-note">
+                倉庫目前為空（已漸進收起）
+              </div>
+            ) : !wh ? (
               <div className="muted">（尚未收到倉庫資料）</div>
             ) : (
               <>
@@ -789,8 +950,24 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           })()}
 
           <section data-testid="quest-panel">
-            <h2>任務摘要與自動推進</h2>
-            {!snap ? (
+            <div className="panel-head-row">
+              <h2>任務摘要與自動推進</h2>
+              {(!snap || quests.length === 0) && (
+                <button
+                  type="button"
+                  className="item panel-toggle-btn"
+                  data-testid="toggle-quest-panel"
+                  onClick={() => togglePanel('quest')}
+                >
+                  {expandedPanels['quest'] ? '收起' : '展開（目前為空）'}
+                </button>
+              )}
+            </div>
+            {(!snap || quests.length === 0) && !expandedPanels['quest'] && (!snap?.openingStage || snap.openingStage === 'DONE') ? (
+              <div className="muted panel-collapsed-note" data-testid="collapsed-quest-note">
+                尚無可顯示的委託（已漸進收起）
+              </div>
+            ) : !snap ? (
               <div className="muted">（尚未收到任務快照）</div>
             ) : (
               <>
@@ -1200,7 +1377,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
         {/* 右欄：工作佇列 + (?dev=1) 除錯對照 + 事件流 */}
         <div className={`col col-feed ${mobileTab !== 'feed' ? 'col-hidden-mobile' : ''}`}>
           <section data-testid="work-queue">
-            <h2>工作佇列（FX11）</h2>
+            <h2>工作佇列（FX11 / DV8）</h2>
             <div
               data-testid="queue-status"
               data-phase={activeQueue.phase}
@@ -1213,16 +1390,128 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 {`停止原因：${stopReasonLabel(activeQueue.stopReason)}`}
               </div>
             )}
+            <div className="queue-stop-conds" data-testid="queue-stop-conditions">
+              <label className="stage-control">
+                <input
+                  type="checkbox"
+                  data-testid="cond-bag-full"
+                  checked={Boolean(activeQueue.stopConditions?.stopOnBagFull)}
+                  onChange={e =>
+                    handleAction({
+                      kind: 'QUEUE_STOP_CONDITIONS',
+                      patch: { stopOnBagFull: e.currentTarget.checked },
+                      label: `停止條件「背包滿即停」設為 ${e.currentTarget.checked ? '開啟' : '關閉'}`,
+                    })
+                  }
+                />
+                <span>滿包即停</span>
+              </label>
+              <label className="stage-control">
+                <span>低飽食停</span>
+                <select
+                  aria-label="工作佇列低飽食停止條件"
+                  data-testid="cond-min-satiety"
+                  value={activeQueue.stopConditions?.minSatiety === null || activeQueue.stopConditions?.minSatiety === undefined ? 'off' : String(activeQueue.stopConditions.minSatiety)}
+                  onChange={e => {
+                    const v = e.currentTarget.value;
+                    handleAction({
+                      kind: 'QUEUE_STOP_CONDITIONS',
+                      patch: { minSatiety: v === 'off' ? null : Number(v) },
+                      label: `工作佇列低飽食停止設為 ${v}`,
+                    });
+                  }}
+                >
+                  <option value="off">關閉</option>
+                  <option value="10">≤ 10</option>
+                  <option value="20">≤ 20</option>
+                  <option value="35">≤ 35</option>
+                </select>
+              </label>
+            </div>
             {activeQueue.jobs.length > 0 && (
-              <div className="muted" data-testid="queue-jobs">
-                {activeQueue.jobs
-                  .map((j, idx) => {
-                    const mark = idx < activeQueue.activeJobIndex ? '✓' : idx === activeQueue.activeJobIndex && activeQueue.phase !== 'IDLE' ? '▶' : '…';
-                    const name = j.kind === 'GATHER' ? j.targetName : j.recipeName;
-                    const total = j.kind === 'GATHER' && j.targetCount === 'UNTIL_FULL' ? '到滿' : String(j.targetCount);
-                    return `${mark} ${name} (${j.doneCount}/${total})`;
-                  })
-                  .join(' ｜ ')}
+              <div className="queue-cards-list" data-testid="queue-jobs">
+                {activeQueue.jobs.map((j, idx) => {
+                  const mark =
+                    idx < activeQueue.activeJobIndex
+                      ? '✓'
+                      : idx === activeQueue.activeJobIndex && activeQueue.phase !== 'IDLE'
+                        ? '▶'
+                        : '…';
+                  const name = j.kind === 'GATHER' ? j.targetName : j.recipeName;
+                  const total = j.kind === 'GATHER' && j.targetCount === 'UNTIL_FULL' ? '到滿' : String(j.targetCount);
+                  return (
+                    <div
+                      key={j.id}
+                      className={`queue-job-card ${idx === activeQueue.activeJobIndex ? 'queue-job-active' : ''}`}
+                      data-testid="queue-job-card"
+                      draggable
+                      onDragStart={() => setDragJobIdx(idx)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => {
+                        e.preventDefault();
+                        if (dragJobIdx !== null && dragJobIdx !== idx) {
+                          handleAction({
+                            kind: 'QUEUE_REORDER',
+                            fromIndex: dragJobIdx,
+                            toIndex: idx,
+                            label: `拖曳重排工作 #${dragJobIdx + 1} -> #${idx + 1}`,
+                          });
+                        }
+                        setDragJobIdx(null);
+                      }}
+                    >
+                      <span className="queue-job-title">{`${mark} ${name} (${j.doneCount}/${total})`}</span>
+                      <div className="queue-job-actions">
+                        <button
+                          type="button"
+                          className="item"
+                          data-testid="queue-job-up"
+                          disabled={idx === 0}
+                          onClick={() =>
+                            handleAction({
+                              kind: 'QUEUE_REORDER',
+                              fromIndex: idx,
+                              toIndex: idx - 1,
+                              label: `上移工作 ${name}`,
+                            })
+                          }
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="item"
+                          data-testid="queue-job-down"
+                          disabled={idx === activeQueue.jobs.length - 1}
+                          onClick={() =>
+                            handleAction({
+                              kind: 'QUEUE_REORDER',
+                              fromIndex: idx,
+                              toIndex: idx + 1,
+                              label: `下移工作 ${name}`,
+                            })
+                          }
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="item"
+                          data-testid="queue-job-remove"
+                          onClick={() =>
+                            handleAction({
+                              kind: 'QUEUE_REMOVE',
+                              index: idx,
+                              label: `移除工作 ${name}`,
+                            })
+                          }
+                        >
+                          刪
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {qActive && (
