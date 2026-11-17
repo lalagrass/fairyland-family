@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fairyland-family
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Public repo guard: no original-game images, audio or packed archives.
+      - name: Check no original assets
+        run: npm run check-assets
+
+      - name: Check effect scripts
+        run: npm run check-effects
+
+      - name: Build (typecheck + Vite)
+        run: npm run build
+
+      - name: Run unit and UI tests
+        run: npm test
+
+      # End-to-end two-tab checks need a running fairyland dev server and a local browser,
+      # and fairyland is private, so E2E and `npm run check-protocol` run in fairyland's CI.
