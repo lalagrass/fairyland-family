@@ -27,6 +27,12 @@ import {
 } from './notify';
 import { INPUT_HELP, type UiAction } from './parse';
 import { stopReasonLabel, type QueueStatus } from './queue';
+import {
+  DEFAULT_CHARACTER_STRATEGY,
+  type BagFullPolicy,
+  type CharacterStrategyConfig,
+} from './automation/strategyStore';
+import type { CoordinatorMode } from './automation/types';
 import { initialState, type FamilyState, type LogTag } from './state';
 
 type Perform = (action: UiAction) => string | null;
@@ -41,6 +47,9 @@ export interface UiAux {
   queues?: Record<string, QueueStatus>;
   devMode?: boolean;
   activeQuestId?: number | null;
+  charStrategies?: Record<string, CharacterStrategyConfig>;
+  coordinatorMode?: CoordinatorMode;
+  modules?: Array<{ id: string; label: string }>;
 }
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
@@ -682,6 +691,81 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               </button>
             )}
           </section>
+
+          {(() => {
+            const targetCid = state.characterId ?? activeMemberId;
+            const charCfg = aux.charStrategies?.[targetCid] ?? DEFAULT_CHARACTER_STRATEGY;
+            return (
+              <section data-testid="char-strategy-panel">
+                <h2>{`角色策略設定（${c?.name ?? targetCid}${aux.coordinatorMode ? `｜協調器：${aux.coordinatorMode}` : ''}）`}</h2>
+                <div className="row">
+                  <span className="k">低血撤退</span>
+                  <select
+                    aria-label="低血撤退門檻"
+                    data-testid="char-lowhp-select"
+                    value={String(charCfg.lowHpRetreatPct)}
+                    onChange={e =>
+                      handleAction({
+                        kind: 'CHAR_STRATEGY_UPDATE',
+                        characterId: targetCid,
+                        patch: { lowHpRetreatPct: Number(e.currentTarget.value) },
+                        label: `${c?.name ?? targetCid} 低血撤退設為 ${e.currentTarget.value}%`,
+                      })
+                    }
+                  >
+                    <option value="0">關閉</option>
+                    <option value="15">15%</option>
+                    <option value="25">25% (預設)</option>
+                    <option value="40">40%</option>
+                    <option value="60">60%</option>
+                  </select>
+                  <span className="k">滿包策略</span>
+                  <select
+                    aria-label="滿包處理方式"
+                    data-testid="char-bagfull-select"
+                    value={charCfg.bagFullPolicy}
+                    onChange={e =>
+                      handleAction({
+                        kind: 'CHAR_STRATEGY_UPDATE',
+                        characterId: targetCid,
+                        patch: { bagFullPolicy: e.currentTarget.value as BagFullPolicy },
+                        label: `${c?.name ?? targetCid} 滿包策略設為 ${e.currentTarget.value}`,
+                      })
+                    }
+                  >
+                    <option value="STOP">停下來</option>
+                    <option value="NOTIFY">背景提醒</option>
+                    <option value="SELL">提示回店整理</option>
+                  </select>
+                </div>
+                <div className="row">
+                  <span className="k">低飽食提醒</span>
+                  <select
+                    aria-label="低飽食休息提醒"
+                    data-testid="char-satiety-select"
+                    value={String(charCfg.autoRestMinSatiety)}
+                    onChange={e =>
+                      handleAction({
+                        kind: 'CHAR_STRATEGY_UPDATE',
+                        characterId: targetCid,
+                        patch: { autoRestMinSatiety: Number(e.currentTarget.value) },
+                        label: `${c?.name ?? targetCid} 低飽食門檻設為 ${e.currentTarget.value}`,
+                      })
+                    }
+                  >
+                    <option value="0">關閉</option>
+                    <option value="20">20 以下提醒</option>
+                    <option value="40">40 以下提醒</option>
+                  </select>
+                  {aux.modules && aux.modules.length > 0 && (
+                    <span className="muted" data-testid="automation-modules-list">
+                      {`模組 ${aux.modules.length} 個`}
+                    </span>
+                  )}
+                </div>
+              </section>
+            );
+          })()}
 
           <section data-testid="quest-panel">
             <h2>任務摘要與自動推進</h2>

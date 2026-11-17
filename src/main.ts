@@ -31,6 +31,9 @@ const controller = new FamilyController(transport, {
     queue: controller.queueStatus(),
     queues: controller.queueStatuses(),
     activeQuestId: controller.activeQuest(),
+    charStrategies: controller.charStrategies(),
+    coordinatorMode: controller.coordinatorMode(),
+    modules: controller.automation.list().map(m => ({ id: m.id, label: m.label })),
   }),
 });
 controller.start();

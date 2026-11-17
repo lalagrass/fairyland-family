@@ -1,5 +1,6 @@
 import type { BattleEnemyState, DialogOption, PluginCommand, SceneSnapshot, SnapshotFamilyMember, SnapshotItem, SnapshotWorkRecipe } from './protocol/index';
 import type { BattleStrategy } from './battler';
+import type { CharacterStrategyConfig } from './automation/strategyStore';
 import type { NavGoal } from './navigator';
 
 /** 選單與文字輸入共用的「動作」：同一份文字或同一顆按鈕，一定走到同一個動作。 */
@@ -8,6 +9,7 @@ export type UiAction =
   | { kind: 'NAV'; goal: NavGoal; label: string }
   | { kind: 'NAV_CANCEL'; label: string }
   | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string }
+  | { kind: 'CHAR_STRATEGY_UPDATE'; characterId: string; patch: Partial<CharacterStrategyConfig>; label: string }
   | {
       kind: 'QUEUE_GATHER';
       skillId: number;
