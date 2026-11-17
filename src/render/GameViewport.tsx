@@ -7,6 +7,7 @@ import {
   originalAppearanceProvider,
   type AppearanceProvider,
 } from './appearance';
+import type { TimeOfDayMode, WeatherMode } from './environmentFx';
 
 export interface GameViewportProps {
   state: FamilyState;
@@ -26,6 +27,8 @@ export function GameViewport({
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<PixiStageController | null>(null);
   const [zoomSetting, setZoomSetting] = useState<ZoomSetting>('auto');
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDayMode>('day');
+  const [weather, setWeather] = useState<WeatherMode>('clear');
   const [stageInfo, setStageInfo] = useState<{ ready: boolean; error: string | null; integerScale: number }>({
     ready: false,
     error: null,
@@ -45,8 +48,8 @@ export function GameViewport({
   }, []);
 
   useEffect(() => {
-    stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, provider });
-  }, [state, watchCharacterId, zoomSetting, appearances, provider]);
+    stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider });
+  }, [state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider]);
 
   const target = useMemo(() => selectCameraTarget(state, watchCharacterId), [state, watchCharacterId]);
   const snap = state.snapshot;
@@ -100,6 +103,33 @@ export function GameViewport({
               <option value="auto">{`自動整數 (${stageInfo.integerScale}x)`}</option>
               <option value="1">1x 原始像素</option>
               <option value="2">2x 整數放大</option>
+            </select>
+          </label>
+          <label className="stage-control">
+            <span>時辰</span>
+            <select
+              aria-label="晝夜顯示切換"
+              data-testid="stage-time-select"
+              value={timeOfDay}
+              onChange={e => setTimeOfDay(e.currentTarget.value as TimeOfDayMode)}
+            >
+              <option value="day">白天</option>
+              <option value="dusk">黃昏</option>
+              <option value="night">夜晚</option>
+              <option value="auto">依時鐘自動</option>
+            </select>
+          </label>
+          <label className="stage-control">
+            <span>天氣</span>
+            <select
+              aria-label="天氣顯示切換"
+              data-testid="stage-weather-select"
+              value={weather}
+              onChange={e => setWeather(e.currentTarget.value as WeatherMode)}
+            >
+              <option value="clear">晴朗</option>
+              <option value="rain">細雨</option>
+              <option value="mist">薄霧</option>
             </select>
           </label>
           <span className="pill mode" data-testid="appearance-badge">

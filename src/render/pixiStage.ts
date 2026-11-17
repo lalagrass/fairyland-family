@@ -21,10 +21,18 @@ import {
 import { RuntimeAssetLoader, type RuntimeMapScene } from './assetLoader';
 import { BattleStageRenderer } from './battleStage';
 import {
+  computeWeatherParticles,
+  resolveAmbientLighting,
+  type TimeOfDayMode,
+  type WeatherMode,
+} from './environmentFx';
+import {
   computeIntegerScale,
   interpolateMemberPosition,
   selectCameraTarget,
 } from './extrapolation';
+import { chunkMacroCellBounds, MapChunkLruTracker, visibleChunkCoords } from './mapChunks';
+import { computeSeamlessNeighbors, isSeamlessTransition } from './seamlessNeighbors';
 
 const GROUND_CELL_W = 160;
 const GROUND_CELL_H = 80;
@@ -36,6 +44,8 @@ export interface StageSyncInput {
   watchCharacterId: string | null;
   zoomSetting: ZoomSetting;
   appearances?: Record<string, string>;
+  timeOfDay?: TimeOfDayMode;
+  weather?: WeatherMode;
   provider?: AppearanceProvider;
 }
 
@@ -49,11 +59,18 @@ export class PixiStageController {
   private app: Application | null = null;
   private worldContainer = new Container();
   private groundLayer = new Container();
+  private decorLayer = new Container();
   private entityLayer = new Container();
+  private ambientLayer = new Graphics();
+  private weatherLayer = new Graphics();
   private battleLayer = new Container();
   private uiOverlay = new Container();
   private loader = new RuntimeAssetLoader();
   private battleRenderer = new BattleStageRenderer();
+  private chunkTracker = new MapChunkLruTracker(48);
+  private lastMapId: string | null = null;
+  private lastMapScene: RuntimeMapScene | null = null;
+  private fadeUntilMs = 0;
   private textureCache = new Map<string, Texture>();
   private textureInflight = new Map<string, Promise<Texture | null>>();
   private subTextureCache = new Map<string, Texture>();
@@ -99,9 +116,9 @@ export class PixiStageController {
       this.hostEl.appendChild(app.canvas);
 
       this.entityLayer.sortableChildren = true;
-      this.worldContainer.addChild(this.groundLayer, this.entityLayer, this.uiOverlay);
+      this.worldContainer.addChild(this.groundLayer, this.decorLayer, this.entityLayer, this.uiOverlay);
       this.battleLayer.visible = false;
-      app.stage.addChild(this.worldContainer, this.battleLayer);
+      app.stage.addChild(this.worldContainer, this.ambientLayer, this.weatherLayer, this.battleLayer);
 
       app.ticker.add(() => this.renderFrame());
       this.initialized = true;
@@ -119,11 +136,15 @@ export class PixiStageController {
     const mapId = input.state.snapshot?.mapId;
     const assets = input.state.staticData?.assets;
     if (mapId) {
+      void this.loader.loadDecorations(mapId);
       void this.loader.loadMap(mapId, assets).then(scene => {
         if (!scene || this.destroyed) return;
         for (const npc of scene.npcs ?? []) {
           const mId = npc.runtime_model || npc.model;
           if (mId) void this.loader.loadSprite(mId, assets);
+        }
+        for (const n of computeSeamlessNeighbors(scene)) {
+          void this.loader.loadMap(n.targetMapId, assets);
         }
       });
     }
@@ -222,6 +243,14 @@ export class PixiStageController {
     const activeId = state.activeCharacterId ?? state.characterId ?? snap.family?.activeCharacterId ?? 'active';
 
     const scene = this.loader.getMap(snap.mapId) ?? null;
+    if (snap.mapId !== this.lastMapId) {
+      if (this.lastMapId && !isSeamlessTransition(this.lastMapId, snap.mapId, this.lastMapScene)) {
+        this.fadeUntilMs = nowMs + 180;
+      }
+      this.lastMapId = snap.mapId;
+    }
+    if (scene) this.lastMapScene = scene;
+
     const mapW = scene?.pixel_width ?? 3200;
     const mapH = scene?.pixel_height ?? 2400;
     const logicalW = viewW / intScale;
@@ -230,7 +259,8 @@ export class PixiStageController {
     const camY = Math.round(Math.max(0, Math.min(Math.max(0, mapH - logicalH), camTargetY - logicalH / 2)));
     this.worldContainer.position.set(-camX * intScale, -camY * intScale);
 
-    this.drawGround(scene, camX, camY, logicalW, logicalH);
+    this.drawGroundWithNeighbors(scene, camX, camY, logicalW, logicalH, nowMs);
+    this.drawDecorations(snap.mapId, nowMs, this.latestInput.timeOfDay ?? 'day');
     this.drawEntities(
       scene,
       state,
@@ -243,6 +273,78 @@ export class PixiStageController {
       nowMs,
       resolveProviderFor,
     );
+    this.drawEnvironmentFx(
+      viewW,
+      viewH,
+      nowMs,
+      this.latestInput.timeOfDay ?? 'day',
+      this.latestInput.weather ?? 'clear',
+    );
+  }
+
+  private drawGroundWithNeighbors(
+    scene: RuntimeMapScene | null,
+    camX: number,
+    camY: number,
+    logicalW: number,
+    logicalH: number,
+    nowMs: number,
+  ): void {
+    this.drawGround(scene, camX, camY, logicalW, logicalH, nowMs);
+  }
+
+  private drawDecorations(mapId: string, nowMs: number, timeOfDay: TimeOfDayMode): void {
+    const removed = this.decorLayer.removeChildren();
+    for (const c of removed) c.destroy({ children: true });
+    const items = this.loader.getDecorations(mapId);
+    if (items.length === 0) return;
+    const lighting = resolveAmbientLighting(timeOfDay, new Date(nowMs).getHours());
+    for (const d of items) {
+      const g = new Graphics();
+      const col = Number.parseInt(d.colorHex.replace(/^#/, ''), 16);
+      if (d.kind === 'lantern') {
+        if (lighting.warmGlowAlpha > 0) {
+          g.circle(d.x, d.y, 44).fill({ color: 0xffc15e, alpha: lighting.warmGlowAlpha });
+        }
+        g.roundRect(d.x - 6, d.y - 14, 12, 16, 3).fill(col).stroke({ color: 0x3b230a, width: 1.5 });
+      } else if (d.kind === 'flower_bed') {
+        g.roundRect(d.x - d.width / 2, d.y - d.height / 2, d.width, d.height, 6).fill({ color: col, alpha: 0.78 });
+      } else {
+        g.rect(d.x - 8, d.y - 16, 16, 18).fill(col).stroke({ color: 0x2b1d0e, width: 1 });
+      }
+      this.decorLayer.addChild(g);
+    }
+  }
+
+  private drawEnvironmentFx(
+    viewW: number,
+    viewH: number,
+    nowMs: number,
+    timeOfDay: TimeOfDayMode,
+    weather: WeatherMode,
+  ): void {
+    const lighting = resolveAmbientLighting(timeOfDay, new Date(nowMs).getHours());
+    this.ambientLayer.clear();
+    if (lighting.alpha > 0) {
+      this.ambientLayer.rect(0, 0, viewW, viewH).fill({ color: lighting.tintColor, alpha: lighting.alpha });
+    }
+    if (this.fadeUntilMs > nowMs) {
+      const k = Math.max(0, Math.min(1, (this.fadeUntilMs - nowMs) / 180));
+      this.ambientLayer.rect(0, 0, viewW, viewH).fill({ color: 0x000000, alpha: k * 0.6 });
+    }
+
+    this.weatherLayer.clear();
+    const drops = computeWeatherParticles(weather, viewW, viewH, nowMs);
+    for (const dr of drops) {
+      if (weather === 'rain') {
+        this.weatherLayer
+          .moveTo(dr.x, dr.y)
+          .lineTo(dr.x - 4, dr.y + dr.length)
+          .stroke({ color: 0x9ecaff, width: 1.2, alpha: dr.alpha });
+      } else {
+        this.weatherLayer.ellipse(dr.x, dr.y, dr.length, dr.length * 0.35).fill({ color: 0xdbe7f5, alpha: dr.alpha });
+      }
+    }
   }
 
   private drawGround(
@@ -251,6 +353,7 @@ export class PixiStageController {
     camY: number,
     logicalW: number,
     logicalH: number,
+    nowMs = Date.now(),
   ): void {
     if (!scene?.ground?.macro_grid?.length) {
       if (this.lastGroundKey !== 'fallback') {
@@ -265,39 +368,83 @@ export class PixiStageController {
 
     const cols = scene.ground.macro_width;
     const rows = scene.ground.macro_height;
-    const c0 = Math.max(0, Math.floor(camX / GROUND_CELL_W) - 1);
-    const c1 = Math.min(cols - 1, Math.ceil((camX + logicalW) / GROUND_CELL_W) + 1);
-    const r0 = Math.max(0, Math.floor(camY / GROUND_CELL_H) - 1);
-    const r1 = Math.min(rows - 1, Math.ceil((camY + logicalH) / GROUND_CELL_H) + 1);
+    const chunks = visibleChunkCoords(
+      scene.map_id,
+      camX,
+      camY,
+      logicalW,
+      logicalH,
+      scene.pixel_width,
+      scene.pixel_height,
+    );
+    for (const ch of chunks) this.chunkTracker.touch(ch.key, nowMs);
 
-    // 地面只在視野格子範圍或材質解碼變化時重建
-    const key = `${scene.map_id}:${c0},${r0},${c1},${r1}:${this.textureCache.size}`;
+    const neighborSlices: Array<{ scene: RuntimeMapScene; ox: number; oy: number }> = [];
+    for (const nb of computeSeamlessNeighbors(scene)) {
+      const ns = this.loader.getMap(nb.targetMapId);
+      if (ns?.ground?.macro_grid?.length) {
+        neighborSlices.push({ scene: ns, ox: nb.offsetX, oy: nb.offsetY });
+      }
+    }
+
+    const key = `${scene.map_id}:${chunks.map(c => c.key).join('|')}:${neighborSlices.length}:${this.textureCache.size}`;
     if (key === this.lastGroundKey) return;
     this.lastGroundKey = key;
 
     this.groundLayer.removeChildren().forEach(c => c.destroy());
-    for (let r = r0; r <= r1; r += 1) {
-      for (let c = c0; c <= c1; c += 1) {
-        const cell = scene.ground.macro_grid[r * cols + c];
-        if (!cell?.tile_file) continue;
-        const tex = this.getOrLoadTexture(cell.tile_file);
-        if (!tex) continue;
-        const sp = new Sprite(tex);
-        sp.width = GROUND_CELL_W;
-        sp.height = GROUND_CELL_H;
-        if (cell.flip_x) {
-          sp.scale.x *= -1;
-          sp.x = (c + 1) * GROUND_CELL_W;
-        } else {
-          sp.x = c * GROUND_CELL_W;
+    const paintedCells = new Set<string>();
+    for (const ch of chunks) {
+      const b = chunkMacroCellBounds(ch.cx, ch.cy, cols, rows);
+      for (let r = b.row0; r <= b.row1; r += 1) {
+        for (let c = b.col0; c <= b.col1; c += 1) {
+          const ck = `${r},${c}`;
+          if (paintedCells.has(ck)) continue;
+          paintedCells.add(ck);
+          const cell = scene.ground.macro_grid[r * cols + c];
+          if (!cell?.tile_file) continue;
+          const tex = this.getOrLoadTexture(cell.tile_file);
+          if (!tex) continue;
+          const sp = new Sprite(tex);
+          sp.width = GROUND_CELL_W;
+          sp.height = GROUND_CELL_H;
+          if (cell.flip_x) {
+            sp.scale.x *= -1;
+            sp.x = (c + 1) * GROUND_CELL_W;
+          } else {
+            sp.x = c * GROUND_CELL_W;
+          }
+          if (cell.flip_y) {
+            sp.scale.y *= -1;
+            sp.y = (r + 1) * GROUND_CELL_H;
+          } else {
+            sp.y = r * GROUND_CELL_H;
+          }
+          this.groundLayer.addChild(sp);
         }
-        if (cell.flip_y) {
-          sp.scale.y *= -1;
-          sp.y = (r + 1) * GROUND_CELL_H;
-        } else {
-          sp.y = r * GROUND_CELL_H;
+      }
+    }
+
+    // 無縫繪製相鄰戶外地圖在視野範圍內的地表格（避免走向北綠野時邊界黑屏）
+    for (const nb of neighborSlices) {
+      const ncols = nb.scene.ground!.macro_width;
+      const nrows = nb.scene.ground!.macro_height;
+      const nc0 = Math.max(0, Math.floor((camX - nb.ox) / GROUND_CELL_W) - 1);
+      const nc1 = Math.min(ncols - 1, Math.ceil((camX + logicalW - nb.ox) / GROUND_CELL_W) + 1);
+      const nr0 = Math.max(0, Math.floor((camY - nb.oy) / GROUND_CELL_H) - 1);
+      const nr1 = Math.min(nrows - 1, Math.ceil((camY + logicalH - nb.oy) / GROUND_CELL_H) + 1);
+      for (let r = nr0; r <= nr1; r += 1) {
+        for (let c = nc0; c <= nc1; c += 1) {
+          const cell = nb.scene.ground!.macro_grid[r * ncols + c];
+          if (!cell?.tile_file) continue;
+          const tex = this.getOrLoadTexture(cell.tile_file);
+          if (!tex) continue;
+          const sp = new Sprite(tex);
+          sp.width = GROUND_CELL_W;
+          sp.height = GROUND_CELL_H;
+          sp.x = nb.ox + c * GROUND_CELL_W;
+          sp.y = nb.oy + r * GROUND_CELL_H;
+          this.groundLayer.addChild(sp);
         }
-        this.groundLayer.addChild(sp);
       }
     }
   }

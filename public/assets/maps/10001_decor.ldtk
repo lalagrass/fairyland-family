@@ -1,0 +1,53 @@
+{
+  "__header__": {
+    "fileType": "LDtk Project JSON",
+    "app": "LDtk",
+    "doc": "https://ldtk.io/json"
+  },
+  "jsonVersion": "1.5.3",
+  "levels": [
+    {
+      "identifier": "Map_10001_Gien_Decor",
+      "worldX": 0,
+      "worldY": 0,
+      "pxWid": 8000,
+      "pxHei": 8000,
+      "layerInstances": [
+        {
+          "__identifier": "DecorEntities",
+          "__type": "Entities",
+          "entityInstances": [
+            {
+              "__identifier": "VillageLantern",
+              "px": [3810, 3690],
+              "width": 20,
+              "height": 28,
+              "fieldInstances": [{ "__identifier": "color", "__value": "#ffbe55" }]
+            },
+            {
+              "__identifier": "VillageLantern",
+              "px": [3960, 3690],
+              "width": 20,
+              "height": 28,
+              "fieldInstances": [{ "__identifier": "color", "__value": "#ffbe55" }]
+            },
+            {
+              "__identifier": "FlowerBed",
+              "px": [3760, 3810],
+              "width": 44,
+              "height": 24,
+              "fieldInstances": [{ "__identifier": "color", "__value": "#6ee787" }]
+            },
+            {
+              "__identifier": "WoodenSignpost",
+              "px": [600, 410],
+              "width": 24,
+              "height": 32,
+              "fieldInstances": [{ "__identifier": "label", "__value": "北門路標" }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
