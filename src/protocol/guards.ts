@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 12fbb324c7260eb1c5dd0a5d916fcddd86d3e632
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 78ea40f9b6fb792d0516c0af9144d4dbd520fa8b
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -194,6 +194,8 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
     || !optNum(c.satiety) || !optNum(c.maxSatiety) || !optNum(c.inventoryCount) || !optNum(c.inventoryCap)
     || (c.workSkills !== undefined && !isRec(c.workSkills))
     || (c.activeWork !== undefined && c.activeWork !== null && !isActiveWork(c.activeWork))
+    || (c.ruleset !== undefined && c.ruleset !== 'classic' && c.ruleset !== 'revamp')
+    || !optStr(c.className)
     || (c.weaponFamily !== undefined && !isStr(c.weaponFamily))
     || !optNum(c.familyLevel) || !optNum(c.comboLevel)
     || (c.masteryLevels !== undefined && !isRec(c.masteryLevels))

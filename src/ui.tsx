@@ -557,11 +557,17 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                     <span data-testid="pos">{`位置 (${c.x}, ${c.y})`}</span>
                     <span data-testid="satiety">{`飽食 ${c.satiety ?? 100}/${c.maxSatiety ?? 100}`}</span>
                     <span data-testid="bag-cap">{`背包 ${invUsed}/${c.inventoryCap ?? 40}`}</span>
-                    {c.weaponFamily && (
+                    {c.ruleset === 'revamp' && c.weaponFamily ? (
                       <span data-testid="mastery">
                         {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
                       </span>
-                    )}
+                    ) : c.className ? (
+                      <span data-testid="class-name">{`職業 ${c.className}`}</span>
+                    ) : c.weaponFamily ? (
+                      <span data-testid="mastery">
+                        {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
+                      </span>
+                    ) : null}
                     <span>{c.inBattle ? '戰鬥中' : '探索中'}</span>
                   </div>
                   <WorkProgress work={c.activeWork} now={nowTick} />

@@ -150,5 +150,16 @@ assert(qAutoBtn !== null, '可回報任務顯示自動推進按鈕');
 qAutoBtn!.click();
 assert(actions.includes('QUEST_AUTO'), '點擊任務自動推進會觸發 QUEST_AUTO action');
 
+// FL1: classic ruleset shows 職業 instead of revamp weaponFamily/comboLevel
+const snapClassic = JSON.parse(JSON.stringify(snapWithQuests));
+snapClassic.snapshot.character.ruleset = 'classic';
+snapClassic.snapshot.character.className = '武鬥家';
+delete snapClassic.snapshot.character.weaponFamily;
+delete snapClassic.snapshot.character.comboLevel;
+const sc = applyMessage(s, snapClassic, 25);
+ui.render(sc, 'RUNNING', auxAttack);
+assert(root.querySelector('[data-testid="class-name"]')?.textContent === '職業 武鬥家', 'classic 模式顯示職業名稱');
+assert(root.querySelector('[data-testid="mastery"]') === null, 'classic 模式不顯示武器熟練／連擊');
+
 win.close();
 done();
