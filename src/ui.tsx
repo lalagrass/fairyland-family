@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import * as Dialog from '@radix-ui/react-dialog';
+import * as Tabs from '@radix-ui/react-tabs';
 import type {
   PluginCommand,
   SnapshotActiveWork,
   SnapshotBattleStatus,
   SnapshotBattleUnitSummary,
 } from './protocol/index';
+import { GameViewport } from './render/GameViewport';
 import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
 import {
@@ -198,10 +201,14 @@ interface AppProps {
   strategyRef: React.RefObject<HTMLSelectElement | null>;
 }
 
+type MobileTab = 'stage' | 'roster' | 'active' | 'feed';
+
 function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }: AppProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputErr, setInputErr] = useState('');
-  const [mobileTab, setMobileTab] = useState<'roster' | 'active' | 'feed'>('active');
+  const [mobileTab, setMobileTab] = useState<MobileTab>('active');
+  const [watchCharacterId, setWatchCharacterId] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<LogTag | 'ALL'>('ALL');
   const [charFilter, setCharFilter] = useState<string | 'ALL'>('ALL');
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermissionState>(() => getNotificationPermission());
@@ -342,6 +349,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
     };
   }, [devMode, snap, c, state.inventory, state.eventMirror]);
 
+  const effectiveWatchId = useMemo(() => {
+    if (watchCharacterId && state.members.some(m => m.characterId === watchCharacterId)) {
+      return watchCharacterId;
+    }
+    return state.activeCharacterId ?? snap?.family?.activeCharacterId ?? null;
+  }, [watchCharacterId, state.members, state.activeCharacterId, snap?.family?.activeCharacterId]);
+
   const wh = state.warehouse;
   const staleSnap = Boolean(snap && state.location && snap.mapId !== state.location.mapId);
   const sceneTitle = state.location ? `${state.location.mapName ?? state.location.mapId}` : '（未知）';
@@ -355,7 +369,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           {running ? '遊戲執行中' : '遊戲未執行'}
         </span>
         <span className="pill mode">{modeLabel}</span>
-        {state.clockOnly && <span className="pill ok" data-testid="clock-only-pill">時鐘模式</span>}
+        {state.clockOnly && <span className="pill ok" data-testid="clock-only-pill">時鐘運作中</span>}
         {devMode && <span className="pill warn">開發者模式</span>}
         {devMode && (
           <span className="muted" data-testid="session">
@@ -363,6 +377,31 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           </span>
         )}
         <div className="header-actions">
+          <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
+            <Dialog.Trigger asChild>
+              <button type="button" className="item" data-testid="help-dialog-btn">
+                說明
+              </button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="radix-dialog-overlay" />
+              <Dialog.Content className="radix-dialog-content" data-testid="help-dialog-content">
+                <div className="radix-dialog-head">
+                  <Dialog.Title>童話家族操作說明</Dialog.Title>
+                  <Dialog.Close asChild>
+                    <button type="button" className="item">關閉</button>
+                  </Dialog.Close>
+                </div>
+                <Dialog.Description className="muted">
+                  指令與多角色觀察說明
+                </Dialog.Description>
+                <p>{INPUT_HELP}</p>
+                <p className="muted">
+                  名冊中的「看鏡頭」可單獨移動右側 PixiJS 畫面鏡頭，「切換視角」則會切換宿主端操作中的家族成員。
+                </p>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
           {notifyPerm !== 'unsupported' && (
             <button
               type="button"
@@ -376,31 +415,49 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
         </div>
       </header>
 
-      <nav className="mobile-tabs" data-testid="mobile-tabs" aria-label="手機版分頁切換">
-        <button
-          type="button"
-          className={`item ${mobileTab === 'roster' ? 'tab-active' : ''}`}
-          onClick={() => setMobileTab('roster')}
-        >
-          {`名冊 (${state.members.length})`}
-        </button>
-        <button
-          type="button"
-          className={`item ${mobileTab === 'active' ? 'tab-active' : ''}`}
-          onClick={() => setMobileTab('active')}
-        >
-          目前角色
-        </button>
-        <button
-          type="button"
-          className={`item ${mobileTab === 'feed' ? 'tab-active' : ''}`}
-          onClick={() => setMobileTab('feed')}
-        >
-          事件流
-        </button>
-      </nav>
+      <Tabs.Root value={mobileTab} onValueChange={v => setMobileTab(v as MobileTab)}>
+        <Tabs.List className="mobile-tabs" data-testid="mobile-tabs" aria-label="手機版分頁切換">
+          <Tabs.Trigger
+            value="stage"
+            className={`item ${mobileTab === 'stage' ? 'tab-active' : ''}`}
+            onClick={() => setMobileTab('stage')}
+          >
+            畫面
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="roster"
+            className={`item ${mobileTab === 'roster' ? 'tab-active' : ''}`}
+            onClick={() => setMobileTab('roster')}
+          >
+            {`名冊 (${state.members.length})`}
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="active"
+            className={`item ${mobileTab === 'active' ? 'tab-active' : ''}`}
+            onClick={() => setMobileTab('active')}
+          >
+            目前角色
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="feed"
+            className={`item ${mobileTab === 'feed' ? 'tab-active' : ''}`}
+            onClick={() => setMobileTab('feed')}
+          >
+            事件流
+          </Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
 
       <div className="layout-grid">
+        {/* 中上欄（手機分頁：畫面）：PixiJS 原版畫面 */}
+        <div className={`col col-stage ${mobileTab !== 'stage' ? 'col-hidden-mobile' : ''}`}>
+          <GameViewport
+            state={state}
+            watchCharacterId={effectiveWatchId}
+            onSelectWatchCharacter={id => setWatchCharacterId(id)}
+          />
+        </div>
+
         {/* 左欄：家族成員名冊 + 共用倉庫 */}
         <div className={`col col-roster ${mobileTab !== 'roster' ? 'col-hidden-mobile' : ''}`}>
           <section data-testid="family-bar">
@@ -410,6 +467,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             ) : (
               state.members.map(m => {
                 const isActive = m.characterId === activeMemberId;
+                const isWatched = m.characterId === effectiveWatchId;
                 const q = aux.queues?.[m.characterId] ?? (isActive ? aux.queue : undefined);
                 const qText = q && (q.phase !== 'IDLE' || q.jobs.length > 0 || q.stopReason) ? q.text : '工作佇列：閒置';
                 return (
@@ -424,6 +482,15 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                         <span>{`體 ${m.satiety}`}</span>
                         <span>{`袋 ${m.inventoryCount}/${m.inventoryCap}`}</span>
                         <span className="muted">{qText}</span>
+                        <button
+                          type="button"
+                          className={`item ${isWatched ? 'tab-active' : ''}`}
+                          data-testid="watch-char-btn"
+                          data-character-id={m.characterId}
+                          onClick={() => setWatchCharacterId(m.characterId)}
+                        >
+                          {isWatched ? '鏡頭跟隨中' : '看鏡頭'}
+                        </button>
                         {!isActive && (
                           <button
                             type="button"
@@ -431,14 +498,15 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                             data-testid="switch-char-btn"
                             data-character-id={m.characterId}
                             disabled={!running}
-                            onClick={() =>
+                            onClick={() => {
+                              setWatchCharacterId(m.characterId);
                               handleAction(
                                 cmdAction(
                                   { type: 'SWITCH_VIEW_CHARACTER', characterId: m.characterId },
                                   `切換視角 ${m.name ?? m.characterId}`,
                                 ),
-                              )
-                            }
+                              );
+                            }}
                           >
                             切換視角
                           </button>
