@@ -1,4 +1,4 @@
-import type { CaptureTurnOverride } from '../../battler';
+import type { CaptureTurnOverride, HealTurnOverride } from '../../battler';
 import type { AutoBattler } from '../../battler';
 import { buildCheckpointFromState, buildStopRecap, type SessionCheckpoint, type WelcomeRecapSummary } from '../../dv7_recap';
 import type { DirNpc } from '../../directory';
@@ -55,7 +55,8 @@ interface RememberedHunt {
   y?: number;
 }
 
-const OPENING_WAIT_MS = 45_000;
+/** 開場指令送出後，階段一直沒變就停下。捕捉本身可以很久，不套這個上限。 */
+const OPENING_COMMAND_WAIT_MS = 8_000;
 const PATROL_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [80, 0],
   [-80, 0],
@@ -67,7 +68,9 @@ const PATROL_OFFSETS: ReadonlyArray<readonly [number, number]> = [
 
 /**
  * 無人任務鏈：讀宿主快照上的任務目錄，依前置順序接、做、回報。
- * 開場村長對話若宿主沒把選項交出來就停下。任務做完（或等級還不夠）後進入可設定的新手循環。
+ * 開場用宿主的 OPENING_ADVANCE／OPENING_CLAIM_REWARD，不點遊戲畫面的村長對話。
+ * 捕捉時先打較弱的目標，血量不夠就用名稱像恢復的道具，再不成就抓；戰敗換圖後放下舊的走路指令，改從新地圖走向宿主給的遇敵區。
+ * 任務做完（或等級還不夠）後進入可設定的新手循環。
  */
 export class QuestChainModule implements BehaviorModule {
   readonly id = 'quest-chain';
@@ -96,14 +99,23 @@ export class QuestChainModule implements BehaviorModule {
   private finished = false;
   private ticking = false;
   private seenStage: string | null = null;
-  private openingWaitAt: number | null = null;
   private openingLogged = false;
+  private openingCommandId: string | null = null;
+  private openingLatch: { stage: string; kind: string; at: number } | null = null;
+  private openingCaptured = false;
+  private openingReportRejected: { message: string; at: number } | null = null;
+  private openingBusy = 0;
   private navKey: string | null = null;
   private homeMapId: string | null = null;
   private shops: RememberedShop[] = [];
   private hunts: RememberedHunt[] = [];
   private gathers: SnapshotGatherPoint[] = [];
   private walkCommandId: string | null = null;
+  private walkMapId: string | null = null;
+  private walkIssuedAt = 0;
+  /** 開場導航的階段與文字沒變超過這個時間，就取消重走，避免戰敗換圖後一直占著。 */
+  private navSig = '';
+  private navSigAt = 0;
   private patrolIdx = 0;
   private resupply = false;
   private sellSkip = new Set<number>();
@@ -157,10 +169,24 @@ export class QuestChainModule implements BehaviorModule {
       }
     }
     if (isEventMessage(msg) && msg.event.type === 'COMMAND_COMPLETED' && msg.event.commandId === this.walkCommandId) {
-      this.walkCommandId = null;
+      this.forgetWalk();
     }
     if (msg.kind === 'command-result' && msg.commandId === this.walkCommandId && msg.status === 'REJECTED') {
-      this.walkCommandId = null;
+      this.forgetWalk();
+    }
+    if (isEventMessage(msg) && msg.event.type === 'BATTLE_ENDED' && msg.event.outcome === 'LOSE' && this.isActive()) {
+      this.forgetWalk();
+      this.navKey = null;
+      this.navSig = '';
+      this.navSigAt = 0;
+      if (this.host.navigator.isActive()) this.host.navigator.cancel();
+    }
+    if (msg.kind === 'command-result' && msg.commandId === this.openingCommandId) {
+      this.openingCommandId = null;
+      if (msg.status === 'REJECTED') this.onOpeningRejected(msg.reasonCode, msg.message);
+    }
+    if (isEventMessage(msg) && msg.event.type === 'BATTLE_TIMELINE' && msg.event.events.some(e => e.isCaptured)) {
+      this.openingCaptured = true;
     }
     if (msg.kind === 'snapshot') this.remember(msg.snapshot);
     if (this.isActive()) this.tick();
@@ -212,10 +238,16 @@ export class QuestChainModule implements BehaviorModule {
     this.deaths = 0;
     this.countedBattle = null;
     this.seenStage = null;
-    this.openingWaitAt = null;
     this.openingLogged = false;
+    this.openingCommandId = null;
+    this.openingLatch = null;
+    this.openingCaptured = false;
+    this.openingReportRejected = null;
+    this.openingBusy = 0;
     this.navKey = null;
-    this.walkCommandId = null;
+    this.forgetWalk();
+    this.navSig = '';
+    this.navSigAt = 0;
     this.resupply = false;
     this.sellSkip.clear();
     this.loopStartedAt = null;
@@ -253,7 +285,6 @@ export class QuestChainModule implements BehaviorModule {
     }
     if (this.phase === 'OPENING') {
       this.phase = 'QUESTS';
-      this.openingWaitAt = null;
       this.navKey = null;
       this.text = '無人任務：開場結束，開始任務目錄';
       this.host.log('開場階段已結束，改跑宿主任務目錄');
@@ -283,54 +314,151 @@ export class QuestChainModule implements BehaviorModule {
   private stepOpening(stage: string): void {
     if (stage !== this.seenStage) {
       this.seenStage = stage;
-      this.openingWaitAt = null;
       this.openingLogged = false;
+      this.openingCommandId = null;
+      this.openingLatch = null;
+      this.openingReportRejected = null;
+      this.openingBusy = 0;
       this.navKey = null;
-      this.walkCommandId = null;
+      this.forgetWalk();
+      this.navSig = '';
+      this.navSigAt = 0;
       if (this.host.navigator.isActive()) this.host.navigator.cancel();
     }
     const st = this.host.state();
+    if (st.battle?.timeline?.events.some(e => e.isCaptured)) this.openingCaptured = true;
     if (st.battle) {
       this.applyBattle(stage === 'CAPTURE', stage === 'CAPTURE');
       this.text = stage === 'CAPTURE' ? '無人任務：開場捕捉幻獸' : '無人任務：開場途中遇敵，先脫身';
       return;
     }
-    if (stage === 'CAPTURE') {
-      this.applyBattle(true, true);
-      this.text = '無人任務：在目前地圖巡邏並捕捉';
-      this.patrolHere();
-      return;
-    }
-    this.applyBattle(false, false);
-    if (this.host.navigator.isActive() || this.pendingWalk()) return;
     if (st.dialog) {
-      this.chooseDialog(st.dialog.options.map(o => o.id));
+      this.closeDialog();
       return;
     }
-    const nav = this.host.navigator.getStatus();
-    if (this.navKey && (nav.phase === 'DONE' || nav.phase === 'FAILED')) {
-      if (this.openingWaitAt === null) {
-        this.openingWaitAt = this.host.now();
-        if (!this.openingLogged) {
-          this.openingLogged = true;
-          this.host.log('村長委託的選項只在遊戲畫面，外掛協定沒有對應指令。等待遊戲分頁點選，或宿主補上開場指令。', 'warn');
+    if (st.battleResult) {
+      this.applyBattle(stage === 'CAPTURE', stage === 'CAPTURE');
+      this.text = '無人任務：等待戰鬥結算關閉';
+      return;
+    }
+    if (stage === 'QUIZ') {
+      this.text = '無人任務：等待遊戲畫面的角色問答';
+      if (!this.openingLogged) {
+        this.openingLogged = true;
+        this.host.log('角色問答在遊戲畫面，外掛沒有對應指令。問答結束後會繼續開場。', 'warn');
+      }
+      return;
+    }
+    if (stage === 'GO_CHIEF' || stage === 'GO_BASEMENT') {
+      this.applyBattle(false, false);
+      this.text = '無人任務：請村長送去捕捉';
+      this.sendOpening(stage, 'capture', { type: 'OPENING_ADVANCE', to: 'CAPTURE' }, '開場前進到捕捉');
+      return;
+    }
+    if (stage === 'CAPTURE') {
+      this.stepCapture(stage);
+      return;
+    }
+    if (stage === 'REPORT') {
+      this.applyBattle(false, false);
+      this.text = '無人任務：領取村長的新手獎勵';
+      const petId = `pet_egg_${this.host.now().toString(36)}`;
+      this.sendOpening(stage, 'claim', { type: 'OPENING_CLAIM_REWARD', eggChoice: 0, petId }, '領取開場獎勵');
+      return;
+    }
+    this.finish('STUCK', `找不到下一步：不認識的開場階段 ${stage}`);
+  }
+
+  private stepCapture(stage: string): void {
+    this.applyBattle(true, true);
+    if (this.openingCaptured) {
+      if (this.openingReportRejected) {
+        if (this.host.now() - this.openingReportRejected.at >= OPENING_COMMAND_WAIT_MS) {
+          this.finish('STUCK', `開場捕捉後無法回報：${this.openingReportRejected.message}`);
+        } else {
+          this.text = '無人任務：等待開場階段更新';
         }
+        return;
       }
-      if (this.host.now() - this.openingWaitAt >= OPENING_WAIT_MS) {
-        this.finish('STUCK', '找不到下一步：宿主未把村長開場對話選項交給外掛（無法送進地下室或領取幻獸蛋）');
+      this.text = '無人任務：捕捉成功，回報村長';
+      this.sendOpening(stage, 'report', { type: 'OPENING_ADVANCE', to: 'REPORT' }, '開場前進到回報');
+      return;
+    }
+    const snap = this.host.state().snapshot;
+    if (!snap) return;
+    this.text = '無人任務：在遇敵區捕捉幻獸';
+    if (this.blockOnNavigator(true) || this.pendingWalk()) return;
+    const here = this.hunts.find(h => h.mapId === snap.mapId && h.x !== undefined);
+    if (here) {
+      this.patrolAround(here.x, here.y);
+      return;
+    }
+    const away = this.hunts.find(h => h.mapId !== snap.mapId);
+    if (away) {
+      const nav = this.host.navigator.getStatus();
+      if (this.navKey === away.mapId && nav.phase === 'FAILED') {
+        this.finish('STUCK', `找不到下一步：${nav.text}`);
+        return;
+      }
+      if (this.navKey !== away.mapId) {
+        this.navKey = away.mapId;
+        this.text = `無人任務：前往遇敵地圖 ${away.mapName ?? away.mapId}`;
+        this.host.navigator.go({ kind: 'MAP', mapId: away.mapId, name: away.mapName ?? away.mapId });
+      }
+      return;
+    }
+    this.text = '無人任務：在目前地圖巡邏並捕捉';
+    this.patrolHere();
+  }
+
+  private sendOpening(
+    stage: string,
+    kind: string,
+    command: { type: 'OPENING_ADVANCE'; to: 'CAPTURE' | 'REPORT' } | { type: 'OPENING_CLAIM_REWARD'; eggChoice: number; petId: string },
+    label: string,
+  ): void {
+    if (this.openingCommandId) {
+      this.text = `無人任務：等待${label}`;
+      return;
+    }
+    if (this.openingLatch?.stage === stage && this.openingLatch.kind === kind) {
+      if (this.host.now() - this.openingLatch.at >= OPENING_COMMAND_WAIT_MS) {
+        this.finish('STUCK', `找不到下一步：${label}沒有讓開場階段前進`);
+      }
+      return;
+    }
+    const id = this.host.send({ type: 'GAME_COMMAND', command }, label, 'DONE');
+    if (!id) return;
+    this.openingCommandId = id;
+    this.openingLatch = { stage, kind, at: this.host.now() };
+  }
+
+  private onOpeningRejected(reason: string | undefined, message: string | undefined): void {
+    const why = message || reason || '宿主拒絕';
+    if (reason === 'GAME_BUSY') {
+      this.openingLatch = null;
+      this.openingBusy += 1;
+      if (this.openingBusy >= 5) {
+        this.finish('STUCK', `找不到下一步：開場指令一直被遊戲畫面擋住（${why}）`);
       } else {
-        this.text = '無人任務：等待村長委託對話';
+        this.host.log(`開場指令被遊戲畫面擋住，稍後再送：${why}`, 'warn');
       }
       return;
     }
-    const chief = this.chiefName();
-    if (!chief) {
-      this.finish('STUCK', '找不到下一步：快照與已知目錄都沒有村長');
+    if (this.openingLatch?.kind === 'report') {
+      this.openingLatch = null;
+      this.openingReportRejected = { message: why, at: this.host.now() };
       return;
     }
-    this.navKey = `chief:${stage}`;
-    this.text = `無人任務：前往 ${chief}`;
-    this.host.navigator.go({ kind: 'NPC', query: chief, talk: true });
+    this.finish('STUCK', `找不到下一步：開場指令被拒（${why}）`);
+  }
+
+  private closeDialog(): void {
+    const dialog = this.host.state().dialog;
+    if (!dialog) return;
+    const close = dialog.options.find(o => o.id === 'CLOSE' || o.id === 'BYE') ?? dialog.options[dialog.options.length - 1];
+    if (!close) return;
+    this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: close.id }, '關閉開場以外的對話', 'DONE');
   }
 
   private stepQuests(): void {
@@ -348,9 +476,22 @@ export class QuestChainModule implements BehaviorModule {
         this.drivingId = null;
         this.stuck = null;
       } else {
-        const why = this.host.quest.getLastStopReason();
-        this.finish('STUCK', why ?? `任務 #${this.drivingId} 停住且沒有完成`);
-        return;
+        const why = this.host.quest.getLastStopReason() ?? '';
+        if (why.includes('戰鬥落敗')) {
+          // 結算視窗還在時保留 drivingId。清掉的話下一拍會重接，又立刻因落敗停住。
+          if (st.battle || st.battleResult) {
+            if (this.text !== '無人任務：戰鬥落敗，恢復後再試同一件任務') {
+              this.host.log('戰鬥落敗，恢復後再接同一件任務', 'warn');
+            }
+            this.text = '無人任務：戰鬥落敗，恢復後再試同一件任務';
+            return;
+          }
+          this.drivingId = null;
+          this.stuck = null;
+        } else {
+          this.finish('STUCK', why || `任務 #${this.drivingId} 停住且沒有完成`);
+          return;
+        }
       }
     }
     const next = selectNextQuest(quests, level);
@@ -359,6 +500,17 @@ export class QuestChainModule implements BehaviorModule {
       this.applyBattleForQuest(next.quest);
       if (this.drivingId === next.quest.questId && this.host.quest.isActive()) {
         this.host.quest.advance();
+      }
+      // 鏈的優先序比任務模組高，落敗當下是這裡的 advance 先把任務停住。
+      if (this.drivingId !== null && !this.host.quest.isActive()) {
+        const why = this.host.quest.getLastStopReason() ?? '';
+        if (why.includes('戰鬥落敗') && (this.host.state().battle || this.host.state().battleResult)) {
+          if (this.text !== '無人任務：戰鬥落敗，恢復後再試同一件任務') {
+            this.host.log('戰鬥落敗，恢復後再接同一件任務', 'warn');
+          }
+          this.text = '無人任務：戰鬥落敗，恢復後再試同一件任務';
+          return;
+        }
       }
       this.watchStuck(next.quest, snap);
       if (!this.isActive()) return;
@@ -560,10 +712,12 @@ export class QuestChainModule implements BehaviorModule {
   private watchStuck(quest: ChainQuest, snap: SceneSnapshot): void {
     const st = this.host.state();
     const waitingScene = Boolean(st.location && snap.mapId !== st.location.mapId);
+    // 結算視窗還開著時任務模組會先等它關掉。同一拍的金錢與道具事件不是閒置。
     const idle = !waitingScene
       && !this.host.quest.isBusy()
       && !this.host.navigator.isActive()
       && !st.battle
+      && !st.battleResult
       && !st.dialog
       && !st.shop
       && !this.pendingWalk()
@@ -607,29 +761,51 @@ export class QuestChainModule implements BehaviorModule {
     const hp = st.character?.hp;
     const max = st.character?.maxHp;
     const low = hp != null && max != null && max > 0 && (hp / max) * 100 <= this.config.returnHpPct;
-    if (low || !fight) {
+    const seal = capture ? st.inventory.find(it => this.isSealName(it.name)) : undefined;
+    const heal = st.inventory.find(it => this.isHealName(it.name));
+    if (!fight || (low && !heal && !(capture && seal))) {
       if (this.host.battler.getStrategy() !== 'FLEE') this.host.battler.setStrategy('FLEE');
       this.host.battler.setTurnOverride(null);
       return;
     }
     if (this.host.battler.getStrategy() !== 'ATTACK') this.host.battler.setStrategy('ATTACK');
-    if (!capture) {
-      this.host.battler.setTurnOverride(null);
+    if (capture && seal) {
+      const override: CaptureTurnOverride = {
+        mode: 'CAPTURE',
+        sealStoneId: seal.itemId,
+        captureBelowHpRatio: 0.5,
+        healBelowHpRatio: this.config.returnHpPct / 100,
+        ...(heal ? { healItemId: heal.itemId } : {}),
+      };
+      this.host.battler.setTurnOverride(override);
+      this.sealWarned = false;
       return;
     }
-    const seal = st.inventory.find(it => (it.name ?? '').includes('封印') || (it.name ?? '').includes('捕捉'));
-    const override: CaptureTurnOverride | null = seal
-      ? { mode: 'CAPTURE', sealStoneId: seal.itemId, captureBelowHpRatio: 0.5 }
-      : null;
-    this.host.battler.setTurnOverride(override);
-    if (!seal) {
-      if (!this.sealWarned) {
-        this.sealWarned = true;
-        this.host.log('背包裡沒有名稱可辨識的封印石，捕捉會先改為攻擊', 'warn');
-      }
+    if (capture && !seal && !this.sealWarned) {
+      this.sealWarned = true;
+      this.host.log('背包裡沒有名稱可辨識的封印石，捕捉會先改為攻擊', 'warn');
+    }
+    if (heal) {
+      const healing: HealTurnOverride = {
+        mode: 'HEAL',
+        healItemId: heal.itemId,
+        healBelowHpRatio: this.config.returnHpPct / 100,
+      };
+      this.host.battler.setTurnOverride(healing);
       return;
     }
-    this.sealWarned = false;
+    this.host.battler.setTurnOverride(null);
+  }
+
+  private isSealName(name: string | null): boolean {
+    const text = name ?? '';
+    return text.includes('封印') || text.includes('捕捉');
+  }
+
+  private isHealName(name: string | null): boolean {
+    const text = name ?? '';
+    if (!text || this.isSealName(text)) return false;
+    return text.includes('恢復') || text.includes('藥');
   }
 
   private patrolHere(): void {
@@ -654,7 +830,39 @@ export class QuestChainModule implements BehaviorModule {
       '巡邏尋找下一步',
       'ARRIVED',
     );
-    if (id) this.walkCommandId = id;
+    if (id) {
+      this.walkCommandId = id;
+      this.walkMapId = snap.mapId;
+      this.walkIssuedAt = this.host.now();
+    }
+  }
+
+  private forgetWalk(): void {
+    this.walkCommandId = null;
+    this.walkMapId = null;
+    this.walkIssuedAt = 0;
+  }
+
+  /** 開場導航停在同一句話太久就取消，讓捕捉從目前地圖重走。進行中的長路不在這裡切斷。 */
+  private blockOnNavigator(opening: boolean): boolean {
+    if (!this.host.navigator.isActive()) {
+      this.navSig = '';
+      return false;
+    }
+    const nav = this.host.navigator.getStatus();
+    const sig = `${nav.phase}|${nav.text}`;
+    if (sig !== this.navSig) {
+      this.navSig = sig;
+      this.navSigAt = this.host.now();
+    }
+    if (opening && this.navSigAt > 0 && this.host.now() - this.navSigAt > 45_000) {
+      this.host.navigator.cancel();
+      this.navKey = null;
+      this.navSig = '';
+      this.navSigAt = 0;
+      return false;
+    }
+    return true;
   }
 
   private chooseDialog(optionIds: string[]): void {
@@ -663,12 +871,6 @@ export class QuestChainModule implements BehaviorModule {
     const id = preferred ?? close ?? optionIds[0];
     if (!id) return;
     this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: id }, '推進對話', 'DONE');
-  }
-
-  private chiefName(): string | null {
-    const npcs = this.host.knownNpcs();
-    const chief = npcs.find(n => n.role === 'CHIEF') ?? npcs.find(n => n.name.includes('村長'));
-    return chief?.name ?? null;
   }
 
   private pickShop(snap: SceneSnapshot): RememberedShop | null {
@@ -706,6 +908,7 @@ export class QuestChainModule implements BehaviorModule {
     for (const q of quests) {
       if (q.status === 'COMPLETED') continue;
       for (const o of q.objectives) {
+        if (o.itemName) names.add(o.itemName);
         for (const quoted of o.description.matchAll(/「([^」]+)」/g)) names.add(quoted[1]);
       }
     }
@@ -715,7 +918,15 @@ export class QuestChainModule implements BehaviorModule {
   private pendingWalk(): boolean {
     if (!this.walkCommandId) return false;
     const st = this.host.state();
-    return Boolean(st.pending[this.walkCommandId] || st.inflight[this.walkCommandId]);
+    const tracked = Boolean(st.pending[this.walkCommandId] || st.inflight[this.walkCommandId]);
+    const mapId = st.snapshot?.mapId ?? st.location?.mapId ?? null;
+    const wrongMap = this.walkMapId !== null && mapId !== null && this.walkMapId !== mapId;
+    const stale = this.walkIssuedAt > 0 && this.host.now() - this.walkIssuedAt > 12_000;
+    if (!tracked || wrongMap || stale) {
+      this.forgetWalk();
+      return false;
+    }
+    return true;
   }
 
   private remember(snap: SceneSnapshot): void {

@@ -89,6 +89,11 @@ export interface ChainObjective {
   required: number;
   met: boolean;
   targetMaps?: Array<{ mapId: string; mapName: string | null; x?: number; y?: number; reason: string }>;
+  /** 宿主在進行中的目標上附帶的欄位。有值就優先用，不再從描述猜。 */
+  targetNpcName?: string;
+  targetMapId?: string;
+  itemId?: number;
+  itemName?: string;
 }
 
 export function compareQuestOrder(a: { questId: number; minLevel: number }, b: { questId: number; minLevel: number }): number {
@@ -251,14 +256,56 @@ export function pickQuestGatherPoint(description: string, points: readonly Gathe
   return best;
 }
 
+function materialMatchesField(
+  material: { itemId?: number; name?: string },
+  obj: { itemId?: number; itemName?: string },
+): boolean {
+  if (obj.itemId !== undefined) return material.itemId === obj.itemId;
+  const named = obj.itemName?.trim() ?? '';
+  return named.length > 0 && (material.name?.trim() ?? '') === named;
+}
+
+/**
+ * 宿主已經給了 itemId 或 itemName 時只對那一項。對不上就回 null，不改從描述挑別的材料。
+ * 兩個欄位都沒有時，才退回描述比對。
+ */
+export function pickQuestGatherForObjective(
+  obj: { description: string; itemId?: number; itemName?: string },
+  points: readonly GatherPointLike[],
+): GatherPick | null {
+  const named = obj.itemName?.trim() ?? '';
+  if (obj.itemId === undefined && named.length === 0) return pickQuestGatherPoint(obj.description, points);
+  let fallback: GatherPick | null = null;
+  for (const point of points) {
+    for (const material of point.materials ?? []) {
+      if (!materialMatchesField(material, obj)) continue;
+      const materialName = material.name?.trim() || named;
+      const pick: GatherPick = {
+        point,
+        materialName,
+        ...(material.itemId !== undefined ? { itemId: material.itemId } : obj.itemId !== undefined ? { itemId: obj.itemId } : {}),
+      };
+      if (point.skillId != null) return pick;
+      fallback ??= pick;
+    }
+  }
+  return fallback;
+}
+
 export function planUnmetObjective(obj: ChainObjective, ctx: PlanContext): ObjectivePlan {
   switch (obj.type) {
     case 'TALK_TO_NPC': {
+      const named = obj.targetNpcName?.trim();
+      if (named) return { kind: 'TALK', npcName: named };
       const npcName = npcNamedIn(obj.description, ctx.npcNames);
       if (!npcName) return { kind: 'STUCK', reason: `交談目標無法從描述辨識：${obj.description}` };
       return { kind: 'TALK', npcName };
     }
     case 'VISIT_MAPS': {
+      if (obj.targetMapId) {
+        const known = ctx.maps.find(m => m.mapId === obj.targetMapId);
+        return { kind: 'VISIT', mapId: obj.targetMapId, mapName: known?.name || obj.targetMapId };
+      }
       const hint = obj.targetMaps?.[0];
       if (hint) return { kind: 'VISIT', mapId: hint.mapId, mapName: hint.mapName ?? hint.mapId };
       const mapped = mapNamedIn(obj.description, ctx.maps);
@@ -275,6 +322,16 @@ export function planUnmetObjective(obj: ChainObjective, ctx: PlanContext): Objec
     }
     case 'GATHER_COUNT':
     case 'COLLECT_ITEMS': {
+      const named = obj.itemName?.trim() ?? '';
+      const fielded = obj.itemId !== undefined || named.length > 0;
+      if (fielded) {
+        const matched = ctx.gatherPoints.some(p => p.materials?.some(m => materialMatchesField(m, obj)));
+        const hinted = (obj.targetMaps?.length ?? 0) > 0 || Boolean(obj.targetMapId);
+        if (!matched && !hinted) {
+          return { kind: 'STUCK', reason: `採集或收集目標對不上宿主欄位：${named || String(obj.itemId)}` };
+        }
+        return { kind: 'GATHER' };
+      }
       const matched = ctx.gatherPoints.some(p => p.materials?.some(m => m.name && obj.description.includes(m.name)));
       const hinted = (obj.targetMaps?.length ?? 0) > 0;
       if (!matched && !hinted && ctx.gatherPoints.length === 0) {
@@ -286,6 +343,12 @@ export function planUnmetObjective(obj: ChainObjective, ctx: PlanContext): Objec
       return { kind: 'GATHER' };
     }
     case 'CRAFT_COUNT': {
+      const named = obj.itemName?.trim();
+      if (named) {
+        const exact = ctx.recipes.find(r => r.name === named);
+        if (!exact) return { kind: 'STUCK', reason: `配方欄位對不上宿主清單：${named}` };
+        return { kind: 'CRAFT', recipeId: exact.recipeId, recipeName: exact.name };
+      }
       const hit = ctx.recipes.find(r => r.name && obj.description.includes(r.name));
       if (!hit) return { kind: 'STUCK', reason: `配方名稱對不上宿主清單：${obj.description}` };
       return { kind: 'CRAFT', recipeId: hit.recipeId, recipeName: hit.name };

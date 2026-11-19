@@ -8,7 +8,7 @@ import type { AutoBattler } from '../../battler';
 import type { AutoNavigator, NavGoal } from '../../navigator';
 import type { UiAction } from '../../parse';
 import type { WorkQueue } from '../../queue';
-import { pickQuestGatherPoint, planUnmetObjective } from '../questPlan';
+import { pickQuestGatherForObjective, planUnmetObjective } from '../questPlan';
 import type { AutomationHostContext, BehaviorModule } from '../types';
 
 export interface QuestRunnerHost extends AutomationHostContext {
@@ -57,7 +57,7 @@ export class QuestBehaviorModule implements BehaviorModule {
     if (this.host.navigator.isActive()) return true;
     if (this.host.now() < this.questCooldownUntil) return true;
     const st = this.host.state();
-    if (st.battle || st.dialog || st.shop) return true;
+    if (st.battle || st.battleResult || st.dialog || st.shop) return true;
     const phase = this.host.getQueueFor(st.characterId).getStatus().phase;
     return ['RUNNING', 'PAUSED_BATTLE', 'WAITING_TOOL_BUY', 'WALKING_TO_POINT'].includes(phase);
   }
@@ -380,10 +380,13 @@ export class QuestBehaviorModule implements BehaviorModule {
 
     if (plan.kind === 'GATHER') {
       const points = [...(snap.gatherPoints.points ?? []), ...(snap.nearbyGatherPoints ?? [])];
-      const picked = pickQuestGatherPoint(nextObj.description, points);
+      const picked = pickQuestGatherForObjective(nextObj, points);
       if (!picked) {
         const here = st.location?.mapId ?? snap.mapId;
-        const hint = (nextObj.targetMaps ?? []).find(h => h.mapId && h.mapId !== here);
+        const hint = (nextObj.targetMaps ?? []).find(h => h.mapId && h.mapId !== here)
+          ?? (nextObj.targetMapId && nextObj.targetMapId !== here
+            ? { mapId: nextObj.targetMapId, mapName: nextObj.targetMapId }
+            : undefined);
         if (hint) {
           this.questCooldownUntil = now + 400;
           return this.goNav({ kind: 'MAP', mapId: hint.mapId, name: hint.mapName ?? hint.mapId });
