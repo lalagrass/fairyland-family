@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/idempotency.ts @ 78ea40f9b6fb792d0516c0af9144d4dbd520fa8b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/idempotency.ts @ 4e50759c87ae85caa6e9203c42ab0f14e9f636b1
 /**
  * 指令冪等：以 commandId 記住最近處理過的指令結果，重送同一個 commandId 回傳先前結果、不重複執行。
  * （概念同 `GameSessionState.processedCommandIds`，但這裡還要保存結果以便原樣回覆。）

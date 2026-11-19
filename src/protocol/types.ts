@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 78ea40f9b6fb792d0516c0af9144d4dbd520fa8b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 4e50759c87ae85caa6e9203c42ab0f14e9f636b1
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -496,6 +496,11 @@ export interface SnapshotQuestObjective {
   required: number;
   met: boolean;
   targetMaps?: SnapshotQuestTargetMapHint[];
+  /** 進行中的目標才帶；宿主目錄裡有才出現。 */
+  targetNpcName?: string;
+  targetMapId?: string;
+  itemId?: number;
+  itemName?: string;
 }
 
 export interface SnapshotQuestEntry {
