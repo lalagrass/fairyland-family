@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 78ea40f9b6fb792d0516c0af9144d4dbd520fa8b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 4e50759c87ae85caa6e9203c42ab0f14e9f636b1
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -90,7 +90,11 @@ const isQuestEntry = (q: unknown): boolean =>
   && isArr(q.objectives)
   && q.objectives.every(o =>
     isRec(o) && isStr(o.type) && isStr(o.description) && isNum(o.current) && isNum(o.required) && isBool(o.met)
-    && (o.targetMaps === undefined || (isArr(o.targetMaps) && o.targetMaps.every(isTargetMapHint))))
+    && (o.targetMaps === undefined || (isArr(o.targetMaps) && o.targetMaps.every(isTargetMapHint)))
+    && (o.targetNpcName === undefined || isNonEmptyStr(o.targetNpcName))
+    && (o.targetMapId === undefined || isNonEmptyStr(o.targetMapId))
+    && optNum(o.itemId)
+    && (o.itemName === undefined || isNonEmptyStr(o.itemName)))
   && isNum(q.rewardExp) && isNum(q.rewardCoins);
 
 /** 指令內容（不含信封）。 */
