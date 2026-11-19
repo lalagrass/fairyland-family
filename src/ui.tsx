@@ -35,6 +35,8 @@ import {
 } from './automation/strategyStore';
 import type { CoordinatorMode } from './automation/types';
 import { buildPaletteSuggestions } from './dv6_palette';
+import type { QuestChainStatus } from './automation/modules/questChainModule';
+import { DEFAULT_CHAIN_CONFIG } from './automation/questPlan';
 import type { WelcomeRecapSummary } from './dv7_recap';
 import { initialState, type FamilyState, type LogTag } from './state';
 import { CharacterStats } from './panels/CharacterStats';
@@ -58,6 +60,7 @@ export interface UiAux {
   charStrategies?: Record<string, CharacterStrategyConfig>;
   appearances?: Record<string, string>;
   welcomeRecap?: WelcomeRecapSummary | null;
+  chain?: QuestChainStatus;
   coordinatorMode?: CoordinatorMode;
   modules?: Array<{ id: string; label: string }>;
 }
@@ -221,6 +224,137 @@ interface AppProps {
 }
 
 type MobileTab = 'stage' | 'roster' | 'active' | 'feed';
+
+function QuestChainControls({
+  running,
+  chain,
+  onAction,
+}: {
+  running: boolean;
+  chain?: QuestChainStatus;
+  onAction: (action: UiAction) => void;
+}) {
+  const cfg = chain?.config ?? DEFAULT_CHAIN_CONFIG;
+  const stop = cfg.stop;
+  const setStop = (patch: QuestChainStatus['config']['stop'], label: string) => {
+    onAction({ kind: 'QUEST_CHAIN_CONFIG', patch: { stop: patch }, label });
+  };
+  const numOrNull = (raw: string): number | null => {
+    const n = Number(raw);
+    if (!raw.trim() || !Number.isFinite(n) || n <= 0) return null;
+    return n;
+  };
+  return (
+    <div className="chain-form" data-testid="quest-chain-panel">
+      <div data-testid="quest-chain-status" data-phase={chain?.phase ?? 'IDLE'} data-stop-reason={chain?.stopReason ?? ''}>
+        {chain?.text ?? '無人任務：閒置'}
+      </div>
+      <button
+        type="button"
+        className="item"
+        data-testid="quest-chain-start"
+        disabled={!running || chain?.phase === 'OPENING' || chain?.phase === 'QUESTS' || chain?.phase === 'LOOP'}
+        onClick={() => onAction({ kind: 'QUEST_CHAIN_START', label: '開始無人任務鏈' })}
+      >
+        開始無人任務
+      </button>
+      <button
+        type="button"
+        className="item"
+        data-testid="quest-chain-stop"
+        disabled={!running}
+        onClick={() => onAction({ kind: 'QUEST_CHAIN_STOP', label: '停止無人任務' })}
+      >
+        停止
+      </button>
+      <label>
+        時間(分)
+        <input
+          type="number"
+          min={0}
+          data-testid="chain-max-minutes"
+          value={stop.maxDurationMs == null ? '' : String(stop.maxDurationMs / 60000)}
+          onChange={e => {
+            const minutes = numOrNull(e.currentTarget.value);
+            setStop({ ...stop, maxDurationMs: minutes == null ? null : Math.round(minutes * 60000) }, '設定停止時間');
+          }}
+        />
+      </label>
+      <label>
+        等級
+        <input
+          type="number"
+          min={0}
+          data-testid="chain-target-level"
+          value={stop.targetLevel ?? ''}
+          onChange={e => setStop({ ...stop, targetLevel: numOrNull(e.currentTarget.value) }, '設定停止等級')}
+        />
+      </label>
+      <label>
+        金錢
+        <input
+          type="number"
+          min={0}
+          data-testid="chain-target-gold"
+          value={stop.targetGold ?? ''}
+          onChange={e => setStop({ ...stop, targetGold: numOrNull(e.currentTarget.value) }, '設定停止金錢')}
+        />
+      </label>
+      <label>
+        死亡
+        <input
+          type="number"
+          min={0}
+          data-testid="chain-max-deaths"
+          value={stop.maxDeaths ?? ''}
+          onChange={e => setStop({ ...stop, maxDeaths: numOrNull(e.currentTarget.value) }, '設定死亡上限')}
+        />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          data-testid="chain-stop-bag"
+          checked={stop.stopOnBagFull}
+          onChange={e => setStop({ ...stop, stopOnBagFull: e.currentTarget.checked }, '設定背包滿即停')}
+        />
+        背包滿即停
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          data-testid="chain-newbie-loop"
+          checked={cfg.newbieLoop}
+          onChange={e =>
+            onAction({
+              kind: 'QUEST_CHAIN_CONFIG',
+              patch: { newbieLoop: e.currentTarget.checked },
+              label: '設定新手循環',
+            })
+          }
+        />
+        任務後新手循環
+      </label>
+      <label>
+        循環
+        <select
+          data-testid="chain-loop-activity"
+          value={cfg.loopActivity}
+          onChange={e =>
+            onAction({
+              kind: 'QUEST_CHAIN_CONFIG',
+              patch: { loopActivity: e.currentTarget.value as 'HUNT' | 'GATHER' | 'CRAFT' },
+              label: '設定循環內容',
+            })
+          }
+        >
+          <option value="HUNT">打怪補給</option>
+          <option value="GATHER">採集</option>
+          <option value="CRAFT">配方</option>
+        </select>
+      </label>
+    </div>
+  );
+}
 
 function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }: AppProps) {
   const [inputValue, setInputValue] = useState('');
@@ -606,6 +740,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           {aux.welcomeRecap.highlights.length > 0 && (
             <div className="muted">{`離線動態：${aux.welcomeRecap.highlights.join(' ｜ ')}`}</div>
           )}
+          {aux.welcomeRecap.automation && (
+            <div data-testid="automation-recap">
+              <div>{`停止原因：${aux.welcomeRecap.automation.stopReason}`}</div>
+              <div>{`完成任務：${aux.welcomeRecap.automation.completedQuests.join('、') || '無'}`}</div>
+              <div>{`任務獎勵經驗 +${aux.welcomeRecap.automation.questExp}`}</div>
+            </div>
+          )}
         </section>
       )}
 
@@ -924,6 +1065,11 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           })()}
 
           <section data-testid="quest-panel">
+            <QuestChainControls
+              running={running}
+              chain={aux.chain}
+              onAction={handleAction}
+            />
             <div className="panel-head-row">
               <h2>任務摘要與自動推進</h2>
               {(!snap || quests.length === 0) && (

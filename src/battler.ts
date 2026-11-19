@@ -22,6 +22,13 @@ export interface BattlerHost {
 const RETRY_MS = 400;
 const MAX_RETRY = 6;
 
+/** 任務鏈暫時覆寫這一回合：血量還高時先打，低於比例再抓。 */
+export interface CaptureTurnOverride {
+  mode: 'CAPTURE';
+  sealStoneId: number;
+  captureBelowHpRatio: number;
+}
+
 /**
  * 外掛端自動戰鬥：只在 BATTLE_TURN_READY 才出手，每個（場次，回合）最多送一次；
  * 預設「手動」＝完全不動。非手動策略在戰鬥結束後也會把勝敗視窗關掉（RETURN_TO_MAP／DEFEAT_RESCUE），
@@ -29,6 +36,7 @@ const MAX_RETRY = 6;
  */
 export class AutoBattler {
   private strategy: BattleStrategy = 'MANUAL';
+  private turnOverride: CaptureTurnOverride | null = null;
   private done = new Set<string>();
   private mine = new Map<string, { kind: 'TURN' | 'RESULT'; key: string; battleId: number; round: number; tries: number; outcome?: 'WIN' | 'LOSE' }>();
 
@@ -40,6 +48,10 @@ export class AutoBattler {
   }
 
   getStrategy(): BattleStrategy { return this.strategy; }
+
+  setTurnOverride(override: CaptureTurnOverride | null): void {
+    this.turnOverride = override;
+  }
 
   setStrategy(s: BattleStrategy): void {
     this.strategy = s;
@@ -84,10 +96,20 @@ export class AutoBattler {
     let cmd: PluginCommand;
     let label: string;
     let expect: string | undefined;
+    const target = b.enemyStates[0];
+    const capture = this.turnOverride;
+    const hpRatio = target && target.maxHp > 0 ? target.hp / target.maxHp : 1;
     if (this.strategy === 'FLEE') {
       cmd = { type: 'BATTLE_FLEE', battleId }; label = `自動戰鬥：逃跑（第 ${round} 回合）`; expect = 'FLED';
+    } else if (capture && target && hpRatio <= capture.captureBelowHpRatio) {
+      cmd = {
+        type: 'BATTLE_ACTION',
+        battleId,
+        action: { kind: 'CAPTURE', targetSlot: target.slot, sealStoneId: capture.sealStoneId },
+      };
+      label = `自動戰鬥：捕捉 ${target.name}（第 ${round} 回合）`;
+      expect = 'TURN_SUBMITTED';
     } else {
-      const target = b.enemyStates[0];
       cmd = { type: 'BATTLE_ACTION', battleId, action: { kind: 'ATTACK', ...(target ? { targetSlot: target.slot } : {}) } };
       label = `自動戰鬥：攻擊${target ? ` ${target.name}` : ''}（第 ${round} 回合）`; expect = 'TURN_SUBMITTED';
     }

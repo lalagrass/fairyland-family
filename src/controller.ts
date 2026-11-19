@@ -13,6 +13,7 @@ import {
   createWorkQueueModule,
 } from './automation/modules/coreModules';
 import { ExampleRestMonitorModule } from './automation/modules/exampleRestModule';
+import { QuestChainModule } from './automation/modules/questChainModule';
 import { QuestBehaviorModule } from './automation/modules/questModule';
 import { AutomationRegistry } from './automation/registry';
 import {
@@ -62,6 +63,7 @@ export class FamilyController {
   readonly automation = new AutomationRegistry();
   private latestRecap: WelcomeRecapSummary | null = null;
   private readonly questModule: QuestBehaviorModule;
+  private readonly questChain: QuestChainModule;
   private queues = new Map<string, WorkQueue>();
   private notifier: WorkNotifier;
   private primaryCharacterId: string | null = null;
@@ -126,6 +128,21 @@ export class FamilyController {
       navigator: this.navigator,
       battler: this.battler,
       getQueueFor: cid => (cid ? this.getOrCreateQueue(cid) : this.queue),
+      knownNpcNames: () => this.directory.allNpcs().map(n => n.name),
+      knownMaps: () => this.directory.allMaps(),
+    });
+    this.questChain = new QuestChainModule({
+      ...modHost,
+      navigator: this.navigator,
+      battler: this.battler,
+      quest: this.questModule,
+      getQueue: () => this.queue,
+      knownNpcs: () => this.directory.allNpcs(),
+      knownMaps: () => this.directory.allMaps(),
+      showRecap: summary => {
+        this.latestRecap = summary;
+        this.emit();
+      },
     });
 
     // 註冊四大核心模組 ＋ 示範擴充模組 ＋ 使用端附加模組
@@ -133,6 +150,7 @@ export class FamilyController {
     this.automation.register(createNavigationModule(this.navigator));
     this.automation.register(createWorkQueueModule(cid => (cid ? this.getOrCreateQueue(cid) : this.queue)));
     this.automation.register(this.questModule);
+    this.automation.register(this.questChain);
     this.automation.register(new ExampleRestMonitorModule());
     for (const extra of opts.extraModules ?? []) {
       this.automation.register(extra);
@@ -202,6 +220,7 @@ export class FamilyController {
   navStatus(): NavStatus { return this.navigator.getStatus(); }
   strategy(): BattleStrategy { return this.battler.getStrategy(); }
   activeQuest(): number | null { return this.questModule.getActiveQuestId(); }
+  chainStatus() { return this.questChain.getStatus(); }
   coordinatorMode(): CoordinatorMode { return this.automation.getCoordinatorMode(); }
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
   charAppearances(): Record<string, string> { return this.appearanceStore.snapshotAll(); }
@@ -272,6 +291,7 @@ export class FamilyController {
   /** 定時呼叫：心跳逾時要靠時間才會變成「遊戲未執行」，同時推動進行中的任務循環。 */
   tick(): void {
     this.afterChange(this.now());
+    if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();
     this.automation.syncCoordinator(this.moduleContext());
   }
@@ -359,7 +379,8 @@ export class FamilyController {
       const cid = this.state.characterId ?? this.state.activeCharacterId;
       if (cid) this.strategyStore.update(cid, { battleStrategy: action.strategy });
     }
-    if (['NAV', 'NAV_CANCEL', 'QUEUE_GATHER', 'QUEUE_CRAFT', 'QUEUE_STOP'].includes(action.kind)) {
+    if (['NAV', 'NAV_CANCEL', 'QUEUE_GATHER', 'QUEUE_CRAFT', 'QUEUE_STOP', 'QUEST_AUTO', 'QUEST_AUTO_STOP'].includes(action.kind)) {
+      this.questChain.stop('玩家改為手動操作');
       this.questModule.stop();
     }
     const res = this.automation.dispatchAction(action, this.moduleContext());

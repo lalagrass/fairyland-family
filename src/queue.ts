@@ -92,7 +92,8 @@ export interface QueueHost {
 }
 
 const DEFAULT_KEY = 'family.queue.v1';
-const GATHER_APPROACH_DIST = 180;
+/** 與宿主工作指令願意動手的距離對齊，避免停在「宿主肯採、外掛卻一直重走」的空檔。 */
+const GATHER_APPROACH_DIST = 240;
 const RETRY_MS = 450;
 
 function mapRejectToStop(code: string): QueueStopReason | null {
@@ -171,6 +172,10 @@ export class WorkQueue {
   private navStartedKey: string | null = null;
   private dialogRetries = 0;
   private openShopSentAt = 0;
+  /** 同一個採集點、距離幾乎沒縮短的走路次數。連走仍靠近不了就換下一個點。 */
+  private approachTries: { pointId: string; dist: number; tries: number } | null = null;
+  /** 這次工作已經確認走不過的採集點。直線距離近不代表走得到。 */
+  private skippedPoints = new Set<string>();
   private stopConditions: QueueStopConditions = { stopOnBagFull: false, minSatiety: null };
 
   constructor(
@@ -276,6 +281,8 @@ export class WorkQueue {
     this.openShopSentAt = 0;
     this.pending = null;
     this.navStartedKey = null;
+    this.approachTries = null;
+    this.skippedPoints.clear();
     this.token++;
     this.phase = 'RUNNING';
     this.text = this.describeActive();
@@ -651,7 +658,10 @@ export class WorkQueue {
     // Find target gather point (background prioritizes member's own mapId)
     const pt = this.pickGatherPoint(job, snap, tgt.x, tgt.y, tgt.mapId);
     if (!pt) {
-      this.stop('TOO_FAR', `找不到【${job.targetName}】的採集點`);
+      const why = this.skippedPoints.size > 0
+        ? `【${job.targetName}】的採集點都走不過`
+        : `找不到【${job.targetName}】的採集點`;
+      this.stop('TOO_FAR', why);
       return;
     }
 
@@ -675,10 +685,22 @@ export class WorkQueue {
     }
 
     const dist = Math.hypot(tgt.x - pt.x, tgt.y - pt.y);
-    const maxAllowedDist = tgt.isViewed ? GATHER_APPROACH_DIST : 240;
+    const maxAllowedDist = GATHER_APPROACH_DIST;
     if (dist > maxAllowedDist) {
       if (!tgt.isViewed) {
         this.stop('TOO_FAR', `背景角色【${tgt.name}】離【${pt.name}】太遠 (${Math.round(dist)}px)，請先切換視角走近`);
+        return;
+      }
+      const prior = this.approachTries;
+      const same = prior !== null && prior.pointId === pt.id && Math.abs(prior.dist - dist) <= 8;
+      const tries = same && prior ? prior.tries + 1 : 1;
+      this.approachTries = { pointId: pt.id, dist, tries };
+      if (tries >= 3) {
+        this.skippedPoints.add(pt.id);
+        this.approachTries = null;
+        this.phase = 'RUNNING';
+        this.host.log(`採集點【${pt.name}】走不過（仍距離 ${Math.round(dist)}px），改試下一個`, 'info');
+        this.scheduleStep(0);
         return;
       }
       this.phase = 'WALKING_TO_POINT';
@@ -688,6 +710,7 @@ export class WorkQueue {
       this.sendPending({ type: 'WALK_TO', mapId: snap.mapId, x: pt.x, y: pt.y }, `走到 ${pt.name}`, 'WALK');
       return;
     }
+    this.approachTries = null;
 
     this.phase = 'RUNNING';
     this.text = this.describeActive();
@@ -786,7 +809,10 @@ export class WorkQueue {
 
   private pickGatherPoint(job: Extract<WorkJob, { kind: 'GATHER' }>, snap: SceneSnapshot, px: number, py: number, memberMapId?: string): SnapshotGatherPoint | null {
     const filter = (pts: SnapshotGatherPoint[]) =>
-      pts.filter(p => p.skillId === job.skillId && (job.targetItemId === undefined || p.materials?.some(m => m.itemId === job.targetItemId)));
+      pts.filter(p =>
+        !this.skippedPoints.has(p.id)
+        && p.skillId === job.skillId
+        && (job.targetItemId === undefined || p.materials?.some(m => m.itemId === job.targetItemId)));
     const allPts = [...snap.gatherPoints.points, ...(snap.nearbyGatherPoints ?? [])];
     const onMemberMap = memberMapId
       ? filter(allPts).filter(p => (p.mapId ?? snap.mapId) === memberMapId)
@@ -796,7 +822,7 @@ export class WorkQueue {
     }
     const nearby = filter(snap.nearbyGatherPoints ?? []);
     if (nearby.length > 0) return nearby[0];
-    return snap.gatherPoints.points.find(p => p.skillId === job.skillId) ?? null;
+    return null;
   }
 
   private scheduleStep(delayMs: number): void {

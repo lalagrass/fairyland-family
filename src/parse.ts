@@ -31,7 +31,25 @@ export type UiAction =
   | { kind: 'QUEUE_STOP_CONDITIONS'; patch: Partial<QueueStopConditions>; label: string; targetCharacterId?: string }
   | { kind: 'DISMISS_RECAP'; label: string }
   | { kind: 'QUEST_AUTO'; questId: number; label: string }
-  | { kind: 'QUEST_AUTO_STOP'; label: string };
+  | { kind: 'QUEST_AUTO_STOP'; label: string }
+  | { kind: 'QUEST_CHAIN_START'; label: string }
+  | { kind: 'QUEST_CHAIN_STOP'; label: string }
+  | {
+      kind: 'QUEST_CHAIN_CONFIG';
+      label: string;
+      patch: {
+        stop?: {
+          maxDurationMs?: number | null;
+          targetLevel?: number | null;
+          targetGold?: number | null;
+          stopOnBagFull?: boolean;
+          maxDeaths?: number | null;
+        };
+        newbieLoop?: boolean;
+        loopActivity?: 'HUNT' | 'GATHER' | 'CRAFT';
+        returnHpPct?: number;
+      };
+    };
 
 export type ParseResult =
   | { ok: true; action: UiAction }
