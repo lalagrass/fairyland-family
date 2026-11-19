@@ -28,6 +28,14 @@ import type { QuestBehaviorModule } from './questModule';
 /** 一次無人任務最多略過幾件任務；達到就停下，請人看宿主資料。 */
 export const MAX_SKIPPED_QUESTS = 3;
 
+/**
+ * 導航因為已經有對話框或商店開著而被拒：人其實已經到了，只是視窗還沒關。
+ * 這不是走不過去，下一拍關掉視窗再走就好，不能當成找不到下一步。
+ */
+export function navBlockedByWindow(text: string | undefined): boolean {
+  return /DIALOG_OPEN|SHOP_OPEN|已經有對話框開著|商店開著/.test(text ?? '');
+}
+
 export interface QuestChainHost extends AutomationHostContext {
   navigator: AutoNavigator;
   battler: AutoBattler;
@@ -589,7 +597,7 @@ export class QuestChainModule implements BehaviorModule {
     }
     if (snap.mapId !== target.mapId) {
       const nav = this.host.navigator.getStatus();
-      if (this.navKey === target.mapId && nav.phase === 'FAILED') {
+      if (this.navKey === target.mapId && nav.phase === 'FAILED' && !navBlockedByWindow(nav.text)) {
         this.finish('STUCK', `找不到下一步：${nav.text}`);
         return;
       }
@@ -670,6 +678,8 @@ export class QuestChainModule implements BehaviorModule {
     this.applyBattle(false, false);
     if (this.host.navigator.isActive()) return;
     this.text = '新手循環：回村補給';
+    // 開商店、賣東西的指令還沒回來時，對話框剛關、商店還沒開，這一拍看起來什麼都沒有。等結果回來再判斷。
+    if (Object.keys(st.pending).length > 0 || Object.keys(st.inflight).length > 0) return;
     if (st.shop) {
       const keep = this.keepNames();
       const sell = sellableItems(st.inventory, keep).find(it => !this.sellSkip.has(it.itemId));
@@ -707,7 +717,7 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     const nav = this.host.navigator.getStatus();
-    if (this.navKey === `shop:${shop.npcName}` && nav.phase === 'FAILED') {
+    if (this.navKey === `shop:${shop.npcName}` && nav.phase === 'FAILED' && !navBlockedByWindow(nav.text)) {
       this.finish('STUCK', `找不到下一步：${nav.text}`);
       return;
     }

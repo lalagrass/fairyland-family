@@ -1,6 +1,7 @@
 import ex from '../src/protocol/examples.json';
 import { PROTOCOL_VERSION, type PluginMessage } from '../src/protocol/index';
 import { FamilyController } from '../src/controller';
+import { navBlockedByWindow } from '../src/automation/modules/questChainModule';
 import type { FamilyState } from '../src/state';
 import type { Transport } from '../src/transport/types';
 import {
@@ -781,6 +782,15 @@ suite('FM8: 做不下去的任務寫原因後略過，接著做下一件；略�
   assert(s2.text.includes('已略過 3 件'), '停止文字寫明略過了幾件');
   const recap2 = h2.c.welcomeRecap();
   assert((recap2?.automation?.stopReason ?? '').includes('略過任務：甲'), '回來摘要的停止原因列出略過的任務');
+}
+
+
+suite('FM8: 補給時導航被「對話框還開著」擋下不算走不過去');
+{
+  assert(navBlockedByWindow('導航失敗：被拒絕 DIALOG_OPEN（已經有對話框開著）'), '實跑遇到的 DIALOG_OPEN 拒絕視為視窗未關');
+  assert(navBlockedByWindow('操作未完成（商店開著時只能選 CLOSE_SHOP）'), '商店開著也視為視窗未關');
+  assert(!navBlockedByWindow('導航失敗：不知道「葛蕾特」在哪張圖'), '真的找不到人仍然是導航失敗');
+  assert(!navBlockedByWindow(undefined), '沒有文字不算');
 }
 
 done();
