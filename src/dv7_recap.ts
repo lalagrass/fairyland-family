@@ -11,6 +11,13 @@ export interface SessionCheckpoint {
   items: Record<string, number>;
 }
 
+export interface AutomationRecapDetails {
+  completedQuests: string[];
+  /** 這次跑完的任務在快照上標的獎勵經驗合計（不含打怪經驗）。 */
+  questExp: number;
+  stopReason: string;
+}
+
 export interface WelcomeRecapSummary {
   characterId: string;
   characterName: string;
@@ -21,6 +28,8 @@ export interface WelcomeRecapSummary {
   goldDelta: number;
   itemDeltas: Array<{ name: string; delta: number }>;
   highlights: string[];
+  /** FM8：無人任務結束時附上完成的任務、任務經驗與停止原因。 */
+  automation?: AutomationRecapDetails;
 }
 
 interface KvStorage {
@@ -103,6 +112,29 @@ export function computeWelcomeRecap(
     goldDelta,
     itemDeltas: itemDeltas.slice(0, 6),
     highlights,
+  };
+}
+
+/** 無人任務停下時的摘要。離開時間再短也要看得到停止原因。 */
+export function buildStopRecap(
+  prev: SessionCheckpoint,
+  curr: SessionCheckpoint,
+  logs: readonly LogEntry[],
+  automation: AutomationRecapDetails,
+): WelcomeRecapSummary {
+  const recap = computeWelcomeRecap(prev, curr, logs, 0);
+  if (recap) return { ...recap, automation };
+  return {
+    characterId: curr.characterId,
+    characterName: curr.characterName,
+    awayMs: Math.max(0, curr.savedAt - prev.savedAt),
+    awayText: formatAwayDuration(Math.max(0, curr.savedAt - prev.savedAt)),
+    mapTransition: prev.mapId !== curr.mapId ? `${prev.mapName} → ${curr.mapName}` : null,
+    levelDelta: curr.level - prev.level,
+    goldDelta: curr.gold - prev.gold,
+    itemDeltas: [],
+    highlights: [],
+    automation,
   };
 }
 

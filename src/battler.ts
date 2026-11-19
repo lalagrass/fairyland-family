@@ -1,4 +1,4 @@
-import { isCommandResultMessage, isEventMessage, type PluginCommand, type PluginMessage } from './protocol/index';
+import { isCommandResultMessage, isEventMessage, type BattleEnemyState, type PluginCommand, type PluginMessage } from './protocol/index';
 import type { FamilyState } from './state';
 
 /** 自動戰鬥策略：手動＝外掛什麼都不做（預設），由人在面板或文字輸入操作。 */
@@ -22,6 +22,26 @@ export interface BattlerHost {
 const RETRY_MS = 400;
 const MAX_RETRY = 6;
 
+/** 主人血量低於比例時先用恢復道具。捕捉再附加封印條件。 */
+interface HealFields {
+  healBelowHpRatio?: number;
+  healItemId?: number;
+}
+
+export interface CaptureTurnOverride extends HealFields {
+  mode: 'CAPTURE';
+  sealStoneId: number;
+  captureBelowHpRatio: number;
+}
+
+export interface HealTurnOverride extends HealFields {
+  mode: 'HEAL';
+  healItemId: number;
+  healBelowHpRatio: number;
+}
+
+export type TurnOverride = CaptureTurnOverride | HealTurnOverride;
+
 /**
  * 外掛端自動戰鬥：只在 BATTLE_TURN_READY 才出手，每個（場次，回合）最多送一次；
  * 預設「手動」＝完全不動。非手動策略在戰鬥結束後也會把勝敗視窗關掉（RETURN_TO_MAP／DEFEAT_RESCUE），
@@ -29,6 +49,7 @@ const MAX_RETRY = 6;
  */
 export class AutoBattler {
   private strategy: BattleStrategy = 'MANUAL';
+  private turnOverride: TurnOverride | null = null;
   private done = new Set<string>();
   private mine = new Map<string, { kind: 'TURN' | 'RESULT'; key: string; battleId: number; round: number; tries: number; outcome?: 'WIN' | 'LOSE' }>();
 
@@ -40,6 +61,10 @@ export class AutoBattler {
   }
 
   getStrategy(): BattleStrategy { return this.strategy; }
+
+  setTurnOverride(override: TurnOverride | null): void {
+    this.turnOverride = override;
+  }
 
   setStrategy(s: BattleStrategy): void {
     this.strategy = s;
@@ -84,16 +109,49 @@ export class AutoBattler {
     let cmd: PluginCommand;
     let label: string;
     let expect: string | undefined;
-    if (this.strategy === 'FLEE') {
+    const override = this.turnOverride;
+    const capture = override?.mode === 'CAPTURE' ? override : null;
+    const target = this.pickTarget(b.enemyStates, capture !== null);
+    const hpRatio = target && target.maxHp > 0 ? target.hp / target.maxHp : 1;
+    const self = b.player;
+    const selfRatio = self && self.maxHp > 0 ? self.hp / self.maxHp : 1;
+    const hurt = override?.healBelowHpRatio !== undefined && selfRatio <= override.healBelowHpRatio;
+    if (override?.healItemId !== undefined && hurt) {
+      cmd = { type: 'BATTLE_ACTION', battleId, action: { kind: 'ITEM', itemId: override.healItemId } };
+      label = `自動戰鬥：使用恢復道具（第 ${round} 回合）`;
+      expect = 'TURN_SUBMITTED';
+    } else if (this.strategy === 'FLEE') {
       cmd = { type: 'BATTLE_FLEE', battleId }; label = `自動戰鬥：逃跑（第 ${round} 回合）`; expect = 'FLED';
+    } else if (capture && target && (hpRatio <= capture.captureBelowHpRatio || hurt)) {
+      cmd = {
+        type: 'BATTLE_ACTION',
+        battleId,
+        action: { kind: 'CAPTURE', targetSlot: target.slot, sealStoneId: capture.sealStoneId },
+      };
+      label = `自動戰鬥：捕捉 ${target.name}（第 ${round} 回合）`;
+      expect = 'TURN_SUBMITTED';
     } else {
-      const target = b.enemyStates[0];
       cmd = { type: 'BATTLE_ACTION', battleId, action: { kind: 'ATTACK', ...(target ? { targetSlot: target.slot } : {}) } };
       label = `自動戰鬥：攻擊${target ? ` ${target.name}` : ''}（第 ${round} 回合）`; expect = 'TURN_SUBMITTED';
     }
     const id = this.host.send(cmd, label, expect);
     if (id) this.mine.set(id, { kind: 'TURN', key, battleId, round, tries });
     else this.done.delete(key);
+  }
+
+  /** 捕捉時打最接近可收服的那隻；一般攻擊仍打清單上的第一隻。 */
+  private pickTarget(enemies: readonly BattleEnemyState[], weakest: boolean): BattleEnemyState | undefined {
+    const list = enemies;
+    const living = list.filter(e => !e.isDead && e.hp > 0);
+    const pool = living.length > 0 ? living : list;
+    if (!weakest) return pool[0];
+    return [...pool].sort((a, b) => {
+      const ra = a.maxHp > 0 ? a.hp / a.maxHp : 1;
+      const rb = b.maxHp > 0 ? b.hp / b.maxHp : 1;
+      if (ra !== rb) return ra - rb;
+      if (a.maxHp !== b.maxHp) return a.maxHp - b.maxHp;
+      return a.slot - b.slot;
+    })[0];
   }
 
   private result(battleId: number, outcome: 'WIN' | 'LOSE', tries: number): void {

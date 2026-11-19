@@ -238,8 +238,13 @@ export class AutoNavigator {
 
   /** 目標 NPC 所在地圖：目前這張圖看得到就用它，否則查已知目錄。 */
   private resolveNpcMap(q: string, snap: SceneSnapshot): string | null {
-    if (this.findNpc(snap, q)) return snap.mapId;
+    // 完全同名的優先：「斯坦」不能因為這張圖有「旅行商人斯坦萊」就被當成已經在這裡。
+    const here = this.findNpc(snap, q);
+    if (here && here.name === q) return snap.mapId;
     const hits = this.host.dir.findNpc(q);
+    const exact = hits.find(h => h.name === q);
+    if (exact) return exact.mapId;
+    if (here) return snap.mapId;
     return hits.length ? hits[0].mapId : null;
   }
 

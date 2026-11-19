@@ -189,4 +189,65 @@ suite('auto-battler: strategies');
   h.c.battler.setStrategy('MANUAL');
   assert(h.c.strategy() === 'MANUAL', 'strategy can be switched back');
 }
+
+suite('auto-battler: capture override heals, then seals the weaker foe');
+{
+  const player = { id: 'p', name: '測試旅人', hp: 80, maxHp: 80 };
+  const healthy = () => harness({ strategy: 'ATTACK' });
+  const h = healthy();
+  h.c.battler.setTurnOverride({ mode: 'CAPTURE', sealStoneId: 7, captureBelowHpRatio: 0.5, healBelowHpRatio: 0.3, healItemId: 3 });
+  h.ev({ type: 'BATTLE_STARTED', battleId: 1, mapId: '10001', enemies: [{ id: 'a', name: '壯羊', level: 2 }, { id: 'b', name: '幼羊', level: 1 }] });
+  h.ev({
+    type: 'BATTLE_TURN_READY', battleId: 1, round: 1, canFlee: true, player,
+    enemies: [
+      { slot: 0, id: 'a', name: '壯羊', hp: 40, maxHp: 40 },
+      { slot: 1, id: 'b', name: '幼羊', hp: 8, maxHp: 20 },
+    ],
+  });
+  const seal = h.sent.map(m => m.command).find(c => c.type === 'BATTLE_ACTION');
+  assert(seal?.type === 'BATTLE_ACTION' && seal.action.kind === 'CAPTURE' && seal.action.targetSlot === 1 && seal.action.sealStoneId === 7, '血量比例已經低於門檻的那隻才封印');
+
+  const hurt = healthy();
+  hurt.c.battler.setTurnOverride({ mode: 'CAPTURE', sealStoneId: 7, captureBelowHpRatio: 0.5, healBelowHpRatio: 0.3, healItemId: 3 });
+  hurt.ev({ type: 'BATTLE_STARTED', battleId: 1, mapId: '10001', enemies: [{ id: 'b', name: '幼羊', level: 1 }] });
+  hurt.ev({
+    type: 'BATTLE_TURN_READY', battleId: 1, round: 1, canFlee: true,
+    player: { id: 'p', name: '測試旅人', hp: 10, maxHp: 80 },
+    enemies: [{ slot: 1, id: 'b', name: '幼羊', hp: 20, maxHp: 20 }],
+  });
+  const item = hurt.sent.map(m => m.command).find(c => c.type === 'BATTLE_ACTION');
+  assert(item?.type === 'BATTLE_ACTION' && item.action.kind === 'ITEM' && item.action.itemId === 3, '主人血量低時先用恢復道具');
+
+  const chip = healthy();
+  chip.c.battler.setTurnOverride({ mode: 'CAPTURE', sealStoneId: 7, captureBelowHpRatio: 0.5 });
+  chip.ev({ type: 'BATTLE_STARTED', battleId: 1, mapId: '10001', enemies: [{ id: 'a', name: '壯羊', level: 2 }, { id: 'b', name: '幼羊', level: 1 }] });
+  chip.ev({
+    type: 'BATTLE_TURN_READY', battleId: 1, round: 1, canFlee: true, player,
+    enemies: [
+      { slot: 0, id: 'a', name: '壯羊', hp: 40, maxHp: 40 },
+      { slot: 1, id: 'b', name: '幼羊', hp: 20, maxHp: 20 },
+    ],
+  });
+  const atk = chip.sent.map(m => m.command).find(c => c.type === 'BATTLE_ACTION');
+  assert(atk?.type === 'BATTLE_ACTION' && atk.action.kind === 'ATTACK' && atk.action.targetSlot === 1, '兩邊都還高時先打血量上限較低的那隻');
+}
+
+suite('auto-battler: heal override drinks when hurt, otherwise attacks');
+{
+  const start = (hp: number) => {
+    const h = harness({ strategy: 'ATTACK' });
+    h.c.battler.setTurnOverride({ mode: 'HEAL', healItemId: 3, healBelowHpRatio: 0.3 });
+    h.ev({ type: 'BATTLE_STARTED', battleId: 1, mapId: '10001', enemies: [{ id: 'b', name: '幼羊', level: 1 }] });
+    h.ev({
+      type: 'BATTLE_TURN_READY', battleId: 1, round: 1, canFlee: true,
+      player: { id: 'p', name: '測試旅人', hp, maxHp: 80 },
+      enemies: [{ slot: 0, id: 'b', name: '幼羊', hp: 20, maxHp: 20 }],
+    });
+    return h.sent.map(m => m.command).find(c => c.type === 'BATTLE_ACTION');
+  };
+  const hurt = start(10);
+  assert(hurt?.type === 'BATTLE_ACTION' && hurt.action.kind === 'ITEM' && hurt.action.itemId === 3, '治療覆寫在血量低時使用恢復道具');
+  const healthy = start(80);
+  assert(healthy?.type === 'BATTLE_ACTION' && healthy.action.kind === 'ATTACK', '血量還高時治療覆寫仍普通攻擊');
+}
 done();

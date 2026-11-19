@@ -52,6 +52,24 @@ export class Directory {
     return this.maps[mapId]?.name ?? null;
   }
 
+  /** 已學到的 NPC，加上還沒走過、但預先知道位置的種子 NPC。 */
+  allNpcs(): DirNpc[] {
+    const all: DirNpc[] = [];
+    for (const m of Object.values(this.maps)) {
+      for (const n of m.npcs) all.push({ name: n.name, mapId: m.mapId, mapName: m.name, role: n.role });
+    }
+    for (const s of SEED_NPCS) {
+      if (!all.some(a => a.name === s.name && a.mapId === s.mapId)) all.push(s);
+    }
+    return all;
+  }
+
+  allMaps(): Array<{ mapId: string; name: string }> {
+    return Object.values(this.maps)
+      .filter(m => m.name)
+      .map(m => ({ mapId: m.mapId, name: m.name as string }));
+  }
+
   /** 以名稱（完全相符優先，其次包含）找 NPC；已學到的優先於預設清單。 */
   findNpc(query: string): DirNpc[] {
     const all: DirNpc[] = [];
