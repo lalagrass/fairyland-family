@@ -47,7 +47,8 @@ export function SkillPanel(props: { skills: StaticSkillSummary[] }) {
 
   return (
     <section data-testid="skill-panel">
-      <h2><PanelMark kind="skill" />技能</h2>
+      <h2><PanelMark kind="skill" />宿主技能表</h2>
+      <p className="muted">此為遊戲技能目錄，不代表目前角色已習得。</p>
       <div className="fm7-toolbar">
         <input
           type="search"

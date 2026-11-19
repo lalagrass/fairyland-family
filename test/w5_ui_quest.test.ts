@@ -44,6 +44,9 @@ suite('DV1 + DV3: React UI 一般畫面隱藏除錯資訊與工作倒數進度�
   const win = new Window({ url: 'http://localhost:5173/family/' });
   Object.assign(globalThis, {
     window: win,
+    getComputedStyle: win.getComputedStyle.bind(win),
+    requestAnimationFrame: win.requestAnimationFrame.bind(win),
+    cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
     document: win.document,
     HTMLElement: win.HTMLElement,
     HTMLSelectElement: win.HTMLSelectElement,

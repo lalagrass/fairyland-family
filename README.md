@@ -99,6 +99,7 @@ npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔
 - **已知目錄**（`src/directory.ts`）：預設知道村長傑夫在市鎮中心 20010；每份快照看到的 NPC 與出口都會記住（localStorage）。宿主沒有世界目錄，所以沒去過的地方只能靠 `portalGraph` 與這份預設清單。
 - **面板**：對話選項、商店（買／賣）、戰鬥（攻擊／防禦／逃跑、勝敗視窗）、導航狀態與取消、策略下拉；文字輸入與按鈕走同一個 `UiAction`（`src/parse.ts`）。日誌每個指令都顯示「預期 vs 實際」（例如 `預期 MAP_CHANGED／實際 ENCOUNTER ✗`）。
 - **回放模式**（`?replay=1`）只回應 `REQUEST_SNAPSHOT`，其他指令回 `NOT_IMPLEMENTED`（不模擬遊戲）；P2 的真實行為用 fairyland 的 `scripts/plugin_p2_check.mjs` 兩分頁端到端檢查。
+- **目前角色工作台**：總覽、宿主技能目錄、物品欄（含家族倉庫）與角色策略設定集中在「目前角色」。可用左右方向鍵換工作台頁籤；寬版同時顯示家族和事件欄。視窗驗收可用 `node scripts/fm7_panel_shots.mjs`（外部 Playwright 安裝見腳本檔頭；不需私有宿主或原版素材）。
 
 文字指令：`前往 村長`、`對話 阿爾`、`走到 x y`、`選項 <id 或文字>`、`買／賣 <id 或名稱> [數量]`、`攻擊 [目標]`、`防禦`、`逃跑`、`策略 手動|普通攻擊|逃跑`、`停止導航`、`快照`、`talk <名>`（不走過去，太遠會 `TOO_FAR`）。
 
