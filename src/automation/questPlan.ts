@@ -392,6 +392,20 @@ export function nextStuck(
 }
 
 /** 回村時可賣的東西：留下封印石、工具，以及尚未完成任務描述裡點名的物品。 */
+/**
+ * 背包已用格數：宿主把每個道具的數量加總（不是堆疊數），而且快照裡的 inventoryCount 只在快照當下是對的。
+ * 賣東西、撿東西之後只有 inventory 會跟著道具變動事件更新，所以一律用 inventory 現算。
+ */
+export function bagUsedCount(inventory: readonly SnapshotItem[]): number {
+  let total = 0;
+  for (const it of inventory) if (it.count > 0) total += it.count;
+  return total;
+}
+
+export function isBagFull(inventory: readonly SnapshotItem[], cap: number | null | undefined): boolean {
+  return cap != null && cap > 0 && bagUsedCount(inventory) >= cap;
+}
+
 export function sellableItems(items: readonly SnapshotItem[], keepNames: readonly string[]): SnapshotItem[] {
   return items.filter(it => {
     if (it.count <= 0) return false;

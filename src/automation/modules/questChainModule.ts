@@ -15,6 +15,8 @@ import {
   progressSignature,
   selectNextQuest,
   sellableItems,
+  bagUsedCount,
+  isBagFull,
   type ChainLoopActivity,
   type ChainMetrics,
   type ChainQuest,
@@ -319,7 +321,7 @@ export class QuestChainModule implements BehaviorModule {
       now: this.host.now(),
       level: c?.level ?? 1,
       gold: c?.gold ?? 0,
-      inventoryCount: c?.inventoryCount ?? st.inventory.reduce((n, it) => n + it.count, 0),
+      inventoryCount: bagUsedCount(st.inventory),
       inventoryCap: c?.inventoryCap ?? 0,
       deaths: this.deaths,
     };
@@ -910,9 +912,7 @@ export class QuestChainModule implements BehaviorModule {
   }
 
   private bagFull(st: ReturnType<QuestChainHost['state']>): boolean {
-    const count = st.character?.inventoryCount;
-    const cap = st.character?.inventoryCap;
-    return cap != null && cap > 0 && count != null && count >= cap;
+    return isBagFull(st.inventory, st.character?.inventoryCap);
   }
 
   private keepNames(): string[] {

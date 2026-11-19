@@ -14,6 +14,8 @@ import {
   planUnmetObjective,
   selectNextQuest,
   sellableItems,
+  bagUsedCount,
+  isBagFull,
   type ChainMetrics,
   type ChainQuest,
 } from '../src/automation/questPlan';
@@ -791,6 +793,24 @@ suite('FM8: 補給時導航被「對話框還開著」擋下不算走不過去')
   assert(navBlockedByWindow('操作未完成（商店開著時只能選 CLOSE_SHOP）'), '商店開著也視為視窗未關');
   assert(!navBlockedByWindow('導航失敗：不知道「葛蕾特」在哪張圖'), '真的找不到人仍然是導航失敗');
   assert(!navBlockedByWindow(undefined), '沒有文字不算');
+}
+
+suite('FM8: 背包滿的判斷用現算的道具總數（賣完東西後不會誤停）');
+{
+  const it = (itemId: number, count: number, name: string) => ({ itemId, count, name }) as never;
+  const stale = [
+    it(50111, 16, '一級封印石'), it(50001, 8, '食物'), it(100003, 2, '棉織線捲'), it(100004, 2, '野獸皮革'),
+    it(20317, 3, '甲'), it(100000, 5, '乙'), it(51002, 1, '丙'), it(20401, 5, '新鮮草藥'),
+    it(40101, 1, '丁'), it(30302, 1, '戊'), it(30710, 1, '己'), it(30311, 1, '庚'),
+  ];
+  assert(bagUsedCount(stale) === 46, '背包用的是道具數量加總，不是堆疊數');
+  assert(isBagFull(stale, 40), '賣之前 46/40 是滿的');
+  const afterSell = stale.filter((x: { itemId: number }) => ![100003, 100004, 20401].includes(x.itemId));
+  assert(bagUsedCount(afterSell) === 37, '賣掉線捲、皮革、草藥後剩 37');
+  assert(!isBagFull(afterSell, 40), '賣完之後 37/40 沒有滿，不能停下無人任務');
+  const onlyKept = [it(50111, 40, '一級封印石')];
+  assert(isBagFull(onlyKept, 40) && sellableItems(onlyKept, []).length === 0, '全是封印石的滿背包：滿了、而且沒有可賣的');
+  assert(!isBagFull(stale, null) && !isBagFull(stale, 0), '沒有容量資訊不判滿');
 }
 
 done();
