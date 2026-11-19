@@ -246,11 +246,15 @@ suite('FM8: 控制器在找不到下一步時停下，並在等級條件達成�
   push(msg({ kind: 'snapshot', seq: ++seq, reason: 'STARTED', snapshot: snap }));
 
   const stuckErr = c.perform({ kind: 'QUEST_CHAIN_START', label: '開始無人任務' });
+  // 做不下去的任務先略過並寫原因；目錄裡沒有別的事可做、這張圖也沒有遇敵區時，整條停下。
+  for (let i = 0; i < 3 && c.chainStatus().phase !== 'STOPPED'; i++) { now += 500; c.tick(); }
   const stuck = c.chainStatus();
+  const skipLogged = seen.state?.log.some(l => l.text.includes('略過任務【測試荒原討伐】') && l.text.includes('targetMaps')) ?? false;
   const logged = seen.state?.log.some(l => l.text.includes('找不到下一步')) ?? false;
   assert(stuckErr === null, '遊戲執行中可以開始無人任務');
   assert(stuck.phase === 'STOPPED' && stuck.stopReason === 'STUCK', '沒有 targetMaps 的討伐目標會停下');
   assert(logged, '日誌寫明找不到下一步');
+  assert(skipLogged, '日誌寫明略過哪件任務與原因');
 
   const levelSnap = JSON.parse(JSON.stringify(snap));
   levelSnap.quests = [
@@ -397,8 +401,7 @@ suite('FM8: 中途停下時，摘要列出這次完成的任務，開工前就�
   arm = true;
   const err = c.perform({ kind: 'QUEST_CHAIN_START', label: '開始無人任務' });
   arm = false;
-  now += 500;
-  c.tick();
+  for (let i = 0; i < 4 && c.chainStatus().phase !== 'STOPPED'; i++) { now += 500; c.tick(); }
   const status = c.chainStatus();
   const recap = c.welcomeRecap();
   assert(err === null, '可以開始無人任務');
@@ -713,6 +716,71 @@ suite('FM8: 勝利結算的一連串事件不算任務閒置');
   push(msg({ kind: 'snapshot', seq: ++seq, reason: 'SCENE_RELOADED', snapshot: back }));
   assert(c.chainStatus().phase === 'QUESTS' && c.chainStatus().stopReason === null, '視窗關掉後繼續這件可回報的任務');
   assert(c.activeQuest() === 602, '任務模組還在推進回報');
+}
+
+
+suite('FM8: 做不下去的任務寫原因後略過，接著做下一件；略過太多件就停下');
+{
+  const make = () => {
+    let push: (r: unknown) => void = () => {};
+    const tr: Transport = { name: 'fake', start: cb => { push = cb; }, send: () => {}, stop: () => {} };
+    const clock = { now: 9_000 };
+    const seen: { state: FamilyState | null } = { state: null };
+    const c = new FamilyController(tr, { now: () => clock.now, after: () => {}, onChange: st => { seen.state = st; } });
+    c.start();
+    return { c, clock, seen, push: (r: unknown) => push(r) };
+  };
+  const unplannable = (questId: number, title: string) => ({
+    questId, title, npcId: 'npc_test', npcName: '測試旅人', minLevel: 1, status: 'IN_PROGRESS',
+    objectives: [{ type: 'KILL_MONSTERS', description: `討伐${title}的影子`, current: 0, required: 1, met: false }],
+    rewardExp: 0, rewardCoins: 0,
+  });
+  const baseSnap = (quests: unknown[]) => {
+    const snap = JSON.parse(JSON.stringify(ex.snapshot.snapshot));
+    snap.mapId = '99001';
+    snap.mapName = '測試荒原';
+    snap.openingStage = 'DONE';
+    snap.character.level = 4;
+    snap.quests = quests;
+    return snap;
+  };
+  const begin = (h: ReturnType<typeof make>, quests: unknown[]) => {
+    const B = { v: PROTOCOL_VERSION, characterId: 'c1' };
+    const msg = (extra: Record<string, unknown>): PluginMessage => ({ ...B, ts: h.clock.now, ...extra } as PluginMessage);
+    h.push(msg({ kind: 'heartbeat', sessionId: 's-skip', seq: 1, mapId: '99001', phase: 'PLAYING', inBattle: false }));
+    h.push(msg({ kind: 'snapshot', seq: 2, reason: 'STARTED', snapshot: baseSnap(quests) }));
+    return h.c.perform({ kind: 'QUEST_CHAIN_START', label: '開始無人任務' });
+  };
+
+  // 第一件規劃不出來，第二件的目標 NPC 不在宿主地圖上（實跑遇到的「葛蕾特」情況）：
+  // 兩件都寫原因略過，不整條停下；目錄沒別的事可做就進新手循環。
+  const h1 = make();
+  const next = {
+    questId: 902, title: '測試下一件', npcId: 'npc_test', npcName: '測試旅人', minLevel: 1, status: 'AVAILABLE',
+    objectives: [{ type: 'TALK_TO_NPC', description: '與「測試旅人」對話', current: 0, required: 1, met: false }],
+    rewardExp: 0, rewardCoins: 0,
+  };
+  assert(begin(h1, [unplannable(901, '測試做不下去'), next]) === null, '可以開始無人任務');
+  for (let i = 0; i < 2; i++) { h1.clock.now += 500; h1.c.tick(); }
+  const s1 = h1.c.chainStatus();
+  const texts = (h1.seen.state?.log ?? []).map(l => l.text);
+  const skip1 = texts.findIndex(t => t.startsWith('略過任務【測試做不下去】') && t.includes('targetMaps'));
+  const start2 = texts.findIndex(t => t.includes('任務自動推進開始：【測試下一件】'));
+  const skip2 = texts.findIndex(t => t.startsWith('略過任務【測試下一件】') && t.includes('不知道「測試旅人」在哪張圖'));
+  assert(skip1 >= 0, '日誌寫明略過第一件與原因');
+  assert(start2 > skip1, '略過第一件後接著做下一件');
+  assert(skip2 > start2, '目標 NPC 不在宿主地圖上時寫原因略過，不卡住');
+  assert(s1.phase === 'LOOP' && s1.stopReason === null, '略過的件數沒到上限，目錄做完就進新手循環');
+
+  // 一連三件都做不下去：略過到上限就停下，停止原因列出略過的任務。
+  const h2 = make();
+  assert(begin(h2, [unplannable(911, '甲'), unplannable(912, '乙'), unplannable(913, '丙'), next]) === null, '可以開始無人任務');
+  for (let i = 0; i < 6 && h2.c.chainStatus().phase !== 'STOPPED'; i++) { h2.clock.now += 500; h2.c.tick(); }
+  const s2 = h2.c.chainStatus();
+  assert(s2.phase === 'STOPPED' && s2.stopReason === 'STUCK', '略過件數到上限就停下');
+  assert(s2.text.includes('已略過 3 件'), '停止文字寫明略過了幾件');
+  const recap2 = h2.c.welcomeRecap();
+  assert((recap2?.automation?.stopReason ?? '').includes('略過任務：甲'), '回來摘要的停止原因列出略過的任務');
 }
 
 done();

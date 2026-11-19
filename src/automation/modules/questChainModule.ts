@@ -25,6 +25,9 @@ import {
 import type { AutomationHostContext, BehaviorModule } from '../types';
 import type { QuestBehaviorModule } from './questModule';
 
+/** 一次無人任務最多略過幾件任務；達到就停下，請人看宿主資料。 */
+export const MAX_SKIPPED_QUESTS = 3;
+
 export interface QuestChainHost extends AutomationHostContext {
   navigator: AutoNavigator;
   battler: AutoBattler;
@@ -119,6 +122,8 @@ export class QuestChainModule implements BehaviorModule {
   private patrolIdx = 0;
   private resupply = false;
   private sellSkip = new Set<number>();
+  /** 這次無人任務略過的任務與原因（例如目標 NPC 不在宿主地圖上）。略過太多就整條停下。 */
+  private skipped = new Map<number, { title: string; why: string }>();
   private loopStartedAt: number | null = null;
   private loopLogged = false;
   private sealWarned = false;
@@ -250,6 +255,7 @@ export class QuestChainModule implements BehaviorModule {
     this.navSigAt = 0;
     this.resupply = false;
     this.sellSkip.clear();
+    this.skipped.clear();
     this.loopStartedAt = null;
     this.loopLogged = false;
     this.sealWarned = false;
@@ -489,12 +495,12 @@ export class QuestChainModule implements BehaviorModule {
           this.drivingId = null;
           this.stuck = null;
         } else {
-          this.finish('STUCK', why || `任務 #${this.drivingId} 停住且沒有完成`);
-          return;
+          this.skipQuest(this.drivingId, current?.title ?? `#${this.drivingId}`, why || '停住且沒有完成');
+          if (!this.isActive()) return;
         }
       }
     }
-    const next = selectNextQuest(quests, level);
+    const next = selectNextQuest(quests.filter(q => !this.skipped.has(q.questId)), level);
     if (next.kind === 'QUEST') {
       this.text = `無人任務：${next.quest.title}`;
       this.applyBattleForQuest(next.quest);
@@ -513,11 +519,11 @@ export class QuestChainModule implements BehaviorModule {
         }
       }
       this.watchStuck(next.quest, snap);
-      if (!this.isActive()) return;
+      if (!this.isActive() || this.skipped.has(next.quest.questId)) return;
       if (this.drivingId !== next.quest.questId) {
         const err = this.host.quest.start(next.quest.questId);
         this.drivingId = next.quest.questId;
-        if (err) this.finish('STUCK', err);
+        if (err) this.skipQuest(next.quest.questId, next.quest.title, err);
       }
       return;
     }
@@ -734,7 +740,7 @@ export class QuestChainModule implements BehaviorModule {
     this.stuck = next.state;
     if (next.stuck) {
       const unmet = quest.objectives.filter(o => !o.met).map(o => o.description).join('、') || quest.status;
-      this.finish('STUCK', `找不到下一步：任務【${quest.title}】沒有進展（${unmet}）`);
+      this.skipQuest(quest.questId, quest.title, `沒有進展（${unmet}）`);
     }
   }
 
@@ -960,6 +966,22 @@ export class QuestChainModule implements BehaviorModule {
     }
   }
 
+  /**
+   * 這件任務做不下去（目標不在宿主地圖上、一直沒有進展…）：寫下原因、略過它，接著做下一件或進新手循環。
+   * 連同這件已經略過 MAX_SKIPPED_QUESTS 件就整條停下，避免宿主資料整批有問題時一路略過。
+   */
+  private skipQuest(questId: number, title: string, why: string): void {
+    if (this.host.quest.isActive()) this.host.quest.stop();
+    if (this.host.navigator.isActive()) this.host.navigator.cancel();
+    this.drivingId = null;
+    this.stuck = null;
+    this.skipped.set(questId, { title, why });
+    this.host.log(`略過任務【${title}】：${why}`, 'warn');
+    if (this.skipped.size >= MAX_SKIPPED_QUESTS) {
+      this.finish('STUCK', `找不到下一步：已略過 ${this.skipped.size} 件任務，最後一件【${title}】${why}`);
+    }
+  }
+
   private noteCompleted(quest: ChainQuest): void {
     if (this.completed.some(q => q.questId === quest.questId)) return;
     this.completed.push(quest);
@@ -996,7 +1018,9 @@ export class QuestChainModule implements BehaviorModule {
     const summary = buildStopRecap(this.baseline, curr, st.log, {
       completedQuests: this.completed.map(q => q.title),
       questExp,
-      stopReason: detail,
+      stopReason: this.skipped.size === 0
+        ? detail
+        : `${detail}（略過任務：${[...this.skipped.values()].map(s => `${s.title}——${s.why}`).join('；')}）`,
     });
     this.host.showRecap(summary);
   }
