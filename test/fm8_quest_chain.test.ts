@@ -20,6 +20,9 @@ import {
   type ChainQuest,
 } from '../src/automation/questPlan';
 import { assert, done, suite } from './helpers';
+import { AutoNavigator } from '../src/navigator';
+import { Directory } from '../src/directory';
+import fxNav from '../fixtures/replay_village.json';
 
 function q(partial: Pick<ChainQuest, 'questId' | 'title' | 'minLevel' | 'status'> & Partial<ChainQuest>): ChainQuest {
   return {
@@ -811,6 +814,28 @@ suite('FM8: 背包滿的判斷用現算的道具總數（賣完東西後不會�
   const onlyKept = [it(50111, 40, '一級封印石')];
   assert(isBagFull(onlyKept, 40) && sellableItems(onlyKept, []).length === 0, '全是封印石的滿背包：滿了、而且沒有可賣的');
   assert(!isBagFull(stale, null) && !isBagFull(stale, 0), '沒有容量資訊不判滿');
+}
+
+suite('FM8: 導航找 NPC 時完全同名優先（「斯坦」不能被這張圖的「旅行商人斯坦萊」截走）');
+{
+  const base = (fxNav.steps as any[]).filter(x => x.message.kind === 'snapshot').map(x => x.message.snapshot)[0];
+  const npc = (id: string, name: string) => ({ ...base.npcs[0], id, name, talkable: true, x: 100, y: 100 });
+  const here = { ...base, mapId: '10004', mapName: '綠野平原', npcs: [npc('n1', '旅行商人斯坦萊')], exits: [{ ...base.exits[0], targetMapId: '10001', x: 10, y: 10 }] };
+  const home = { ...base, mapId: '10001', mapName: '吉恩村', npcs: [npc('n2', '斯坦')], exits: [{ ...base.exits[0], targetMapId: '10004', x: 20, y: 20 }] };
+  const dir = new Directory(null);
+  dir.learn(home);
+  const sent: any[] = [];
+  const state = { snapshot: here, location: { mapId: '10004', mapName: '綠野平原' }, character: { x: 0, y: 0 }, battle: null, dialog: null, shop: null } as never;
+  const nav = new AutoNavigator({ state: () => state, send: c => { sent.push(c); return 'cmd1'; }, log: () => {}, after: () => {}, dir, onChange: () => {} });
+  nav.go({ kind: 'NPC', query: '斯坦', talk: true });
+  assert(!sent.some(c => c.type === 'TALK_TO_NPC'), '不會對旅行商人斯坦萊開口');
+  assert(sent[0]?.type === 'WALK_TO' && sent[0].x === 10, '改走往吉恩村的出口');
+  assert(nav.getStatus().route.includes('10001'), '路線的終點是真正的「斯坦」所在的吉恩村');
+  const d2 = new Directory(null);
+  const nav2 = new AutoNavigator({ state: () => state, send: c => { sent.push(c); return 'cmd2'; }, log: () => {}, after: () => {}, dir: d2, onChange: () => {} });
+  sent.length = 0;
+  nav2.go({ kind: 'NPC', query: '斯坦', talk: true });
+  assert(sent.some(c => c.type === 'TALK_TO_NPC' || c.type === 'WALK_TO'), '目錄完全不知道另一個斯坦時，仍可退回模糊比對');
 }
 
 done();
