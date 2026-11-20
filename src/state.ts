@@ -289,6 +289,11 @@ function applyInventory(inv: SnapshotItem[], changes: Array<{ itemId: number; de
   return out;
 }
 
+/** 背景角色事件中仍要照常套用的類型（背包、金錢、倉庫、指令完成都是以角色或指令編號歸屬）。 */
+const BG_SHARED_EVENTS = new Set<GameEvent['type']>([
+  'INVENTORY_CHANGED', 'GOLD_CHANGED', 'WAREHOUSE_CHANGED', 'COMMAND_COMPLETED', 'COMMAND_ACCEPTED', 'COMMAND_REJECTED',
+]);
+
 function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: number): FamilyState {
   const isKnownMember = s.members.some(m => m.characterId === characterId);
   const isBgEvent = isKnownMember && s.characterId !== null && s.characterId !== characterId && e.type !== 'ACTIVE_CHARACTER_CHANGED';
@@ -300,6 +305,27 @@ function applyEvent(s: FamilyState, characterId: string, e: GameEvent, now: numb
   const isViewed = !isBgEvent && (!next.activeCharacterId || characterId === next.activeCharacterId);
   const commandId = 'commandId' in e ? e.commandId : undefined;
   let level: LogEntry['level'] = 'info';
+  // F2：背景角色的事件不能改動目前視角角色的對話、商店、戰鬥、位置；只更新名冊上屬於它自己的欄位。
+  if (isBgEvent) {
+    const patchMember = (patch: Partial<SnapshotFamilyMember>): FamilyState => ({
+      ...next,
+      members: next.members.map(m => (m.characterId === characterId ? { ...m, ...patch } : m)),
+    });
+    switch (e.type) {
+      case 'LOCATION_CHANGED': next = patchMember({ mapId: e.mapId, mapName: e.mapName, x: e.x, y: e.y }); break;
+      case 'MOVED': next = patchMember({ x: e.x, y: e.y }); break;
+      case 'BATTLE_STARTED': next = patchMember({ inBattle: true }); break;
+      case 'BATTLE_ENDED': next = patchMember({ inBattle: false }); break;
+      case 'DIALOG_OPENED': case 'DIALOG_UPDATED': case 'DIALOG_CLOSED': case 'SHOP_OPENED': case 'SHOP_CLOSED':
+      case 'BATTLE_TIMELINE': case 'BATTLE_TURN_READY': case 'GAME_STARTED': case 'GAME_STOPPED':
+        // 只留日誌，不動視角角色的畫面狀態。GAME_* 由視角角色的訊息處理。
+        break;
+      default: break;
+    }
+  }
+  if (isBgEvent && !BG_SHARED_EVENTS.has(e.type)) {
+    return addLog(next, '事件', describeEvent(e), now, { commandId, characterId, level });
+  }
   switch (e.type) {
     case 'GAME_STARTED': next = { ...next, sessionId: e.sessionId, stoppedSessionId: null, dialog: null, shop: null, battle: null, battleResult: null, pending: {}, inflight: {} }; break;
     case 'GAME_STOPPED': next = { ...next, stoppedSessionId: e.sessionId, dialog: null, shop: null, battle: null, inflight: {} }; break;

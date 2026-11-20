@@ -36,6 +36,8 @@ const controller = new FamilyController(transport, {
     appearances: controller.charAppearances(),
     welcomeRecap: controller.welcomeRecap(),
     coordinatorMode: controller.coordinatorMode(),
+    dispatches: controller.dispatches(),
+    dispatchRecaps: controller.dispatchRecaps(),
     modules: controller.automation.list().map(m => ({ id: m.id, label: m.label })),
   }),
 });

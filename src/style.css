@@ -285,3 +285,16 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   }
   .col-hidden-mobile { display: none; }
 }
+
+/* F2 派工面板 */
+.dispatch-panel { margin-top: 12px; }
+.dispatch-card { padding: 8px 0; border-top: 1px dashed var(--line); min-width: 0; }
+.dispatch-card:first-of-type { border-top: none; }
+.dispatch-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dispatch-status { color: var(--dim); overflow-wrap: anywhere; margin: 2px 0 6px; }
+.dispatch-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; }
+.dispatch-form label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.dispatch-form select { max-width: 100%; min-width: 0; }
+.dispatch-form input[type='number'] { width: 4.5rem; min-width: 0; background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
+.dispatch-actions { display: flex; gap: 6px; }
+.dispatch-panel .err { color: var(--bad); margin-top: 6px; overflow-wrap: anywhere; }

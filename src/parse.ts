@@ -3,6 +3,7 @@ import type { BattleStrategy } from './battler';
 import type { CharacterStrategyConfig } from './automation/strategyStore';
 import type { NavGoal } from './navigator';
 import type { QueueStopConditions } from './queue';
+import type { DispatchSpec } from './dispatch';
 
 /** 選單與文字輸入共用的「動作」：同一份文字或同一顆按鈕，一定走到同一個動作。 */
 export type UiAction =
@@ -48,8 +49,11 @@ export type UiAction =
         newbieLoop?: boolean;
         loopActivity?: 'HUNT' | 'GATHER' | 'CRAFT';
         returnHpPct?: number;
+        loopOnly?: boolean;
       };
-    };
+    }
+  | { kind: 'DISPATCH_ASSIGN'; characterId: string; spec: DispatchSpec; label: string }
+  | { kind: 'DISPATCH_STOP'; characterId: string; label: string };
 
 export type ParseResult =
   | { ok: true; action: UiAction }

@@ -26,6 +26,8 @@ export interface QuestChainConfig {
   loopActivity: ChainLoopActivity;
   /** 血量百分比低於此值：戰鬥改逃跑，循環則回村補給。 */
   returnHpPct: number;
+  /** F2：跳過任務目錄，開場結束後直接進新手循環（派工「新手循環」用）。 */
+  loopOnly?: boolean;
 }
 
 export const DEFAULT_CHAIN_CONFIG: QuestChainConfig = {
