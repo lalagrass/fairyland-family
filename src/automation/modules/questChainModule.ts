@@ -15,6 +15,7 @@ import {
   progressSignature,
   selectNextQuest,
   sellableItems,
+  pickDepositItem,
   bagUsedCount,
   isBagFull,
   type ChainLoopActivity,
@@ -132,6 +133,9 @@ export class QuestChainModule implements BehaviorModule {
   private patrolIdx = 0;
   private resupply = false;
   private sellSkip = new Set<number>();
+  /** F2b：沒有可賣的東西時改存家族倉庫；存過的品項記下來，避免同一項一直重送。 */
+  private depositSkip = new Set<number>();
+  private wantDeposit = false;
   /** 這次無人任務略過的任務與原因（例如目標 NPC 不在宿主地圖上）。略過太多就整條停下。 */
   private skipped = new Map<number, { title: string; why: string }>();
   private loopStartedAt: number | null = null;
@@ -267,6 +271,8 @@ export class QuestChainModule implements BehaviorModule {
     this.navSigAt = 0;
     this.resupply = false;
     this.sellSkip.clear();
+    this.depositSkip.clear();
+    this.wantDeposit = false;
     this.skipped.clear();
     this.loopStartedAt = null;
     this.loopLogged = false;
@@ -697,7 +703,13 @@ export class QuestChainModule implements BehaviorModule {
         return;
       }
       if (this.bagFull(st)) {
-        this.finish('BAG_FULL', '背包已滿，而且沒有可賣的物品');
+        if (!this.depositCandidate(st, keep)) {
+          this.finish('BAG_FULL', '背包已滿，沒有可賣、也沒有可存進家族倉庫的物品');
+          return;
+        }
+        // 倉庫指令在商店開著時會被拒（DIALOG_OPEN），先離開商店再存。
+        this.wantDeposit = true;
+        this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '背包還是滿的，離開商店改存家族倉庫', 'DONE');
         return;
       }
       const hp = st.character?.hp;
@@ -711,6 +723,23 @@ export class QuestChainModule implements BehaviorModule {
       this.resupply = false;
       this.healSent = false;
       this.sellSkip.clear();
+      return;
+    }
+    if (this.wantDeposit && !st.dialog) {
+      if (!this.bagFull(st)) {
+        this.wantDeposit = false;
+        this.resupply = false;
+        this.depositSkip.clear();
+        return;
+      }
+      const dep = this.depositCandidate(st, this.keepNames());
+      if (!dep) {
+        this.finish('BAG_FULL', '背包已滿，家族倉庫也存不下（沒有其他可存的物品）');
+        return;
+      }
+      this.depositSkip.add(dep.itemId);
+      this.text = `新手循環：存放 ${dep.name ?? '物品'} 到家族倉庫`;
+      this.host.send({ type: 'WAREHOUSE_DEPOSIT', itemId: dep.itemId, count: dep.count }, `存入家族倉庫：${dep.name ?? '物品'} ×${dep.count}`, 'DONE');
       return;
     }
     if (st.dialog) {
@@ -915,6 +944,11 @@ export class QuestChainModule implements BehaviorModule {
     const hp = st.character?.hp;
     const max = st.character?.maxHp;
     return hp != null && max != null && max > 0 && (hp / max) * 100 <= this.config.returnHpPct;
+  }
+
+  /** 可以存進倉庫的物品：不是任務／工具要用的，也不是封印石；每項只試一次。 */
+  private depositCandidate(st: ReturnType<QuestChainHost['state']>, keep: readonly string[]) {
+    return pickDepositItem(st.inventory, keep, this.depositSkip, st.warehouse);
   }
 
   private bagFull(st: ReturnType<QuestChainHost['state']>): boolean {
