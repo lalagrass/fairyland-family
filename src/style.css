@@ -305,3 +305,16 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.4;
   background: rgba(16, 20, 28, 0.82); overflow-wrap: anywhere;
 }
+
+/* F4a 現代地圖：圖例與窄螢幕版面（畫布本身依容器大小自適應） */
+.pixi-host-modern { touch-action: none; cursor: grab; }
+.stage-modern-legend {
+  position: absolute; left: 8px; bottom: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  max-width: calc(100% - 140px); padding: 3px 8px; border-radius: 6px; font-size: 11px;
+  background: rgba(16, 20, 28, 0.7); pointer-events: none;
+}
+@media (max-width: 480px) {
+  .stage-viewport-wrap[data-view-mode="modern"] { aspect-ratio: 4 / 5; max-height: 70vh; }
+  .stage-modern-legend { max-width: calc(100% - 100px); font-size: 10px; }
+  .stage-hud-controls .item { min-width: 32px; min-height: 32px; }
+}

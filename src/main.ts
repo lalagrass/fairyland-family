@@ -34,6 +34,7 @@ const controller = new FamilyController(transport, {
     chain: controller.chainStatus(),
     charStrategies: controller.charStrategies(),
     appearances: controller.charAppearances(),
+    viewModes: controller.charViewModes(),
     welcomeRecap: controller.welcomeRecap(),
     coordinatorMode: controller.coordinatorMode(),
     dispatches: controller.dispatches(),

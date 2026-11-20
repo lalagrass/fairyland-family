@@ -30,6 +30,7 @@ import { parseInput, type UiAction } from './parse';
 import { RecapTracker, type WelcomeRecapSummary } from './dv7_recap';
 import { WorkQueue, type QueueStatus } from './queue';
 import { CharacterAppearanceStore } from './render/appearanceStore';
+import { CharacterViewModeStore, parseViewMode } from './render/viewMode';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
 import type { Transport } from './transport/types';
 
@@ -62,6 +63,7 @@ export class FamilyController {
   readonly queue: WorkQueue;
   readonly strategyStore: CharacterStrategyStore;
   readonly appearanceStore: CharacterAppearanceStore;
+  readonly viewModeStore: CharacterViewModeStore;
   readonly recapTracker: RecapTracker;
   readonly automation = new AutomationRegistry();
   readonly dispatchStore: DispatchStore;
@@ -90,6 +92,7 @@ export class FamilyController {
     this.directory = new Directory(opts.storage ?? null);
     this.strategyStore = new CharacterStrategyStore(opts.storage ?? null);
     this.appearanceStore = new CharacterAppearanceStore(opts.storage ?? null);
+    this.viewModeStore = new CharacterViewModeStore(opts.storage ?? null);
     this.recapTracker = new RecapTracker(opts.storage ?? null);
     this.notifier = new WorkNotifier(opts.notification);
     this.primaryCharacterId = this.readPrimary();
@@ -350,6 +353,7 @@ export class FamilyController {
   coordinatorMode(): CoordinatorMode { return this.automation.getCoordinatorMode(); }
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
   charAppearances(): Record<string, string> { return this.appearanceStore.snapshotAll(); }
+  charViewModes(): Record<string, 'original' | 'modern'> { return this.viewModeStore.snapshotAll(); }
   welcomeRecap(): WelcomeRecapSummary | null { return this.latestRecap; }
   dispatches(): DispatchRecord[] { return this.dispatcher.records(); }
   dispatchRecaps(): DispatchRecap[] { return this.dispatcher.recaps(); }
@@ -515,6 +519,11 @@ export class FamilyController {
     if (action.kind === 'CHAR_APPEARANCE_UPDATE') {
       this.appearanceStore.set(action.characterId, action.appearanceId);
       this.state = addLog(this.state, '系統', action.label, this.now());
+      this.emit();
+      return null;
+    }
+    if (action.kind === 'CHAR_VIEWMODE_UPDATE') {
+      this.viewModeStore.set(action.characterId, parseViewMode(action.viewMode));
       this.emit();
       return null;
     }
