@@ -298,3 +298,10 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 .dispatch-form input[type='number'] { width: 4.5rem; min-width: 0; background: #10141a; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
 .dispatch-actions { display: flex; gap: 6px; }
 .dispatch-panel .err { color: var(--bad); margin-top: 6px; overflow-wrap: anywhere; }
+
+/* F3 觀察窗狀態說明：蓋在畫面上方，窄螢幕也不溢出 */
+.stage-observer-note {
+  position: absolute; left: 8px; right: 8px; top: 8px; z-index: 3;
+  padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.4;
+  background: rgba(16, 20, 28, 0.82); overflow-wrap: anywhere;
+}

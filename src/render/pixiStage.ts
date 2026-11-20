@@ -32,6 +32,7 @@ import {
   selectCameraTarget,
 } from './extrapolation';
 import { chunkMacroCellBounds, MapChunkLruTracker, visibleChunkCoords } from './mapChunks';
+import { showBattleStage } from './observer';
 import { DisplayPool } from './displayPool';
 import { computeSeamlessNeighbors, isSeamlessTransition } from './seamlessNeighbors';
 
@@ -211,7 +212,7 @@ export class PixiStageController {
     const viewH = Math.max(1, this.app.screen.height);
 
     // 戰鬥畫面模式（FM2/FM3）：切換至獨立 BattleStageRenderer 播放 FX14 時間軸與每角色外觀＋技能顯示對照
-    if (state.battle) {
+    if (showBattleStage(state, watchCharacterId)) {
       this.worldContainer.visible = false;
       this.battleLayer.visible = true;
       this.battleRenderer.render({

@@ -7,6 +7,7 @@ import {
   originalAppearanceProvider,
   type AppearanceProvider,
 } from './appearance';
+import { observerStatus, showBattleStage } from './observer';
 import type { TimeOfDayMode, WeatherMode } from './environmentFx';
 
 export interface GameViewportProps {
@@ -59,6 +60,9 @@ export function GameViewport({
     return appearances?.[id] ? getAppearanceProvider(appearances[id]) : provider;
   }, [appearances, target?.characterId, activeId, provider]);
   const members = state.members;
+  // 上層（ui.tsx）每 250ms 重繪一次，所以心跳逾時會在下一次重繪時顯示成「未連線」；這裡不另開計時器。
+  const observer = observerStatus(state, watchCharacterId, Date.now());
+  const battleShown = showBattleStage(state, watchCharacterId);
 
   return (
     <section className="stage-panel" data-testid="game-stage-panel">
@@ -140,9 +144,14 @@ export function GameViewport({
 
       <div className="stage-viewport-wrap" data-testid="pixi-viewport">
         <div ref={canvasHostRef} className="pixi-host" />
+        {observer.kind !== 'OK' && (
+          <div className="stage-observer-note muted" data-testid="observer-status" data-kind={observer.kind} role="status">
+            {observer.text}
+          </div>
+        )}
         {!stageInfo.ready && (
           <div className="stage-fallback" data-testid="stage-fallback">
-            {state.battle ? (
+            {state.battle && battleShown ? (
               <>
                 <div className="stage-fallback-title" data-testid="stage-battle-badge">
                   {`戰鬥舞台 #${state.battle.battleId}${state.battle.round ? ` 第 ${state.battle.round} 回合` : ''}`}
