@@ -1,17 +1,22 @@
-# 開發接手說明
+# fairyland-family 開發接手說明
 
-本 repo 是「童話家族」獨立文字網路遊戲。先讀 `README.md` 與 `docs/product/BLUEPRINT.md`。
+公開 repo。fairyland 的智慧外掛：文字介面、自動化、多角色與新畫面。
 
-**工作流程**：照 [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)，一個 milestone 一個 GitHub issue，一個 agent 一次做完一個 issue、開 PR 後停下來；停下前在 issue 留進度留言。授權：程式碼 MIT，美術保留權利（見 `LICENSE`）。
+**先讀**：[`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)（流程與共同規則，兩個 repo 同一份）→ 交辦的 issue → [`docs/product/BLUEPRINT.md`](docs/product/BLUEPRINT.md) 第 1.1、2 節。`docs/product/FUTURE.md` 與 `docs/history/` 只有 issue 引用時才讀。進度與待辦只在 GitHub issue（總表 lalagrass/fairyland#16）。
 
+## 本 repo 專屬規則
 
-- 使用者最新指示優先。文件以【定案】【提案】【待試玩】標示狀態，只有【定案】可當成使用者已決定的規則。
-- 更新設計文件時直接改寫對應章節，不加「最新方向」覆蓋段落；方向改變時在藍圖「決策紀錄」加一行。
-- 開發改動限於本 repo。來源 fairyland 可供研究；共用核心的跨 repo 修改需依當次任務範圍安排，避免順手改壞另一個遊戲。
-- 不整包複製來源 repo。複用程式或資料時記錄來源路徑、commit、修改及已知限制。
-- 保留原版提取、推測、示範與家族版自訂的區別。資料中的名稱（例如 `OFFICIAL_RECIPES`）不能取代來源驗證。
-- 客戶端不能決定金錢、掉落、工作完成時間或交易結果；觀察動畫也不能驅動伺服器回合。
-- 對離線進度、重啟恢復、重送請求、交易競爭與帳號隔離做有意義的驗證。
-- 技術方案採滿足當前交付需求的簡單實作；不要為遠期官方整合提前實作封包或客戶端控制。
-- 分支名照 `docs/AGENT_WORKFLOW.md`（`<agent 前綴>/<issue 編號>-<milestone id>`）；需要並行開發時使用獨立 worktree，避免多人同改同一工作目錄。
-- 進度回報區分程式完成、測試通過、介面實測與尚未驗證，不宣稱未執行的檢查已通過。
+- **公開**：不放原版素材、提取資料、考據數值、任務編號或座標、金鑰。`npm run check-assets` 會擋圖檔與封包；數值與資料靠自律，執行時一律從宿主快照或同源素材讀。
+- 只改顯示、不改規則：金錢、掉落、戰鬥結果、工作時間都由 fairyland 宿主決定，family 不自補數值。
+- 協定只在 fairyland 改，這裡用 `npm run sync-protocol` 同步；不從本 repo 順手改 fairyland。
+- 套件授權只收 MIT／BSD／Apache-2.0／ISC／zlib（清單在 `docs/product/FM7_LICENSES.md`）。開源外掛只參考做法與介面，程式碼只取授權相容的；不接官方客戶端、不改封包、不對官方伺服器執行。
+- 公開美術一律原創；原版圖與受版權保護的作品不當生成輸入；成品附生成紀錄。
+- 方向改變時改寫藍圖對應章節並在第 11 節決策紀錄加一行；文件以【定案】【提案】【待試玩】標狀態，只有【定案】可當成已決定的規則。
+
+## 常用指令（與 CI 相同）
+
+```bash
+npm ci && npm run check-assets && npm run check-effects && npm run build && npm test
+```
+
+需要 fairyland 分頁的檢查在 fairyland repo（`golden:mac`、`plugin_*_check.mjs`），一律 headless，跑完關掉伺服器與瀏覽器。

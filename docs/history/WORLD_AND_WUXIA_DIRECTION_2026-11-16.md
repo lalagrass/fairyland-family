@@ -1,5 +1,7 @@
 # 現代地圖顯示與武俠新角色方向（`WORLD_AND_WUXIA_DIRECTION.md`）
 
+> **已封存（2026-11-21）**：本文是 2026-11-16 的長期構想，裡面的 `NEXT_PHASE_PLAN.md`、`packages/render`、MP／WX／AI 編號都以當時為準，不是待辦。現行畫面與美術規則在 [`../product/BLUEPRINT.md`](../product/BLUEPRINT.md) 2.7。
+
 > **2026-11-17 從 fairyland 搬來。** 依新分工，本文描述的地圖顯示與武俠角色都在 family 實作，只改顯示不改規則（真正的連續世界、採集點重生、NPC 作息等會改規則的部分現階段不做）。文中連到 `NEXT_PHASE_PLAN.md` 的地方已封存在 fairyland `docs/history/`；排程看 GitHub issue（lalagrass/fairyland#16）。美術目錄在本 repo 的 [`../../art/`](../../art/README.md)。
 
 > 2026-11-16 依 Yuying 要求撰寫：「目前以吉恩村為主，不擴展；地圖未來要改成現代架構而非固定地圖；現階段以本機分頁為主；新人物希望以中國傳統武俠功夫為主，參考《活俠傳》的畫風。」

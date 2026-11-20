@@ -1,128 +1,46 @@
 # 童話家族 · Fairyland Family
 
-以工作製作、家族角色分工與玩家互動為核心的童話延伸文字網路遊戲。
+[fairyland](https://github.com/lalagrass/fairyland)（《童話 Online》百分百還原，私有）的智慧外掛：文字介面、自動化（尋路、採集、戰鬥、任務）、多角色家族玩法與所有新畫面。本 repo 公開，只改顯示、不改遊戲規則，不放任何原版素材、提取資料或考據數值；原版素材執行時從同源的 fairyland 讀取。授權：程式碼 MIT，美術保留權利（見 `LICENSE`）。
 
-目前階段：Mac 本機試玩原型。family 是 fairyland 的文字外掛，已能導航、自動戰鬥、排工作佇列、管理多角色家族與共用倉庫，並顯示任務與戰鬥狀態（見下方 P1–P5 與 wave 1–2）；多人與伺服器版仍在規劃。完整規劃見 [產品藍圖與 milestones](docs/product/BLUEPRINT.md)；各節以【定案】【提案】【待試玩】標示狀態，改版方式見藍圖第 0 節。
+- 開發接手：[`AGENTS.md`](AGENTS.md)、協作流程 [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)
+- 產品藍圖：[`docs/product/BLUEPRINT.md`](docs/product/BLUEPRINT.md)（現行方向在 1.1 節）；多人與商業長期規劃：[`docs/product/FUTURE.md`](docs/product/FUTURE.md)
+- 進度與待辦：[Roadmap lalagrass/fairyland#16](https://github.com/lalagrass/fairyland/issues/16)
 
-## 近期目標：Mac 本機試玩【定案】
-
-在 Mac 上可以實際試玩，並確認文字指令能讓遊戲角色正確操作。兩條軌道並行：
-
-- **A 軌**：繼續推進單機版 fairyland 的遊玩完成度，並維持純淨宿主定位（只提供單步原子操作與場景快照，隔離非原版除錯與外掛功能）。
-- **B 軌**：本 repo 的文字介面，作為 fairyland 的智慧文字外掛（承擔跨圖尋路導航、戰鬥託管、工作排程與行動佇列）。
-- **接軌方式**：本機的遊戲本體與時鐘就是 fairyland。fairyland 分頁開著＝遊戲進行，關閉＝遊戲停止；family 送出單步原子指令、讀場景快照並持久化外掛佇列，關掉再打開時接上 fairyland 當下的狀況。
-
-第一個試玩情境：開著 fairyland，用文字介面帶家族角色在第一個村莊接任務、走到礦場採礦、冶煉、鍛造，並在 fairyland 畫面上看到角色照指令行動。範圍與驗收見藍圖第 2 節。
-
-## 產品方向（使用者提出）
-
-- 每位玩家經營一個家族，多個角色分開工作或組隊探險。設計基準 5 人；免費／付費名額待定，見藍圖 9.5 節。
-- 透過伺服器執行持續工作，讓玩家關閉網頁與電腦後仍能取得進度（多人階段；本機試玩不做，見藍圖 9.3 節）。
-- 以文字介面低成本驗證老玩家是否有興趣，工作製作是重要玩法。
-- 取消職業限制：角色可使用各系戰鬥技能；對應武器強化威力並提供熟練度成長。帶幻獸戰鬥可成長幻獸相關能力（藍圖 4.2 節）。
-- 單體技能可透過連擊與轉移目標清理怪群；範圍技能依最大目標數限制追加次數（藍圖 4.3 節）。
-- 點 NPC 後，依路徑與移動時間抵達再互動。
-
-## 未來方向
-
-- 點角色觀察原版對應的地圖、移動與戰鬥畫面（藍圖 9.2 節）。
-- 跨玩家組隊、市集、聊天、代工委託、公會（藍圖第 6、9.1 節）。
-- 常駐主機，電腦關機也持續工作（藍圖 9.3 節）。
-- 官方允許下的整合是遠期可能性；近期以獨立延伸遊戲為主（藍圖 9.4 節）。
-
-## 與 fairyland 的關係
-
-兩個獨立 repo，各自維護產品與發布節奏。fairyland 是純淨的單機遊戲宿主與原版資料／規則來源：對外只暴露單步原子能力、場景快照與無狀態純演算法（`findPath`／`findMapRoute`）；跨圖導航狀態機、戰鬥託管、行動佇列與工作排程放在 family 外掛端，不污染主遊戲。本 repo 讀取附來源 commit 的資料快照，複用程式時記錄來源路徑與 commit，不整包複製；共用規則穩定後，再考慮有版本的共用套件。
-
-本機來源：`/Users/chenyuying/workspace/fairyland`
-
-協定副本目前同步自 fairyland `61e5ac8`（2026-11-16，見 `src/protocol/*.ts` 檔頭）。
-
-優先閱讀來源專案：
-
-- `docs/design/DESIGN.md`：fairyland 的設計、分工與給本 repo 的介面（舊計畫封存在 `docs/history/`）。
-- `docs/importer/MIGRATION_FIDELITY_MATRIX.md`：原版資料、推測與重建規則的界線。
-- `packages/shared/src/data/`：道具、材料、武器、技能等資料。
-- `packages/shared/src/engine/headless_battle_engine.ts`：無頭戰鬥與事件。
-- `packages/shared/src/engine/pathfinding.ts`：尋路。
-- `packages/shared/src/engine/combo.ts`：連擊。
-- `packages/shared/src/engine/work_skills.ts`：現有工作示範，不能直接當成完整原版生產規則。
-- `packages/server/src/`：目前以連線為生命週期的獨立戰鬥房，不能直接視為持久多人世界。
-- `packages/client/src/stage/`：現有 Canvas 2D 畫面；觀察模式不必先改用 PixiJS。
-
-## 資料與架構原則
-
-- 伺服器決定遊戲時間、活動、資源與戰鬥結果；前端呈現倒數、文字與動畫。
-- 網路連線不承載角色的生命週期；斷線不銷毀工作。
-- 移動依可行走路徑計時。遇敵、取消或改目的地時，原抵達事件需失效。
-- 文字與圖像觀察使用同一份狀態與事件；看畫面不改變結算速度。
-- 保留來源 ID 與資料版本；區分原版提取、推測與家族版自訂。
-- 名稱表不等於完整規則。配方需轉成材料 ID／數量，補齊時間、需求、產物與消耗。
-- 不把示範配方、替代素材或未量測的容量寫成已確認的原版能力。
-
-## 接手入口
-
-先閱讀本檔、`AGENTS.md` 與藍圖，並在可存取來源 repo 的環境核對程式。若來源不在目前電腦／雲端環境，明確記錄缺少的依賴，不能假定本機絕對路徑在其他環境存在。
-
-目前進度與待辦看 GitHub issue（總表 lalagrass/fairyland#16），agent 協作流程見 `docs/AGENT_WORKFLOW.md`。改協定一律在 fairyland 改，再於本 repo 執行 `npm run sync-protocol`。角色數不預設為五人，初始名額與解鎖流程依藍圖 9.5 節試驗後決定。交付時附啟動方式、已完成範圍、驗證結果與已知限制。
-
-## P1：與 fairyland 並排執行
-
-目前可執行的只有「遊戲 → 文字」的唯讀對照：family 顯示遊戲連線狀態、角色、場景選單（對話／前往／採集／商店）與事件日誌。點選單或輸入文字會送出原子指令，P1 的 fairyland 一律回 `NOT_IMPLEMENTED_P1`（日誌會顯示，屬預期）。
+## 怎麼跑
 
 ```bash
 npm ci
-npm run build        # 輸出 dist，base 為 /family/
-npm test
+npm run build            # 輸出 dist，base 為 /family/
+npm test                 # 單元測試
+npm run check-assets     # 公開 repo 檢查：不能有原版圖、音訊、封包
 npm run check-protocol   # 與並排的 ../fairyland 協定副本比對（找不到 fairyland 時略過）
-npm run sync-protocol    # 重新複製協定（來源路徑與 commit 寫在檔頭）
+npm run sync-protocol    # 從 fairyland 重新複製協定（來源路徑與 commit 寫在檔頭）
 ```
 
-1. 在 `../fairyland` 執行 `npm run client`（它會把本 repo 的 `dist` 掛在同源 `/family/`；位置可用 `FL_FAMILY_DIST` 覆寫）。
-2. 開 `http://localhost:3000/?dev=1`（遊戲，並顯示收發紀錄）與 `http://localhost:3000/family/`（兩個分頁必須同源，BroadcastChannel 才通）。
-3. 不開遊戲時可用 `http://localhost:3000/family/?replay=1`（或 `npm run dev` 後開 `http://localhost:3100/family/?replay=1`）播放 `fixtures/replay_village.json`；`&speed=2`、`&loop=1` 可選。快照來自真實地圖，事件順序為手排（`scripts/make-replay-fixture.ts` 產生）。
+1. 在 `../fairyland` 執行 `npm run client`，它會把本 repo 的 `dist` 掛在同源 `/family/`（位置可用 `FL_FAMILY_DIST` 改）。
+2. 開兩個分頁：`http://localhost:3000/?dev=1`（遊戲，`?dev=1` 顯示收發紀錄）與 `http://localhost:3000/family/`。兩個分頁必須同源，`BroadcastChannel` 才通。
+3. 不開遊戲時可用 `/family/?replay=1` 播放 `fixtures/replay_village.json`（`&speed=2`、`&loop=1`），只回應快照請求，不模擬遊戲。
 
-### P1 對照檢查表（人工）
+協定一律在 fairyland 改，再在這裡 `npm run sync-protocol`。
 
-- [ ] family 顯示「遊戲執行中」；關閉遊戲分頁 3 秒內變「遊戲未執行」，重開後自動接上並取得快照。
-- [ ] 遊戲裡點地板走路 → 日誌出現「走到 (x, y)」，角色列位置與遊戲一致。
-- [ ] 遊戲裡點 NPC 對話 → 日誌與場景區出現該 NPC 與對白；關閉對話 → 「對話結束」。
-- [ ] 買東西 → 金錢與道具變動事件；走進傳送點 → 「移動到…（換圖）」且場景選單換成新地圖的 NPC／出口。
-- [ ] （P1 版本；P2 起指令會真的執行，見下節）family 點「對話：某 NPC」或輸入 `前往 村長` → commandId 與遊戲 `?dev=1` 面板相同。
+## 現在做得到的
 
-## P2：自動導航、自動戰鬥與文字操作（文字 → 遊戲）
+- **導航**（`src/navigator.ts`）：跨圖路線規劃，逐圖 `WALK_TO` 走到出口，抵達後對話；遇敵暫停、戰後續走，出口不通換另一個。
+- **戰鬥託管**（`src/battler.ts`）：每角色策略（手動／普通攻擊／逃跑），低血先用恢復道具；開場捕捉。
+- **工作佇列**（`src/queue.ts`）：採集、製作、缺工具先去買、背包滿存家族倉庫、停工原因。
+- **任務**：任務面板、單筆自動推進，以及無人任務鏈（讀宿主快照的任務目錄、採集點與商店，依前置順序執行）。
+- **多角色家族**（`src/dispatch.ts`）：每位角色一份派工（採集／任務鏈／新手循環／待機），停止條件與停工原因各自記錄，重開分頁後接回。宿主限制：背景角色只能採集，同一時間只有視角角色能跑任務（藍圖 2.6）。
+- **面板**：目前角色工作台（總覽、技能、物品欄、家族倉庫、策略）、派工面板、事件欄；寬螢幕是電腦版，窄螢幕是手機版。
+- **畫面**（`src/render/`）：觀察視窗與戰鬥畫面；每位角色可切「原版」（從 fairyland 同源讀素材）或「現代」（程式產生的圖形）檢視（藍圖 2.7）。
 
-協定版本 2。宿主（fairyland）真的執行 `WALK_TO`（只限同一張圖）、`TALK_TO_NPC`、`CHOOSE_DIALOG_OPTION`、`ACCEPT_QUEST`、`BUY_ITEM`、`SELL_ITEM`、`BATTLE_ACTION`、`BATTLE_FLEE`；每個指令先回「已接受／被拒絕＋原因碼」，需要時間的再送 `COMMAND_COMPLETED`。`WORK_ONCE` 仍是 `NOT_IMPLEMENTED`（P3）。
+## 文字指令
 
-- **自動導航**（`src/navigator.ts`）：`前往 村長`＝規劃跨圖路線（協定資料夾的 `planMapRoute`，鄰接來自快照 `nav.portalGraph` 與外掛看過的各圖出口）→ 每張圖用 `WALK_TO` 走到下一個出口 → 換圖後等新快照再繼續 → 抵達後 `TALK_TO_NPC`。遇敵暫停，戰鬥結束從目前位置續走；遊戲回 `GAME_BUSY`（結算視窗還沒關）就每秒重試。重新派發、取消（`停止導航`）或遊戲重啟都會讓舊的完成處理失效。出口走不通（`BLOCKED`、或走到卻沒換圖）會換同一目的地的另一個出口。
-- **自動戰鬥**（`src/battler.ts`）：策略 手動（預設，什麼都不做）／普通攻擊／逃跑，記在 localStorage。只在 `BATTLE_TURN_READY` 出手，同一（場次, 回合）最多一次；非手動策略在戰鬥結束後會送 `RETURN_TO_MAP`／`DEFEAT_RESCUE` 關掉結算視窗。逃跑公式是宿主的**佔位值**（見 fairyland `docs/history/NEXT_PHASE_PLAN.md` §13.6），不是原版數值。
-- **已知目錄**（`src/directory.ts`）：預設知道村長傑夫在市鎮中心 20010；每份快照看到的 NPC 與出口都會記住（localStorage）。宿主沒有世界目錄，所以沒去過的地方只能靠 `portalGraph` 與這份預設清單。
-- **面板**：對話選項、商店（買／賣）、戰鬥（攻擊／防禦／逃跑、勝敗視窗）、導航狀態與取消、策略下拉；文字輸入與按鈕走同一個 `UiAction`（`src/parse.ts`）。日誌每個指令都顯示「預期 vs 實際」（例如 `預期 MAP_CHANGED／實際 ENCOUNTER ✗`）。
-- **回放模式**（`?replay=1`）只回應 `REQUEST_SNAPSHOT`，其他指令回 `NOT_IMPLEMENTED`（不模擬遊戲）；P2 的真實行為用 fairyland 的 `scripts/plugin_p2_check.mjs` 兩分頁端到端檢查。
-- **目前角色工作台**：總覽、宿主技能目錄、物品欄（含家族倉庫）與角色策略設定集中在「目前角色」。可用左右方向鍵換工作台頁籤；寬版同時顯示家族和事件欄。視窗驗收可用 `node scripts/fm7_panel_shots.mjs`（外部 Playwright 安裝見腳本檔頭；不需私有宿主或原版素材）。
+選單與按鈕送出的指令和文字輸入相同。
 
-文字指令：`前往 村長`、`對話 阿爾`、`走到 x y`、`選項 <id 或文字>`、`買／賣 <id 或名稱> [數量]`、`攻擊 [目標]`、`防禦`、`逃跑`、`策略 手動|普通攻擊|逃跑`、`停止導航`、`快照`、`talk <名>`（不走過去，太遠會 `TOO_FAR`）。
+`前往 村長`、`對話 阿爾`、`走到 x y`、`選項 <id 或文字>`、`買／賣 <物品> [數量]`、`攻擊 [目標]`、`防禦`、`逃跑`、`策略 手動|普通攻擊|逃跑`、`停止導航`、`採集 <材料> <次數|到滿>`、`製作 <配方> <次數>`、`停止工作`、`切換視角 <角色>`、`存倉／取倉 <物品> [數量]`、`存倉／取倉 <金額> 金`、`<角色名> <指令>`（例如 `小石 採集 青銅礦 2`）、`快照`。
 
-已知限制：模擬野外地圖（如 `FIELD_MEADOW`）宿主不送場景快照，外掛只知道所在地圖 id（選單不更新）；市鎮中心沒有走得通的出口回吉恩村（見 P3/G1 對照修正：已補通可達傳送點 `20010 <-> 10001`）。
+## 已知限制
 
-## P3／G1：工作佇列、雙向狀態對照與單角生產閉環
-
-- **雙向對照面板**（`compare-panel`）：並排顯示「快照」與「事件鏡像」，檢查地圖／座標／金錢／背包同步狀態，並可強制 `REQUEST_SNAPSHOT` 重對照。
-- **行動佇列**（`src/queue.ts`）：支援 `採集 <材料> <次數|到滿>`、`製作 <配方> <次數>`、`停止工作`；持久化於 `localStorage`，缺工具時自動前往購買（`51005 十字鎬`、`51001 伐木斧`），遇敵暫停、戰後恢復，遇 `BAG_FULL`／`MISSING_MATERIALS` 等明確停工。
-
-## P4：多角色家族槽位與共用倉庫（FX4 + FX7）
-
-- **多角色總覽**（`family-bar`）：起始 3 位家族成員（`char_1 愛麗絲`、`char_2 小石`、`char_3 阿花`，上限 5 格），各自獨立 `WorkQueue`（`family.queue.v1:<charId>`），支援在背景執行採集／製作／存取倉而不中斷目前前景視角。
-- **共用倉庫**（`warehouse-panel`）：支援 `WAREHOUSE_DEPOSIT` / `WAREHOUSE_WITHDRAW`（金錢、堆疊物與裝備實例），全家族狀態透過 `fairyland_save_v2` 持久化。
-- 文字指令：`切換視角 <角色>`、`存倉 <金額> 金`、`存倉 <物品> [數量]`、`取倉 <金額> 金`、`取倉 <物品> [數量]`、`<角色名> <指令>`（例如 `小石 採集 青銅礦 2`、`阿花 停止工作`）。
-
-## P5：無職連擊與武器熟練摘要（FX8）
-
-- 角色面板顯示目前裝備武器系別、該系熟練等級與連擊等級（來自 `SnapshotCharacter` 選填欄位）。
-- 戰鬥引擎（`fairyland` 宿主端 `combo.ts` + `headless_battle_engine.ts`）已對齊連擊衰減 `d = 0.80 + 0.015L`、劍技限定擊倒轉目標、跨武器倍率 `0.6x` 與 0 經驗、以及 `ALL` 範圍技不連擊規則；詳細測試與已知差異見 `BLUEPRINT.md` 4.2–4.3 節與 `../fairyland/docs/history/NEXT_PHASE_PLAN.md`。
-
-## Wave 1–2：任務面板與戰鬥狀態
-
-- **任務面板**（`quest-panel`）：讀快照的 `quests`，依「可回報 → 進行中 → 可接」排序，顯示目標進度與獎勵；主線開場階段未完成時顯示 `openingStage`。每個任務有「前往 NPC」與「自動接取／推進／回報」按鈕（`QUEST_AUTO`）：在該 NPC 對話中就選接取或回報選項，不在就導航過去；採集類目標排進工作佇列；討伐類目標依出口名稱關鍵字選一張練功圖導航過去。
-- **戰鬥狀態徽章**：角色面板與戰鬥面板顯示主角、出戰寵與敵人的增益／異常狀態（剩餘回合、層數）與防禦中、詠唱中、倒下旗標；戰鬥結束時清除。
-- 已知限制：只涵蓋 fairyland 的示範任務；討伐目標的地圖是猜的；「自動推進」一次只做一步，還不會自己串完整條任務。
+- 背景角色遇敵時佇列只會暫停，不會自動戰鬥；多角色同時跑任務要等 fairyland FX17（#52）。
+- 只在本機、同一個瀏覽器；不跨裝置，關掉 fairyland 分頁遊戲就停。
+- 數值都來自 fairyland 宿主；宿主標為佔位的（例如逃跑公式）在這裡一樣是佔位。
