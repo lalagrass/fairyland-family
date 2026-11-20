@@ -8,7 +8,7 @@ import type { AutoBattler } from '../../battler';
 import type { AutoNavigator, NavGoal } from '../../navigator';
 import type { UiAction } from '../../parse';
 import type { WorkQueue } from '../../queue';
-import { pickQuestGatherForObjective, planUnmetObjective } from '../questPlan';
+import { pickGatherPointFromHints, pickQuestGatherForObjective, planUnmetObjective } from '../questPlan';
 import type { AutomationHostContext, BehaviorModule } from '../types';
 
 export interface QuestRunnerHost extends AutomationHostContext {
@@ -380,7 +380,8 @@ export class QuestBehaviorModule implements BehaviorModule {
 
     if (plan.kind === 'GATHER') {
       const points = [...(snap.gatherPoints.points ?? []), ...(snap.nearbyGatherPoints ?? [])];
-      const picked = pickQuestGatherForObjective(nextObj, points);
+      const picked = pickQuestGatherForObjective(nextObj, points)
+        ?? pickGatherPointFromHints(nextObj, points, st.location?.mapId ?? snap.mapId);
       if (!picked) {
         const here = st.location?.mapId ?? snap.mapId;
         const hint = (nextObj.targetMaps ?? []).find(h => h.mapId && h.mapId !== here)

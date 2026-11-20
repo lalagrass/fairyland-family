@@ -258,6 +258,34 @@ export function pickQuestGatherPoint(description: string, points: readonly Gathe
   return best;
 }
 
+/**
+ * 目標沒有指名材料（例如「村內生產採集 1 次」的暫代目標）時，宿主的 targetMaps 提示已經指出採集點座標：
+ * 人已經在提示的那張圖上就直接用該點的第一個材料，不要因為描述對不上而跑去別張圖，
+ * 到了別張圖又因為同樣對不上而跑回來（W9：吉恩村⇄北綠野來回走，一直遇敵、採集 0 次）。
+ */
+export function pickGatherPointFromHints(
+  obj: { itemId?: number; itemName?: string; targetMaps?: ReadonlyArray<{ mapId: string; x?: number; y?: number }> },
+  points: readonly GatherPointLike[],
+  hereMapId: string | null | undefined,
+): GatherPick | null {
+  if (obj.itemId !== undefined || (obj.itemName?.trim() ?? '').length > 0) return null;
+  const hints = (obj.targetMaps ?? []).filter(h => h.mapId === hereMapId);
+  for (const hint of hints) {
+    const usable = points.filter(p => p.skillId != null && (p.materials?.length ?? 0) > 0);
+    const exact = usable.find(p => hint.x !== undefined && hint.y !== undefined && p.x === hint.x && p.y === hint.y);
+    const point = exact ?? usable[0];
+    if (!point) continue;
+    const material = point.materials?.[0];
+    if (!material) continue;
+    return {
+      point,
+      materialName: material.name?.trim() ?? '',
+      ...(material.itemId !== undefined ? { itemId: material.itemId } : {}),
+    };
+  }
+  return null;
+}
+
 function materialMatchesField(
   material: { itemId?: number; name?: string },
   obj: { itemId?: number; itemName?: string },
@@ -406,6 +434,20 @@ export function bagUsedCount(inventory: readonly SnapshotItem[]): number {
 
 export function isBagFull(inventory: readonly SnapshotItem[], cap: number | null | undefined): boolean {
   return cap != null && cap > 0 && bagUsedCount(inventory) >= cap;
+}
+
+/**
+ * 背包滿了又沒有可賣的東西時，挑一項存進家族倉庫：不是任務／工具要用的、不是封印石，每項只試一次。
+ * 倉庫也滿了（總數 ≥ 容量）就回 undefined，由呼叫端停下並寫明原因。
+ */
+export function pickDepositItem(
+  inventory: readonly SnapshotItem[],
+  keepNames: readonly string[],
+  skip: ReadonlySet<number>,
+  warehouse: { cap: number; items: readonly SnapshotItem[] } | null | undefined,
+): SnapshotItem | undefined {
+  if (warehouse && warehouse.cap > 0 && bagUsedCount(warehouse.items) >= warehouse.cap) return undefined;
+  return sellableItems(inventory, keepNames).find(it => !skip.has(it.itemId));
 }
 
 export function sellableItems(items: readonly SnapshotItem[], keepNames: readonly string[]): SnapshotItem[] {

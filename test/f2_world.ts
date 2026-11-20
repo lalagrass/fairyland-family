@@ -33,6 +33,8 @@ export interface WorldOpts {
   /** 重開測試用：沿用先前的虛擬時鐘。 */
   startAt?: number;
   viewed?: string;
+  /** A（小石）一開始離採集點多遠（px）；預設貼著採集點。 */
+  startOffsetA?: number;
 }
 
 interface Quest {
@@ -52,7 +54,7 @@ export function createWorld(opts: WorldOpts = {}) {
 
   const chars: Record<string, WorldChar> = {
     char_1: { id: 'char_1', name: '愛麗絲', level: 3, gold: 300, satiety: 100, x: NPC.x, y: NPC.y, bag: 0, cap: 40 },
-    char_2: { id: 'char_2', name: '小石', level: 3, gold: 200, satiety: 100, x: POINT.x + 40, y: POINT.y, bag: 0, cap: opts.bagCapA ?? 40 },
+    char_2: { id: 'char_2', name: '小石', level: 3, gold: 200, satiety: 100, x: POINT.x + (opts.startOffsetA ?? 40), y: POINT.y, bag: 0, cap: opts.bagCapA ?? 40 },
   };
   let viewed = opts.viewed ?? 'char_1';
   const quests: Quest[] = Array.from({ length: opts.questCount ?? 60 }, (_, i) => ({
@@ -152,7 +154,7 @@ export function createWorld(opts: WorldOpts = {}) {
         case 'WORK_ONCE': {
           const me = chars[cmd.characterId];
           if (!me) return reject('CHARACTER_NOT_FOUND');
-          if (Math.hypot(me.x - POINT.x, me.y - POINT.y) > 240) return reject('TOO_FAR', '離採集點太遠');
+          if (Math.hypot(me.x - POINT.x, me.y - POINT.y) > 240) return reject('TOO_FAR', `離採集點【虛構採集點】太遠（${Math.round(Math.hypot(me.x - POINT.x, me.y - POINT.y))}px，需要 ≤ 240px），請先 WALK_TO`);
           if (me.bag >= me.cap) return reject('BAG_FULL', '背包已滿');
           emitResult(cmd, 'ACCEPTED');
           later(gatherMs, () => {
@@ -175,7 +177,7 @@ export function createWorld(opts: WorldOpts = {}) {
             after();
             emitEvent(cmd.characterId, { type: 'COMMAND_COMPLETED', commandId: cmd.commandId, outcome: 'DONE', code });
           });
-          if (c.type === 'WALK_TO') { done('ARRIVED'); return; }
+          if (c.type === 'WALK_TO') { done('ARRIVED', () => { const me = chars[cmd.characterId]; me.x = c.x; me.y = c.y; sendSnapshot('REQUESTED'); }); return; }
           if (c.type === 'TALK_TO_NPC') {
             const next = quests.find(q => q.status !== 'COMPLETED');
             done('DIALOG_OPENED', () => {
