@@ -11,6 +11,7 @@ import type {
 } from './protocol/index';
 import { APPEARANCE_PROVIDERS } from './render/appearance';
 import { GameViewport } from './render/GameViewport';
+import type { ViewMode } from './render/viewMode';
 import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
 import {
@@ -61,6 +62,7 @@ export interface UiAux {
   activeQuestId?: number | null;
   charStrategies?: Record<string, CharacterStrategyConfig>;
   appearances?: Record<string, string>;
+  viewModes?: Record<string, ViewMode>;
   welcomeRecap?: WelcomeRecapSummary | null;
   chain?: QuestChainStatus;
   coordinatorMode?: CoordinatorMode;
@@ -763,6 +765,10 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             watchCharacterId={effectiveWatchId}
             onSelectWatchCharacter={id => setWatchCharacterId(id)}
             appearances={aux.appearances}
+            viewModes={aux.viewModes}
+            onSetViewMode={(characterId, viewMode) =>
+              handleAction({ kind: 'CHAR_VIEWMODE_UPDATE', characterId, viewMode, label: `${characterId} 地圖顯示改為${viewMode === 'modern' ? '現代' : '原版'}` })
+            }
           />
         </div>
 

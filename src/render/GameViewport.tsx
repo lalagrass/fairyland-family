@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FamilyState } from '../state';
 import { selectCameraTarget } from './extrapolation';
 import { PixiStageController, type ZoomSetting } from './pixiStage';
+import { ModernStageController } from './modernStage';
+import { VIEW_MODES, clampZoom, parseViewMode, type ViewMode } from './viewMode';
 import {
   getAppearanceProvider,
   originalAppearanceProvider,
@@ -15,6 +17,9 @@ export interface GameViewportProps {
   watchCharacterId: string | null;
   onSelectWatchCharacter: (id: string) => void;
   appearances?: Record<string, string>;
+  /** F4a：每個角色各自選的地圖顯示模式（本機設定）；沒設定就是原版。 */
+  viewModes?: Record<string, ViewMode>;
+  onSetViewMode?: (characterId: string, mode: ViewMode) => void;
   provider?: AppearanceProvider;
 }
 
@@ -23,10 +28,15 @@ export function GameViewport({
   watchCharacterId,
   onSelectWatchCharacter,
   appearances,
+  viewModes,
+  onSetViewMode,
   provider = originalAppearanceProvider,
 }: GameViewportProps) {
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<PixiStageController | null>(null);
+  const modernRef = useRef<ModernStageController | null>(null);
+  const [modernZoom, setModernZoom] = useState(0.5);
+  const [modernReady, setModernReady] = useState<{ ready: boolean; error: string | null }>({ ready: false, error: null });
   const [zoomSetting, setZoomSetting] = useState<ZoomSetting>('auto');
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDayMode>('day');
   const [weather, setWeather] = useState<WeatherMode>('clear');
@@ -36,29 +46,50 @@ export function GameViewport({
     integerScale: 1,
   });
 
+  const target = useMemo(() => selectCameraTarget(state, watchCharacterId), [state, watchCharacterId]);
+  const snap = state.snapshot;
+  const activeId = state.activeCharacterId ?? state.characterId ?? snap?.family?.activeCharacterId ?? '';
+  const viewedId = target?.characterId ?? activeId;
+  const viewMode: ViewMode = parseViewMode(viewedId ? viewModes?.[viewedId] : undefined);
+  const modern = viewMode === 'modern';
+
+  // 切換模式時換掉整個舞台：原版與現代各有自己的畫布，吃同一份 state，互不影響快照與事件處理。
   useEffect(() => {
     const el = canvasHostRef.current;
     if (!el) return;
+    if (modern) {
+      setModernReady({ ready: false, error: null });
+      const ctrl = new ModernStageController(el, info => setModernReady(info));
+      modernRef.current = ctrl;
+      void ctrl.init();
+      return () => {
+        ctrl.destroy();
+        if (modernRef.current === ctrl) modernRef.current = null;
+      };
+    }
     const ctrl = new PixiStageController(el, info => setStageInfo(info));
     stageRef.current = ctrl;
     void ctrl.init();
     return () => {
       ctrl.destroy();
       if (stageRef.current === ctrl) stageRef.current = null;
+      setStageInfo(i => ({ ...i, ready: false }));
     };
-  }, []);
+  }, [modern]);
 
   useEffect(() => {
+    if (modern) return;
     stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider });
-  }, [state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider]);
+  }, [state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider, modern]);
 
-  const target = useMemo(() => selectCameraTarget(state, watchCharacterId), [state, watchCharacterId]);
-  const snap = state.snapshot;
-  const activeId = state.activeCharacterId ?? state.characterId ?? snap?.family?.activeCharacterId ?? '';
+  useEffect(() => {
+    modernRef.current?.update({ state, watchCharacterId, zoom: modernZoom });
+  }, [state, watchCharacterId, modernZoom, modern, modernReady.ready]);
+
   const watchedProvider = useMemo(() => {
-    const id = target?.characterId ?? activeId;
+    const id = viewedId;
     return appearances?.[id] ? getAppearanceProvider(appearances[id]) : provider;
-  }, [appearances, target?.characterId, activeId, provider]);
+  }, [appearances, viewedId, provider]);
   const members = state.members;
   // 上層（ui.tsx）每 250ms 重繪一次，所以心跳逾時會在下一次重繪時顯示成「未連線」；這裡不另開計時器。
   const observer = observerStatus(state, watchCharacterId, Date.now());
@@ -94,6 +125,28 @@ export function GameViewport({
             </label>
           )}
           <label className="stage-control">
+            <span>地圖</span>
+            <select
+              aria-label="切換地圖顯示模式"
+              data-testid="stage-view-mode-select"
+              value={viewMode}
+              disabled={!viewedId || !onSetViewMode}
+              onChange={e => viewedId && onSetViewMode?.(viewedId, parseViewMode(e.currentTarget.value))}
+            >
+              {VIEW_MODES.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+          {modern ? (
+            <span className="stage-control" role="group" aria-label="現代地圖縮放">
+              <span>縮放</span>
+              <button type="button" className="item" aria-label="縮小" data-testid="modern-zoom-out" onClick={() => setModernZoom(z => clampZoom(z / 1.25))}>－</button>
+              <span data-testid="modern-zoom-value">{`${Math.round(modernZoom * 100)}%`}</span>
+              <button type="button" className="item" aria-label="放大" data-testid="modern-zoom-in" onClick={() => setModernZoom(z => clampZoom(z * 1.25))}>＋</button>
+            </span>
+          ) : (
+          <label className="stage-control">
             <span>縮放</span>
             <select
               aria-label="畫面整數倍縮放"
@@ -109,6 +162,7 @@ export function GameViewport({
               <option value="2">2x 整數放大</option>
             </select>
           </label>
+          )}
           <label className="stage-control">
             <span>時辰</span>
             <select
@@ -142,14 +196,25 @@ export function GameViewport({
         </div>
       </div>
 
-      <div className="stage-viewport-wrap" data-testid="pixi-viewport">
-        <div ref={canvasHostRef} className="pixi-host" />
+      <div className="stage-viewport-wrap" data-testid="pixi-viewport" data-view-mode={viewMode}>
+        <div
+          key={viewMode}
+          ref={canvasHostRef}
+          className={`pixi-host ${modern ? 'pixi-host-modern' : ''}`}
+          data-testid={modern ? 'modern-host' : 'original-host'}
+          onWheel={modern ? e => setModernZoom(z => clampZoom(e.deltaY < 0 ? z * 1.1 : z / 1.1)) : undefined}
+        />
         {observer.kind !== 'OK' && (
-          <div className="stage-observer-note muted" data-testid="observer-status" data-kind={observer.kind} role="status">
+          <div className="stage-observer-note muted" data-testid="observer-status" data-kind={observer.kind} data-view-mode={viewMode} role="status">
             {observer.text}
           </div>
         )}
-        {!stageInfo.ready && (
+        {modern && modernReady.ready && snap && observer.kind === 'OK' && (
+          <div className="stage-modern-legend muted" data-testid="modern-legend">
+            <span>● 角色</span><span>■ 人物</span><span>◆ 商店</span><span>▲ 出口</span><span>✚ 採集</span>
+          </div>
+        )}
+        {!(modern ? modernReady.ready : stageInfo.ready) && (
           <div className="stage-fallback" data-testid="stage-fallback">
             {state.battle && battleShown ? (
               <>

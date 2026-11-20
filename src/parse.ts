@@ -13,6 +13,8 @@ export type UiAction =
   | { kind: 'STRATEGY'; strategy: BattleStrategy; label: string }
   | { kind: 'CHAR_STRATEGY_UPDATE'; characterId: string; patch: Partial<CharacterStrategyConfig>; label: string }
   | { kind: 'CHAR_APPEARANCE_UPDATE'; characterId: string; appearanceId: string; label: string }
+  /** F4a：只改本機顯示設定（原版／現代地圖），不送給宿主。 */
+  | { kind: 'CHAR_VIEWMODE_UPDATE'; characterId: string; viewMode: 'original' | 'modern'; label: string }
   | {
       kind: 'QUEUE_GATHER';
       skillId: number;
