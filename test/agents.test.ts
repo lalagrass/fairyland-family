@@ -115,15 +115,25 @@ suite('navigator: encounter pauses, battle end resumes');
   assert(h.c.navStatus().phase === 'DONE' && h.c.state.dialog?.npcName === '村長傑夫', 'after the battle ends the navigator continues and talks to 村長');
 }
 
+suite('navigator: one transient BLOCKED is retried on the same exit (W9)');
+{
+  const h = harness();
+  h.script.push(() => 'BLOCKED');
+  h.c.parseAndSend('前往 村長');
+  h.advance(2000);
+  assert(h.c.navStatus().phase !== 'FAILED', 'a single transient BLOCKED does not fail the navigation');
+}
+
 suite('navigator: re-dispatch / cancel invalidate the old arrival handler');
 {
   const h = harness();
   // 讓第一段走路「懸著」：不自動完成
   let held: CommandMessage | null = null;
   h.script.push(cmd => { held = cmd; return 'BLOCKED'; });
+  h.script.push(() => 'BLOCKED');
   h.c.parseAndSend('前往 村長');
-  h.advance(50);
-  assert(h.c.navStatus().phase === 'FAILED', 'BLOCKED fails the navigation with a reason');
+  h.advance(2000);
+  assert(h.c.navStatus().phase === 'FAILED', 'BLOCKED twice on the same exit fails the navigation with a reason');
   assert(h.c.navStatus().text.includes('走不通'), 'failure text says the exits are blocked');
   assert(!!held, 'sanity');
   // 重新派發後，舊指令的完成事件不得推進新的導航

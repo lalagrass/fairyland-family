@@ -48,6 +48,8 @@ export class AutoNavigator {
   private current: { commandId: string; role: 'LEG' | 'APPROACH' | 'TALK'; fromMap: string; exitId?: string } | null = null;
   /** 這張圖上已經走不通（BLOCKED）的出口；換圖或重新派發就清空。 */
   private blocked = new Set<string>();
+  /** 已經因為 BLOCKED 重試過一次的出口。剛結束戰鬥／換場景時宿主偶爾瞬間回 BLOCKED，第二次才算真的走不通。 */
+  private blockedOnce = new Set<string>();
   /** 剛換圖：在看到不同於這張圖的新快照之前，不重新規劃（避免拿舊快照再走一次舊出口）。 */
   private awaitFrom: string | null = null;
   private retries = 0;
@@ -63,6 +65,7 @@ export class AutoNavigator {
     this.cancelInternal(false);
     this.awaitFrom = null;
     this.blocked.clear();
+    this.blockedOnce.clear();
     const token = ++this.token;
     this.retries = 0;
     this.set({ phase: 'WALKING', goal, route: [], text: `導航：${goalText(goal)}` });
@@ -130,6 +133,7 @@ export class AutoNavigator {
       case 'MAP_CHANGED':
         this.awaitFrom = cur.fromMap;
         this.blocked.clear();
+    this.blockedOnce.clear();
         this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：已換圖，等新場景快照' });
         // 新快照可能已經先到（事件順序不保證），所以立刻檢查一次；還沒到就等 onMessage 的快照。
         this.host.after(0, () => this.step(token));
@@ -157,6 +161,13 @@ export class AutoNavigator {
       case 'BLOCKED':
         // 這個出口走不到（例如建築入口沒有通路）：換同一個目的地的別個出口再試。
         if (cur.role === 'LEG' && cur.exitId) {
+          if (!this.blockedOnce.has(cur.exitId)) {
+            this.blockedOnce.add(cur.exitId);
+            this.host.log(`導航：出口暫時走不通（${message ?? 'BLOCKED'}），稍後再試一次`, 'warn');
+            this.set({ ...this.status, phase: 'WALKING' });
+            this.host.after(RETRY_MS, () => this.step(token));
+            return;
+          }
           this.blocked.add(cur.exitId);
           this.host.log(`導航：出口走不通（${message ?? 'BLOCKED'}），換另一個出口`, 'warn');
           this.set({ ...this.status, phase: 'WALKING' });
