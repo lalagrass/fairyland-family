@@ -1,6 +1,6 @@
 # 美術參考索引（`art/references/REFERENCES.md`）
 
-本文件整理「童話家族・武俠試點」的美術風格參考來源。依 `WORLD_AND_WUXIA_DIRECTION.md` §3.1 與 §3.6.2 規定：
+本文件整理「童話家族・武俠試點」的美術風格參考來源。依 `docs/history/WORLD_AND_WUXIA_DIRECTION_2026-11-16.md`（已封存；現行規則見 `docs/product/BLUEPRINT.md` 2.7） §3.1 與 §3.6.2 規定：
 - **受版權保護之商業遊戲參考**：**僅存連結與文字風格分析，嚴禁下載圖片進 repo，亦不可作為任何 AI 生成模型的圖生圖（img2img）、角色參考（cref）或訓練輸入**。
 - **公有領域（Public Domain / CC0）傳統中國繪畫**：經確認授權後下載至 [`public_domain/`](public_domain/)，可作為色彩、服飾考據與構圖輔助參考（詳見 [`public_domain/manifest.json`](public_domain/manifest.json)）。
 
