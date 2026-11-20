@@ -285,7 +285,7 @@ export class FamilyController {
       return;
     }
     const q = this.getOrCreateQueue(loan.borrower).getStatus();
-    const approaching = q.phase === 'WALKING_TO_POINT' || this.navigator.isActive();
+    const approaching = q.phase === 'WALKING_TO_POINT' || q.phase === 'WAITING_TOOL_BUY' || this.navigator.isActive();
     const expired = this.now() - loan.since > 120_000;
     if (approaching && !expired) return;
     this.viewLoan = null;

@@ -653,7 +653,18 @@ export class WorkQueue {
     const hasTool = !toolId || tgt.inventory.some(i => i.itemId === toolId && i.count > 0);
     if (toolId && !hasTool) {
       if (!tgt.isViewed) {
-        this.stop('MISSING_TOOL', `背景角色【${tgt.name}】缺少工具 #${toolId}，請切換視角購置或存倉領取`);
+        // 買工具要走到商店、開對話，背景角色做不到：把視角暫時借給它，買好再還。
+        if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
+          this.viewRequests += 1;
+          this.phase = 'WAITING_TOOL_BUY';
+          this.text = `【${tgt.name}】缺少工具 #${toolId}，切換視角去買`;
+          this.persist();
+          this.host.onChange();
+          this.host.requestView(tgt.characterId);
+          this.scheduleStep(1500);
+          return;
+        }
+        this.stop('MISSING_TOOL', `背景角色【${tgt.name}】缺少工具 #${toolId}，無法切換視角購置，請存倉領取`);
         return;
       }
       const boughtAt = this.boughtToolAt.get(toolId);
