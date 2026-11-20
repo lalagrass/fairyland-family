@@ -32,6 +32,7 @@ import {
   selectCameraTarget,
 } from './extrapolation';
 import { chunkMacroCellBounds, MapChunkLruTracker, visibleChunkCoords } from './mapChunks';
+import { DisplayPool } from './displayPool';
 import { computeSeamlessNeighbors, isSeamlessTransition } from './seamlessNeighbors';
 
 const GROUND_CELL_W = 160;
@@ -79,6 +80,7 @@ export class PixiStageController {
   private initialized = false;
   private destroyed = false;
   private lastGroundKey = '';
+  private pool = new DisplayPool(400);
 
   constructor(
     private hostEl: HTMLElement,
@@ -294,17 +296,31 @@ export class PixiStageController {
   }
 
   private drawDecorations(mapId: string, nowMs: number, timeOfDay: TimeOfDayMode): void {
-    const removed = this.decorLayer.removeChildren();
-    for (const c of removed) c.destroy({ children: true });
+    this.pool.release(this.decorLayer);
     const items = this.loader.getDecorations(mapId);
     if (items.length === 0) return;
     const lighting = resolveAmbientLighting(timeOfDay, new Date(nowMs).getHours());
     for (const d of items) {
-      const g = new Graphics();
       const col = Number.parseInt(d.colorHex.replace(/^#/, ''), 16);
+      const glow = d.kind === 'lantern' ? Math.round(lighting.warmGlowAlpha * 100) : 0;
+      const g = this.pool.acquire(`dec:${d.kind}:${d.x}:${d.y}:${d.width}:${d.height}:${d.colorHex}:${glow}`, () => new Graphics());
+      if (g.children.length === 0 && g.context.instructions.length === 0) {
+        this.paintDecoration(g, d, col, lighting.warmGlowAlpha);
+      }
+      this.decorLayer.addChild(g);
+    }
+  }
+
+  private paintDecoration(
+    g: Graphics,
+    d: ReturnType<RuntimeAssetLoader['getDecorations']>[number],
+    col: number,
+    warmGlowAlpha: number,
+  ): void {
+    {
       if (d.kind === 'lantern') {
-        if (lighting.warmGlowAlpha > 0) {
-          g.circle(d.x, d.y, 44).fill({ color: 0xffc15e, alpha: lighting.warmGlowAlpha });
+        if (warmGlowAlpha > 0) {
+          g.circle(d.x, d.y, 44).fill({ color: 0xffc15e, alpha: warmGlowAlpha });
         }
         g.roundRect(d.x - 6, d.y - 14, 12, 16, 3).fill(col).stroke({ color: 0x3b230a, width: 1.5 });
       } else if (d.kind === 'flower_bed') {
@@ -312,7 +328,6 @@ export class PixiStageController {
       } else {
         g.rect(d.x - 8, d.y - 16, 16, 18).fill(col).stroke({ color: 0x2b1d0e, width: 1 });
       }
-      this.decorLayer.addChild(g);
     }
   }
 
@@ -461,8 +476,7 @@ export class PixiStageController {
     nowMs: number,
     resolveProviderFor: (charId: string) => AppearanceProvider,
   ): void {
-    const removed = this.entityLayer.removeChildren();
-    for (const child of removed) child.destroy({ children: true });
+    this.pool.release(this.entityLayer);
 
     const snap = state.snapshot;
     if (!snap) return;
@@ -490,8 +504,11 @@ export class PixiStageController {
       }
 
       for (const p of scene.portals ?? []) {
-        const g = new Graphics();
-        g.circle(p.world_x, p.world_y, 16).fill({ color: 0x56d8c4, alpha: 0.25 }).stroke({ color: 0x56d8c4, width: 2 });
+        const g = this.pool.acquire(`portal:${p.world_x}:${p.world_y}`, () => {
+          const pg = new Graphics();
+          pg.circle(p.world_x, p.world_y, 16).fill({ color: 0x56d8c4, alpha: 0.25 }).stroke({ color: 0x56d8c4, width: 2 });
+          return pg;
+        });
         g.zIndex = p.world_y - 2;
         this.entityLayer.addChild(g);
       }
@@ -612,13 +629,9 @@ export class PixiStageController {
     c.zIndex = y;
 
     if (isWatched) {
-      const ring = new Graphics();
-      ring.ellipse(0, 0, 22, 10).stroke({ color: 0x7cb7ff, width: 2 });
-      c.addChild(ring);
+      c.addChild(this.pool.acquire('ring', () => new Graphics().ellipse(0, 0, 22, 10).stroke({ color: 0x7cb7ff, width: 2 })));
     } else {
-      const shadow = new Graphics();
-      shadow.ellipse(0, 0, 16, 7).fill({ color: 0x000000, alpha: 0.35 });
-      c.addChild(shadow);
+      c.addChild(this.pool.acquire('shadow', () => new Graphics().ellipse(0, 0, 16, 7).fill({ color: 0x000000, alpha: 0.35 })));
     }
 
     let drewAnyLayer = false;
@@ -643,22 +656,27 @@ export class PixiStageController {
     }
 
     if (!drewAnyLayer) {
-      const marker = new Graphics();
-      marker.circle(0, -18, 12).fill({ color: labelColor, alpha: 0.85 }).stroke({ color: 0xffffff, width: 1.5 });
-      c.addChild(marker);
+      c.addChild(
+        this.pool.acquire(`marker:${labelColor}`, () =>
+          new Graphics().circle(0, -18, 12).fill({ color: labelColor, alpha: 0.85 }).stroke({ color: 0xffffff, width: 1.5 }),
+        ),
+      );
     }
 
-    const txt = new Text({
-      text: label,
-      style: {
-        fontFamily: 'sans-serif',
-        fontSize: 12,
-        fill: labelColor,
-        stroke: { color: 0x000000, width: 3 },
-      },
+    const txt = this.pool.acquire(`label:${labelColor}:${label}`, () => {
+      const t = new Text({
+        text: label,
+        style: {
+          fontFamily: 'sans-serif',
+          fontSize: 12,
+          fill: labelColor,
+          stroke: { color: 0x000000, width: 3 },
+        },
+      });
+      t.anchor.set(0.5, 1);
+      t.y = -46;
+      return t;
     });
-    txt.anchor.set(0.5, 1);
-    txt.y = -46;
     c.addChild(txt);
 
     this.entityLayer.addChild(c);
