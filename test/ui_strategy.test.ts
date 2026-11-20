@@ -7,6 +7,9 @@ import { assert, done, suite } from './helpers';
 const win = new Window({ url: 'http://localhost:5173/family/' });
 Object.assign(globalThis, {
   window: win,
+  getComputedStyle: win.getComputedStyle.bind(win),
+  requestAnimationFrame: win.requestAnimationFrame.bind(win),
+  cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
   document: win.document,
   HTMLElement: win.HTMLElement,
   HTMLSelectElement: win.HTMLSelectElement,

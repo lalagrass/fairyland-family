@@ -101,6 +101,9 @@ suite('FM7: 四個面板只顯示快照已有的欄位，長清單會虛擬化')
   }
   Object.assign(globalThis, {
     window: win,
+    getComputedStyle: win.getComputedStyle.bind(win),
+    requestAnimationFrame: win.requestAnimationFrame.bind(win),
+    cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
     document: win.document,
     HTMLElement: win.HTMLElement,
     HTMLSelectElement: win.HTMLSelectElement,
@@ -116,7 +119,20 @@ suite('FM7: 四個面板只顯示快照已有的欄位，長清單會虛擬化')
   const { mountUi } = await import('../src/ui');
   const root = win.document.createElement('div');
   win.document.body.appendChild(root);
-  const ui = mountUi(root as unknown as HTMLElement, 'TEST', () => null, () => null);
+  const actions: string[] = [];
+  const ui = mountUi(root as unknown as HTMLElement, 'TEST', action => {
+    actions.push(action.kind);
+    return null;
+  }, () => null);
+  const selectPage = async (label: string) => {
+    const tab = [...root.querySelectorAll('[data-testid="character-workbench"] [role="tab"]')].find(t => t.textContent === label);
+    if (!tab) throw new Error(`工作台缺少頁籤：${label}`);
+    tab.dispatchEvent(new win.MouseEvent('mousedown', { button: 0, bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const panel = win.document.getElementById(tab.getAttribute('aria-controls') ?? '');
+    assert(tab.getAttribute('aria-selected') === 'true' && panel?.getAttribute('data-state') === 'active', `${label}連到目前顯示的面板`);
+    return panel;
+  };
 
   const skills: StaticSkillSummary[] = [
     { id: 1, name: 'bbbb', kind: 'SKILL', mpCost: 0, targetScope: 'SINGLE' },
@@ -152,6 +168,7 @@ suite('FM7: 四個面板只顯示快照已有的欄位，長清單會虛擬化')
   const aux = { nav: { phase: 'IDLE' as const, goal: null, route: [], text: '閒置' }, strategy: 'MANUAL' as const, known: [] };
   ui.render(s, 'RUNNING', aux);
 
+  await selectPage('總覽');
   const stats = root.querySelector('[data-testid="character-stats"]')?.textContent ?? '';
   assert(stats.includes('測試職業'), '角色面板顯示快照裡的職業');
   assert(stats.includes('屬性') && stats.includes('快照沒有這欄'), '沒有屬性欄時不補數字');
@@ -162,10 +179,19 @@ suite('FM7: 四個面板只顯示快照已有的欄位，長清單會虛擬化')
   assert(root.querySelector('[data-testid="skill-panel"]') !== null, '有技能面板');
   assert(root.querySelector('[data-testid="inventory-panel"]') !== null, '有物品欄');
   assert(root.querySelector('[data-testid="warehouse-panel"]') !== null, '有倉庫面板');
+  const skillPane = await selectPage('技能');
+  assert(skillPane?.textContent?.includes('不代表目前角色已習得') === true, '區分宿主技能表和角色已習得的技能');
   const skillRows = () => root.querySelectorAll('[data-testid="skill-row"]').length;
   assert(skillRows() > 0 && skillRows() < 40, `長技能表只畫視窗內的列（實際 ${skillRows()}）`);
   assert(root.querySelector('[data-testid="skill-row"]')?.textContent?.includes('說明：快照沒有這欄') === true, '技能說明不補文案');
 
+  const sort = root.querySelector('[data-testid="skill-sort-name"]') as HTMLButtonElement | null;
+  sort?.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const firstSkill = root.querySelector('[data-testid="skill-row"]')?.getAttribute('data-skill-id');
+  assert(firstSkill === '2', `名稱排序後第一列是 aaaa（實際 ${firstSkill}）`);
+
+  await selectPage('物品欄');
   const bagRows = () => [...root.querySelectorAll('[data-testid="wh-deposit-item"]')].map(el => el.getAttribute('data-item-id'));
   assert(bagRows().includes('50001'), '背包列出快照物品');
   const filter = root.querySelector('[data-testid="bag-filter"]') as HTMLInputElement | null;
@@ -180,17 +206,24 @@ suite('FM7: 四個面板只顯示快照已有的欄位，長清單會虛擬化')
     assert(after.length === 1 && after[0] === '50001', `篩選後只留生命藥水（實際 ${after.join(',') || '無'}）`);
   }
 
-  const sort = root.querySelector('[data-testid="skill-sort-name"]') as HTMLButtonElement | null;
-  sort?.click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const firstSkill = root.querySelector('[data-testid="skill-row"]')?.getAttribute('data-skill-id');
-  assert(firstSkill === '2', `名稱排序後第一列是 aaaa（實際 ${firstSkill}）`);
+
 
   assert(root.querySelector('[data-testid="wh-gold"]')?.textContent?.includes('10') === true, '倉庫金錢仍從快照顯示');
   assert(root.querySelector('[data-testid="wh-deposit-gold"]') !== null, '存金按鈕還在');
   assert(root.querySelector('[data-testid="gold"]') !== null, '角色金錢測試點還在');
   assert(root.querySelector('[data-testid="inventory"]') !== null, '右側物品摘要還在');
 
+  suite('F1: 切換工作台頁籤不發送動作，更新快照不重置所選頁籤');
+  const settings = await selectPage('設定');
+  assert(settings?.textContent?.includes(snapMsg.snapshot.character.name) === true, '設定屬於目前快照的角色');
+  assert(actions.length === 0, '切換四個工作台頁籤與清單排序、篩選都不送出動作');
+  const updated = JSON.parse(JSON.stringify(snapMsg));
+  updated.snapshot.character.name = '另一份角色快照';
+  ui.render(applyMessage(s, updated, 30), 'RUNNING', aux);
+  assert(settings?.getAttribute('data-state') === 'active' && settings.textContent?.includes('另一份角色快照') === true,
+    '刷新快照後維持設定頁並顯示目前角色');
+  await selectPage('物品欄');
+  assert(filter?.value === '生命', '返回物品欄時保留篩選');
   win.close();
 }
 

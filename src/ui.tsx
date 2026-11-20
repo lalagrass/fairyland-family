@@ -761,7 +761,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           />
         </div>
 
-        {/* 左欄：家族成員名冊 + 共用倉庫 */}
+        {/* 左欄：家族成員名冊 */}
         <div className={`col col-roster ${mobileTab !== 'roster' ? 'col-hidden-mobile' : ''}`}>
           <section data-testid="family-bar">
             <h2>{`家族成員（${state.members.length}/${maxSlots}）`}</h2>
@@ -840,131 +840,238 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               })
             )}
           </section>
-
-          <ItemMoveRoot onCommand={(command, label) => handleAction(cmdAction(command, label))}>
-          <section data-testid="inventory-panel">
-            <h2><PanelMark kind="bag" />物品欄</h2>
-            <ItemColumn
-              bin="bag"
-              items={state.inventory}
-              running={running}
-              rowTestId="wh-deposit-item"
-              emptyText="背包是空的"
-            />
-          </section>
-          <section data-testid="warehouse-panel">
-            <div className="panel-head-row">
-              <h2><PanelMark kind="warehouse" />家族共用倉庫</h2>
-              {(!wh || (wh.gold === 0 && wh.items.length === 0)) && (
-                <button
-                  type="button"
-                  className="item panel-toggle-btn"
-                  data-testid="toggle-warehouse-panel"
-                  onClick={() => togglePanel('warehouse')}
-                >
-                  {expandedPanels['warehouse'] ? '收起' : '展開（目前為空）'}
-                </button>
-              )}
-            </div>
-            {(!wh || (wh.gold === 0 && wh.items.length === 0)) && !expandedPanels['warehouse'] ? (
-              <div className="muted panel-collapsed-note" data-testid="collapsed-warehouse-note">
-                倉庫目前為空（已漸進收起）
-              </div>
-            ) : !wh ? (
-              <div className="muted">（尚未收到倉庫資料）</div>
-            ) : (
-              <>
-                <div className="char">
-                  <span data-testid="wh-gold">{`倉庫金錢：${wh.gold}`}</span>
-                  <span data-testid="wh-cap">{`倉庫容量：${wh.items.reduce((sum, it) => sum + it.count, 0)}/${wh.cap}`}</span>
-                  <button
-                    type="button"
-                    className="item"
-                    data-testid="wh-deposit-gold"
-                    disabled={!running || (c?.gold ?? 0) < 500}
-                    onClick={() => handleAction(cmdAction({ type: 'WAREHOUSE_DEPOSIT', gold: 500 }, '存倉 500 金'))}
-                  >
-                    存 500 金
-                  </button>
-                  <button
-                    type="button"
-                    className="item"
-                    data-testid="wh-withdraw-gold"
-                    disabled={!running || wh.gold < 500}
-                    onClick={() => handleAction(cmdAction({ type: 'WAREHOUSE_WITHDRAW', gold: 500 }, '取倉 500 金'))}
-                  >
-                    取 500 金
-                  </button>
-                </div>
-                <ItemColumn
-                  bin="warehouse"
-                  items={wh.items}
-                  running={running}
-                  rowTestId="wh-withdraw-item"
-                  emptyText="倉庫物品：空"
-                />
-              </>
-            )}
-          </section>
-          </ItemMoveRoot>
         </div>
 
-        {/* 中欄：目前角色（含立繪預留框） + 導航 + 任務 + 互動與策略 + 場景選單 + 文字輸入 */}
+        {/* 中欄：目前角色工作台 + 導航 + 任務 + 互動與策略 + 場景選單 + 文字輸入 */}
         <div className={`col col-active ${mobileTab !== 'active' ? 'col-hidden-mobile' : ''}`}>
-          <section data-testid="character">
-            <h2><PanelMark kind="character" />角色</h2>
-            {c ? (
-              <div className="hero-card">
-                <PortraitSlot name={c.name} characterId={state.characterId} size="lg" />
-                <div className="hero-meta">
-                  <div className="char">
-                    <span>
-                      <b>{c.name ?? state.characterId ?? '？'}</b>
-                      {` Lv.${c.level}`}
-                    </span>
-                    <span>{`HP ${c.hp ?? '?'}/${c.maxHp ?? '?'}`}</span>
-                    <span>{`MP ${c.mp ?? '?'}/${c.maxMp ?? '?'}`}</span>
-                    <span data-testid="gold">{`金錢 ${c.gold}`}</span>
-                    <span data-testid="pos">{`位置 (${c.x}, ${c.y})`}</span>
-                    <span data-testid="satiety">{`飽食 ${c.satiety ?? 100}/${c.maxSatiety ?? 100}`}</span>
-                    <span data-testid="bag-cap">{`背包 ${invUsed}/${c.inventoryCap ?? 40}`}</span>
-                    {c.ruleset === 'revamp' && c.weaponFamily ? (
-                      <span data-testid="mastery">
-                        {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
-                      </span>
-                    ) : c.className ? (
-                      <span data-testid="class-name">{`職業 ${c.className}`}</span>
-                    ) : c.weaponFamily ? (
-                      <span data-testid="mastery">
-                        {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
-                      </span>
-                    ) : null}
-                    <span>{c.inBattle ? '戰鬥中' : '探索中'}</span>
-                  </div>
-                  <WorkProgress work={c.activeWork} now={nowTick} />
-                  {(c.isDefending || c.isChanting || (c.statuses && c.statuses.length > 0)) && (
-                    <div className="status-row" data-testid="char-status-row">
-                      <span className="muted">狀態：</span>
-                      <StatusBadges unit={c} />
+          <Tabs.Root
+            className="character-workbench"
+            data-testid="character-workbench"
+            defaultValue="overview"
+          >
+            <div className="workbench-heading">
+              <h2>目前角色工作台</h2>
+              {c && <span className="muted">{c.name ?? state.characterId}</span>}
+            </div>
+            <Tabs.List className="workbench-tabs" aria-label="目前角色工作台">
+              <Tabs.Trigger value="overview" className="item">總覽</Tabs.Trigger>
+              <Tabs.Trigger value="skills" className="item">技能</Tabs.Trigger>
+              <Tabs.Trigger value="inventory" className="item">物品欄</Tabs.Trigger>
+              <Tabs.Trigger value="settings" className="item">設定</Tabs.Trigger>
+            </Tabs.List>
+            {/* 保留篩選與捲動狀態；未選頁面用 CSS 從視覺和鍵盤動線一起移除。 */}
+            <Tabs.Content value="overview" forceMount className="workbench-pane">
+              <section data-testid="character">
+                <h2><PanelMark kind="character" />角色</h2>
+                {c ? (
+                  <div className="hero-card">
+                    <PortraitSlot name={c.name} characterId={state.characterId} size="lg" />
+                    <div className="hero-meta">
+                      <div className="char">
+                        <span>
+                          <b>{c.name ?? state.characterId ?? '？'}</b>
+                          {` Lv.${c.level}`}
+                        </span>
+                        <span>{`HP ${c.hp ?? '?'}/${c.maxHp ?? '?'}`}</span>
+                        <span>{`MP ${c.mp ?? '?'}/${c.maxMp ?? '?'}`}</span>
+                        <span data-testid="gold">{`金錢 ${c.gold}`}</span>
+                        <span data-testid="pos">{`位置 (${c.x}, ${c.y})`}</span>
+                        <span data-testid="satiety">{`飽食 ${c.satiety ?? 100}/${c.maxSatiety ?? 100}`}</span>
+                        <span data-testid="bag-cap">{`背包 ${invUsed}/${c.inventoryCap ?? 40}`}</span>
+                        {c.ruleset === 'revamp' && c.weaponFamily ? (
+                          <span data-testid="mastery">
+                            {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
+                          </span>
+                        ) : c.className ? (
+                          <span data-testid="class-name">{`職業 ${c.className}`}</span>
+                        ) : c.weaponFamily ? (
+                          <span data-testid="mastery">
+                            {`武器 ${c.weaponFamily} Lv.${c.familyLevel ?? 1}｜連擊 Lv.${c.comboLevel ?? 1}`}
+                          </span>
+                        ) : null}
+                        <span>{c.inBattle ? '戰鬥中' : '探索中'}</span>
+                      </div>
+                      <WorkProgress work={c.activeWork} now={nowTick} />
+                      {(c.isDefending || c.isChanting || (c.statuses && c.statuses.length > 0)) && (
+                        <div className="status-row" data-testid="char-status-row">
+                          <span className="muted">狀態：</span>
+                          <StatusBadges unit={c} />
+                        </div>
+                      )}
+                      {(c.activePet ?? state.battle?.pet) && (
+                        <UnitStatusRow title="出戰寵" unit={(c.activePet ?? state.battle?.pet)!} testid="pet-status-row" />
+                      )}
                     </div>
-                  )}
-                  {(c.activePet ?? state.battle?.pet) && (
-                    <UnitStatusRow title="出戰寵" unit={(c.activePet ?? state.battle?.pet)!} testid="pet-status-row" />
-                  )}
+                    <CharacterStats character={c} />
+                  </div>
+                ) : (
+                  <div className="muted">{running ? '等待快照…' : '（沒有角色資料；請先開啟 fairyland 遊戲分頁）'}</div>
+                )}
+                {state.battle && (
+                  <div>
+                    {`戰鬥 #${state.battle.battleId}${state.battle.round ? ` 第 ${state.battle.round} 回合` : ''}：${state.battle.enemies.join('、')}`}
+                  </div>
+                )}
+              </section>
+            </Tabs.Content>
+            <Tabs.Content value="skills" forceMount className="workbench-pane">
+              <SkillPanel skills={state.staticData?.skills ?? []} />
+            </Tabs.Content>
+            <Tabs.Content value="inventory" forceMount className="workbench-pane">
+              <ItemMoveRoot onCommand={(command, label) => handleAction(cmdAction(command, label))}>
+                <div className="workbench-inventory">
+                  <section data-testid="inventory-panel">
+                    <h2><PanelMark kind="bag" />物品欄</h2>
+                    <ItemColumn
+                      bin="bag"
+                      items={state.inventory}
+                      running={running}
+                      rowTestId="wh-deposit-item"
+                      emptyText="背包是空的"
+                    />
+                  </section>
+                  <section data-testid="warehouse-panel">
+                    <div className="panel-head-row">
+                      <h2><PanelMark kind="warehouse" />家族共用倉庫</h2>
+                      {(!wh || (wh.gold === 0 && wh.items.length === 0)) && (
+                        <button
+                          type="button"
+                          className="item panel-toggle-btn"
+                          data-testid="toggle-warehouse-panel"
+                          onClick={() => togglePanel('warehouse')}
+                        >
+                          {expandedPanels['warehouse'] ? '收起' : '展開（目前為空）'}
+                        </button>
+                      )}
+                    </div>
+                    {(!wh || (wh.gold === 0 && wh.items.length === 0)) && !expandedPanels['warehouse'] ? (
+                      <div className="muted panel-collapsed-note" data-testid="collapsed-warehouse-note">
+                        倉庫目前為空（已漸進收起）
+                      </div>
+                    ) : !wh ? (
+                      <div className="muted">（尚未收到倉庫資料）</div>
+                    ) : (
+                      <>
+                        <div className="char">
+                          <span data-testid="wh-gold">{`倉庫金錢：${wh.gold}`}</span>
+                          <span data-testid="wh-cap">{`倉庫容量：${wh.items.reduce((sum, it) => sum + it.count, 0)}/${wh.cap}`}</span>
+                          <button
+                            type="button"
+                            className="item"
+                            data-testid="wh-deposit-gold"
+                            disabled={!running || (c?.gold ?? 0) < 500}
+                            onClick={() => handleAction(cmdAction({ type: 'WAREHOUSE_DEPOSIT', gold: 500 }, '存倉 500 金'))}
+                          >
+                            存 500 金
+                          </button>
+                          <button
+                            type="button"
+                            className="item"
+                            data-testid="wh-withdraw-gold"
+                            disabled={!running || wh.gold < 500}
+                            onClick={() => handleAction(cmdAction({ type: 'WAREHOUSE_WITHDRAW', gold: 500 }, '取倉 500 金'))}
+                          >
+                            取 500 金
+                          </button>
+                        </div>
+                        <ItemColumn
+                          bin="warehouse"
+                          items={wh.items}
+                          running={running}
+                          rowTestId="wh-withdraw-item"
+                          emptyText="倉庫物品：空"
+                        />
+                      </>
+                    )}
+                  </section>
                 </div>
-                <CharacterStats character={c} />
-              </div>
-            ) : (
-              <div className="muted">{running ? '等待快照…' : '（沒有角色資料；請先開啟 fairyland 遊戲分頁）'}</div>
-            )}
-            {state.battle && (
-              <div>
-                {`戰鬥 #${state.battle.battleId}${state.battle.round ? ` 第 ${state.battle.round} 回合` : ''}：${state.battle.enemies.join('、')}`}
-              </div>
-            )}
-          </section>
-
-          <SkillPanel skills={state.staticData?.skills ?? []} />
+              </ItemMoveRoot>
+            </Tabs.Content>
+            <Tabs.Content value="settings" forceMount className="workbench-pane">
+              {(() => {
+                const targetCid = state.characterId;
+                if (!targetCid || !c) {
+                  return (
+                    <section data-testid="char-strategy-panel">
+                      <h2>角色策略設定</h2>
+                      <p className="muted">收到角色快照後才可調整設定。</p>
+                    </section>
+                  );
+                }
+                const charCfg = aux.charStrategies?.[targetCid] ?? DEFAULT_CHARACTER_STRATEGY;
+                return (
+                  <section data-testid="char-strategy-panel">
+                    <h2>{`角色策略設定（${c?.name ?? targetCid}${aux.coordinatorMode ? `｜協調器：${aux.coordinatorMode}` : ''}）`}</h2>
+                    <div className="row">
+                      <span className="k">低血撤退</span>
+                      <select
+                        aria-label="低血撤退門檻"
+                        data-testid="char-lowhp-select"
+                        value={String(charCfg.lowHpRetreatPct)}
+                        onChange={e =>
+                          handleAction({
+                            kind: 'CHAR_STRATEGY_UPDATE',
+                            characterId: targetCid,
+                            patch: { lowHpRetreatPct: Number(e.currentTarget.value) },
+                            label: `${c?.name ?? targetCid} 低血撤退設為 ${e.currentTarget.value}%`,
+                          })
+                        }
+                      >
+                        <option value="0">關閉</option>
+                        <option value="15">15%</option>
+                        <option value="25">25% (預設)</option>
+                        <option value="40">40%</option>
+                        <option value="60">60%</option>
+                      </select>
+                      <span className="k">滿包策略</span>
+                      <select
+                        aria-label="滿包處理方式"
+                        data-testid="char-bagfull-select"
+                        value={charCfg.bagFullPolicy}
+                        onChange={e =>
+                          handleAction({
+                            kind: 'CHAR_STRATEGY_UPDATE',
+                            characterId: targetCid,
+                            patch: { bagFullPolicy: e.currentTarget.value as BagFullPolicy },
+                            label: `${c?.name ?? targetCid} 滿包策略設為 ${e.currentTarget.value}`,
+                          })
+                        }
+                      >
+                        <option value="STOP">停下來</option>
+                        <option value="NOTIFY">背景提醒</option>
+                        <option value="SELL">提示回店整理</option>
+                      </select>
+                    </div>
+                    <div className="row">
+                      <span className="k">低飽食提醒</span>
+                      <select
+                        aria-label="低飽食休息提醒"
+                        data-testid="char-satiety-select"
+                        value={String(charCfg.autoRestMinSatiety)}
+                        onChange={e =>
+                          handleAction({
+                            kind: 'CHAR_STRATEGY_UPDATE',
+                            characterId: targetCid,
+                            patch: { autoRestMinSatiety: Number(e.currentTarget.value) },
+                            label: `${c?.name ?? targetCid} 低飽食門檻設為 ${e.currentTarget.value}`,
+                          })
+                        }
+                      >
+                        <option value="0">關閉</option>
+                        <option value="20">20 以下提醒</option>
+                        <option value="40">40 以下提醒</option>
+                      </select>
+                      {aux.modules && aux.modules.length > 0 && (
+                        <span className="muted" data-testid="automation-modules-list">
+                          {`模組 ${aux.modules.length} 個`}
+                        </span>
+                      )}
+                    </div>
+                  </section>
+                );
+              })()}
+            </Tabs.Content>
+          </Tabs.Root>
 
           <section data-testid="nav-panel">
             <h2>自動導航</h2>
@@ -989,80 +1096,6 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             )}
           </section>
 
-          {(() => {
-            const targetCid = state.characterId ?? activeMemberId;
-            const charCfg = aux.charStrategies?.[targetCid] ?? DEFAULT_CHARACTER_STRATEGY;
-            return (
-              <section data-testid="char-strategy-panel">
-                <h2>{`角色策略設定（${c?.name ?? targetCid}${aux.coordinatorMode ? `｜協調器：${aux.coordinatorMode}` : ''}）`}</h2>
-                <div className="row">
-                  <span className="k">低血撤退</span>
-                  <select
-                    aria-label="低血撤退門檻"
-                    data-testid="char-lowhp-select"
-                    value={String(charCfg.lowHpRetreatPct)}
-                    onChange={e =>
-                      handleAction({
-                        kind: 'CHAR_STRATEGY_UPDATE',
-                        characterId: targetCid,
-                        patch: { lowHpRetreatPct: Number(e.currentTarget.value) },
-                        label: `${c?.name ?? targetCid} 低血撤退設為 ${e.currentTarget.value}%`,
-                      })
-                    }
-                  >
-                    <option value="0">關閉</option>
-                    <option value="15">15%</option>
-                    <option value="25">25% (預設)</option>
-                    <option value="40">40%</option>
-                    <option value="60">60%</option>
-                  </select>
-                  <span className="k">滿包策略</span>
-                  <select
-                    aria-label="滿包處理方式"
-                    data-testid="char-bagfull-select"
-                    value={charCfg.bagFullPolicy}
-                    onChange={e =>
-                      handleAction({
-                        kind: 'CHAR_STRATEGY_UPDATE',
-                        characterId: targetCid,
-                        patch: { bagFullPolicy: e.currentTarget.value as BagFullPolicy },
-                        label: `${c?.name ?? targetCid} 滿包策略設為 ${e.currentTarget.value}`,
-                      })
-                    }
-                  >
-                    <option value="STOP">停下來</option>
-                    <option value="NOTIFY">背景提醒</option>
-                    <option value="SELL">提示回店整理</option>
-                  </select>
-                </div>
-                <div className="row">
-                  <span className="k">低飽食提醒</span>
-                  <select
-                    aria-label="低飽食休息提醒"
-                    data-testid="char-satiety-select"
-                    value={String(charCfg.autoRestMinSatiety)}
-                    onChange={e =>
-                      handleAction({
-                        kind: 'CHAR_STRATEGY_UPDATE',
-                        characterId: targetCid,
-                        patch: { autoRestMinSatiety: Number(e.currentTarget.value) },
-                        label: `${c?.name ?? targetCid} 低飽食門檻設為 ${e.currentTarget.value}`,
-                      })
-                    }
-                  >
-                    <option value="0">關閉</option>
-                    <option value="20">20 以下提醒</option>
-                    <option value="40">40 以下提醒</option>
-                  </select>
-                  {aux.modules && aux.modules.length > 0 && (
-                    <span className="muted" data-testid="automation-modules-list">
-                      {`模組 ${aux.modules.length} 個`}
-                    </span>
-                  )}
-                </div>
-              </section>
-            );
-          })()}
 
           <section data-testid="quest-panel">
             <QuestChainControls
