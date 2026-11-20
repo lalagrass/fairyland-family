@@ -227,9 +227,11 @@ export class QuestChainModule implements BehaviorModule {
     newbieLoop?: boolean;
     loopActivity?: ChainLoopActivity;
     returnHpPct?: number;
+    loopOnly?: boolean;
   }): void {
     this.config = {
       ...this.config,
+      ...(patch.loopOnly !== undefined ? { loopOnly: patch.loopOnly } : {}),
       ...(patch.newbieLoop !== undefined ? { newbieLoop: patch.newbieLoop } : {}),
       ...(patch.loopActivity !== undefined ? { loopActivity: patch.loopActivity } : {}),
       ...(patch.returnHpPct !== undefined ? { returnHpPct: Math.max(1, Math.min(90, patch.returnHpPct)) } : {}),
@@ -485,6 +487,10 @@ export class QuestChainModule implements BehaviorModule {
     const level = st.character?.level ?? 1;
     // 快照可能已經把上一筆標成完成，而單筆任務模組還沒停。先記下來，避免改做下一筆時漏掉。
     this.absorbCompleted(quests);
+    if (this.config.loopOnly) {
+      this.enterLoop('派工只跑新手循環');
+      return;
+    }
     if (this.drivingId !== null && !this.host.quest.isActive()) {
       const current = quests.find(q => q.questId === this.drivingId);
       if (current?.status === 'COMPLETED') {

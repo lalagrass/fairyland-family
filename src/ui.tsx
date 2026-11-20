@@ -44,6 +44,8 @@ import { ItemColumn } from './panels/ItemColumn';
 import { ItemMoveRoot } from './panels/ItemMoveRoot';
 import { PanelMark } from './panels/marks';
 import { SkillPanel } from './panels/SkillPanel';
+import { DispatchPanel } from './panels/DispatchPanel';
+import type { DispatchRecap, DispatchRecord } from './dispatch';
 
 type Perform = (action: UiAction) => string | null;
 type SubmitText = (text: string) => string | null;
@@ -63,6 +65,8 @@ export interface UiAux {
   chain?: QuestChainStatus;
   coordinatorMode?: CoordinatorMode;
   modules?: Array<{ id: string; label: string }>;
+  dispatches?: DispatchRecord[];
+  dispatchRecaps?: DispatchRecap[];
 }
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
@@ -371,6 +375,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [charFilter, setCharFilter] = useState<string | 'ALL'>('ALL');
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermissionState>(() => getNotificationPermission());
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [dispatchErr, setDispatchErr] = useState('');
 
   const devMode = aux.devMode ?? isDevModeEnabled();
   const running = conn === 'RUNNING';
@@ -840,6 +845,28 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               })
             )}
           </section>
+          <DispatchPanel
+            members={state.members}
+            viewedId={activeMemberId ?? null}
+            records={aux.dispatches ?? []}
+            recaps={aux.dispatchRecaps ?? []}
+            gatherPoints={snap?.gatherPoints?.points}
+            running={running}
+            error={dispatchErr}
+            onAssign={(characterId, spec, name) => {
+              const err = perform({
+                kind: 'DISPATCH_ASSIGN',
+                characterId,
+                spec,
+                label: `派工 ${name}：${spec.kind === 'GATHER' ? `採集 ${spec.gather?.targetName ?? ''}` : spec.kind === 'QUEST_CHAIN' ? '任務鏈' : spec.kind === 'NOVICE_LOOP' ? '新手循環' : '待機'}`,
+              });
+              setDispatchErr(err ?? '');
+            }}
+            onStop={(characterId, name) => {
+              perform({ kind: 'DISPATCH_STOP', characterId, label: `停止派工 ${name}` });
+              setDispatchErr('');
+            }}
+          />
         </div>
 
         {/* 中欄：目前角色工作台 + 導航 + 任務 + 互動與策略 + 場景選單 + 文字輸入 */}

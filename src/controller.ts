@@ -23,6 +23,7 @@ import {
 import type { AutomationHostContext, BehaviorModule, CoordinatorMode } from './automation/types';
 import { AutoBattler, type BattleStrategy } from './battler';
 import { Directory } from './directory';
+import { CharacterDispatcher, DispatchStore, type DispatchRecap, type DispatchRecord, type DispatchStop, type GatherSpec } from './dispatch';
 import { AutoNavigator, type NavStatus } from './navigator';
 import { WorkNotifier, type NotificationAdapter } from './notify';
 import { parseInput, type UiAction } from './parse';
@@ -31,6 +32,8 @@ import { WorkQueue, type QueueStatus } from './queue';
 import { CharacterAppearanceStore } from './render/appearanceStore';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
 import type { Transport } from './transport/types';
+
+const PRIMARY_KEY = 'family.queue.primary:v1';
 
 interface KvStorage { getItem(k: string): string | null; setItem(k: string, v: string): void }
 
@@ -61,6 +64,10 @@ export class FamilyController {
   readonly appearanceStore: CharacterAppearanceStore;
   readonly recapTracker: RecapTracker;
   readonly automation = new AutomationRegistry();
+  readonly dispatchStore: DispatchStore;
+  readonly dispatcher: CharacterDispatcher;
+  /** 前景任務鏈目前屬於哪個角色（開始時的視角角色）。單一任務鏈模組一次只服務一個角色。 */
+  private chainOwner: string | null = null;
   private latestRecap: WelcomeRecapSummary | null = null;
   private readonly questModule: QuestBehaviorModule;
   private readonly questChain: QuestChainModule;
@@ -85,6 +92,7 @@ export class FamilyController {
     this.appearanceStore = new CharacterAppearanceStore(opts.storage ?? null);
     this.recapTracker = new RecapTracker(opts.storage ?? null);
     this.notifier = new WorkNotifier(opts.notification);
+    this.primaryCharacterId = this.readPrimary();
 
     const host = {
       state: () => this.state,
@@ -136,7 +144,7 @@ export class FamilyController {
       navigator: this.navigator,
       battler: this.battler,
       quest: this.questModule,
-      getQueue: () => this.queue,
+      getQueue: () => this.getOrCreateQueue(this.chainOwner ?? this.state.characterId ?? this.primaryCharacterId ?? ''),
       knownNpcs: () => this.directory.allNpcs(),
       knownMaps: () => this.directory.allMaps(),
       showRecap: summary => {
@@ -154,6 +162,89 @@ export class FamilyController {
     this.automation.register(new ExampleRestMonitorModule());
     for (const extra of opts.extraModules ?? []) {
       this.automation.register(extra);
+    }
+
+    this.dispatchStore = new DispatchStore(opts.storage ?? null);
+    this.dispatcher = new CharacterDispatcher(this.dispatchHost(), this.dispatchStore);
+  }
+
+  private dispatchHost(): import('./dispatch').DispatchHost {
+    const nameOf = (id: string) => this.state.members.find(m => m.characterId === id)?.name ?? id;
+    return {
+      now: () => this.now(),
+      running: () => this.status() === 'RUNNING',
+      viewedId: () => this.state.characterId,
+      snapshotReady: id => {
+        const snap = this.state.snapshot;
+        if (!snap || this.state.characterId !== id) return false;
+        const f = snap.family;
+        return !f || f.activeCharacterId === id;
+      },
+      nameOf,
+      knownCharacterIds: () => this.state.members.map(m => m.characterId),
+      queueStatus: id => this.getOrCreateQueue(id).getStatus(),
+      queueActive: id => this.getOrCreateQueue(id).isActive(),
+      startGather: (id, g: GatherSpec, stop: DispatchStop) => {
+        const q = this.getOrCreateQueue(id);
+        q.setStopConditions({ stopOnBagFull: stop.stopOnBagFull, minSatiety: stop.minSatiety });
+        q.enqueue({
+          kind: 'GATHER',
+          skillId: g.skillId,
+          skillName: g.skillName,
+          ...(g.targetItemId !== undefined ? { targetItemId: g.targetItemId } : {}),
+          targetName: g.targetName,
+          targetCount: g.count,
+          ...(g.requiredToolItemId !== undefined ? { requiredToolItemId: g.requiredToolItemId } : {}),
+          ...(g.requiredToolName ? { requiredToolName: g.requiredToolName } : {}),
+        });
+      },
+      stopQueue: (id, reason, text) => this.getOrCreateQueue(id).stop(reason, text),
+      chainActive: () => this.questChain.isActive(),
+      chainOwner: () => this.chainOwner,
+      chainStatus: () => this.questChain.getStatus(),
+      startChain: (id, loopOnly, stop, remainingMs) => {
+        this.chainOwner = id;
+        this.questChain.handleAction({
+          kind: 'QUEST_CHAIN_CONFIG',
+          label: '派工設定任務鏈',
+          patch: {
+            stop: {
+              maxDurationMs: remainingMs,
+              targetLevel: stop.targetLevel ?? null,
+              stopOnBagFull: stop.stopOnBagFull,
+            },
+            newbieLoop: true,
+            loopOnly,
+          },
+        });
+        const res = this.questChain.handleAction({ kind: 'QUEST_CHAIN_START', label: '派工開始任務鏈' });
+        if (res.error) this.chainOwner = null;
+        return res.error;
+      },
+      stopChain: text => {
+        this.questChain.stop(text);
+        if (this.navigator.isActive()) this.navigator.cancel();
+        if (this.questModule.isActive()) this.questModule.stop();
+      },
+      switchView: id => {
+        this.sendFor(id, { type: 'SWITCH_VIEW_CHARACTER', characterId: id }, `派工切換視角 ${nameOf(id)}`);
+      },
+      requestSnapshot: () => {
+        this.send({ type: 'REQUEST_SNAPSHOT' }, '要求快照（派工恢復）');
+      },
+      log: (text, level, characterId) => {
+        this.state = addLog(this.state, '系統', text, this.now(), { level, characterId });
+        this.emit();
+      },
+      onChange: () => this.emit(),
+    };
+  }
+
+  private readPrimary(): string | null {
+    try {
+      return this.opts.storage?.getItem(PRIMARY_KEY) ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -173,7 +264,11 @@ export class FamilyController {
   }
 
   private getOrCreateQueue(charId: string): WorkQueue {
-    if (!this.primaryCharacterId) this.primaryCharacterId = charId;
+    if (!this.primaryCharacterId) {
+      this.primaryCharacterId = charId;
+      // 預設佇列的存檔屬於第一個角色；記下來，重開後不管先看到誰都接回同一位。
+      try { this.opts.storage?.setItem(PRIMARY_KEY, charId); } catch { /* ignore */ }
+    }
     if (charId === this.primaryCharacterId) {
       this.queues.set(charId, this.queue);
       return this.queue;
@@ -225,6 +320,8 @@ export class FamilyController {
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
   charAppearances(): Record<string, string> { return this.appearanceStore.snapshotAll(); }
   welcomeRecap(): WelcomeRecapSummary | null { return this.latestRecap; }
+  dispatches(): DispatchRecord[] { return this.dispatcher.records(); }
+  dispatchRecaps(): DispatchRecap[] { return this.dispatcher.recaps(); }
 
   queueStatus(): QueueStatus {
     const cid = this.state.characterId;
@@ -272,6 +369,8 @@ export class FamilyController {
   }
 
   private dispatchToAgents(m: PluginMessage): void {
+    // 視角剛換掉：前景工作（走路、對話、任務鏈）都屬於舊視角角色，先收掉再處理訊息，避免指令送給別的角色。
+    this.syncViewOwnership();
     const ctx = this.moduleContext();
     this.automation.notifyPreMessage(m, ctx);
     if (m.characterId === this.state.characterId) {
@@ -288,9 +387,26 @@ export class FamilyController {
     this.automation.notifyMessage(m, ctx);
   }
 
+  private lastViewedId: string | null = null;
+
+  private syncViewOwnership(): void {
+    const viewed = this.state.characterId;
+    if (viewed !== this.lastViewedId) {
+      const prev = this.lastViewedId;
+      this.lastViewedId = viewed;
+      if (prev !== null) {
+        if (this.navigator.isActive()) this.navigator.cancel();
+        if (this.questModule.isActive()) this.questModule.stop();
+      }
+    }
+    this.dispatcher.enforceView();
+  }
+
   /** 定時呼叫：心跳逾時要靠時間才會變成「遊戲未執行」，同時推動進行中的任務循環。 */
   tick(): void {
     this.afterChange(this.now());
+    this.syncViewOwnership();
+    this.dispatcher.tick();
     if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();
     this.automation.syncCoordinator(this.moduleContext());
@@ -379,9 +495,28 @@ export class FamilyController {
       const cid = this.state.characterId ?? this.state.activeCharacterId;
       if (cid) this.strategyStore.update(cid, { battleStrategy: action.strategy });
     }
+    if (action.kind === 'DISPATCH_ASSIGN') {
+      const err = this.dispatcher.assign(action.characterId, action.spec);
+      this.state = addLog(this.state, '系統', action.label, this.now(), { characterId: action.characterId });
+      this.emit();
+      return err;
+    }
+    if (action.kind === 'DISPATCH_STOP') {
+      this.dispatcher.stop(action.characterId);
+      return null;
+    }
+    if (action.kind === 'QUEST_CHAIN_START') {
+      this.chainOwner = this.state.characterId;
+    }
     if (['NAV', 'NAV_CANCEL', 'QUEUE_GATHER', 'QUEUE_CRAFT', 'QUEUE_STOP', 'QUEST_AUTO', 'QUEST_AUTO_STOP'].includes(action.kind)) {
-      this.questChain.stop('玩家改為手動操作');
-      this.questModule.stop();
+      // 只有動到「前景任務鏈擁有者」自己時才算手動接手；替別的角色排採集不會打斷它。
+      const target = 'targetCharacterId' in action && action.targetCharacterId ? action.targetCharacterId : this.state.characterId;
+      const touchesChainOwner = !this.chainOwner || target === this.chainOwner;
+      const foregroundOnly = action.kind === 'NAV' || action.kind === 'NAV_CANCEL' || action.kind === 'QUEST_AUTO' || action.kind === 'QUEST_AUTO_STOP';
+      if (touchesChainOwner || foregroundOnly) {
+        this.questChain.stop('玩家改為手動操作');
+        this.questModule.stop();
+      }
     }
     const res = this.automation.dispatchAction(action, this.moduleContext());
     if (res.handled) return res.error;
