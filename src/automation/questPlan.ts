@@ -436,6 +436,20 @@ export function isBagFull(inventory: readonly SnapshotItem[], cap: number | null
   return cap != null && cap > 0 && bagUsedCount(inventory) >= cap;
 }
 
+/**
+ * 背包滿了又沒有可賣的東西時，挑一項存進家族倉庫：不是任務／工具要用的、不是封印石，每項只試一次。
+ * 倉庫也滿了（總數 ≥ 容量）就回 undefined，由呼叫端停下並寫明原因。
+ */
+export function pickDepositItem(
+  inventory: readonly SnapshotItem[],
+  keepNames: readonly string[],
+  skip: ReadonlySet<number>,
+  warehouse: { cap: number; items: readonly SnapshotItem[] } | null | undefined,
+): SnapshotItem | undefined {
+  if (warehouse && warehouse.cap > 0 && bagUsedCount(warehouse.items) >= warehouse.cap) return undefined;
+  return sellableItems(inventory, keepNames).find(it => !skip.has(it.itemId));
+}
+
 export function sellableItems(items: readonly SnapshotItem[], keepNames: readonly string[]): SnapshotItem[] {
   return items.filter(it => {
     if (it.count <= 0) return false;

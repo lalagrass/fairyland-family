@@ -126,6 +126,7 @@ export class FamilyController {
         send: (c: PluginCommand, l: string, e?: string) =>
           this.sendFor(this.primaryCharacterId ?? this.state.characterId, c, l, e),
         navigator: this.navigator,
+        requestView: (id: string) => this.requestViewFor(id),
       },
       opts.storage ?? null,
     );
@@ -263,6 +264,35 @@ export class FamilyController {
     };
   }
 
+  /** 視角借用：背景採集需要走近時暫時把視角切給它，走近開工後還給原本的角色。 */
+  private viewLoan: { borrower: string; returnTo: string; since: number } | null = null;
+
+  private requestViewFor(id: string): void {
+    if (this.state.characterId === id) return;
+    if (!this.viewLoan) {
+      const back = this.state.characterId;
+      if (back) this.viewLoan = { borrower: id, returnTo: back, since: this.now() };
+    }
+    const name = this.state.members.find(m => m.characterId === id)?.name ?? id;
+    this.sendFor(id, { type: 'SWITCH_VIEW_CHARACTER', characterId: id }, `採集需要走近，切換視角 ${name}`);
+  }
+
+  private settleViewLoan(): void {
+    const loan = this.viewLoan;
+    if (!loan) return;
+    if (this.state.characterId !== loan.borrower) {
+      if (this.now() - loan.since > 20_000) this.viewLoan = null; // 一直切不過去：放棄，不要卡住
+      return;
+    }
+    const q = this.getOrCreateQueue(loan.borrower).getStatus();
+    const approaching = q.phase === 'WALKING_TO_POINT' || q.phase === 'WAITING_TOOL_BUY' || this.navigator.isActive();
+    const expired = this.now() - loan.since > 120_000;
+    if (approaching && !expired) return;
+    this.viewLoan = null;
+    const name = this.state.members.find(m => m.characterId === loan.returnTo)?.name ?? loan.returnTo;
+    this.sendFor(loan.returnTo, { type: 'SWITCH_VIEW_CHARACTER', characterId: loan.returnTo }, `走近完成，視角還給 ${name}`);
+  }
+
   private getOrCreateQueue(charId: string): WorkQueue {
     if (!this.primaryCharacterId) {
       this.primaryCharacterId = charId;
@@ -288,6 +318,7 @@ export class FamilyController {
           after: (ms: number, fn: () => void) => this.after(ms, fn),
           navigator: this.navigator,
           onChange: () => this.emit(),
+          requestView: (id: string) => this.requestViewFor(id),
         },
         storage,
         `family.queue.v1:${charId}`,
@@ -406,6 +437,7 @@ export class FamilyController {
   tick(): void {
     this.afterChange(this.now());
     this.syncViewOwnership();
+    this.settleViewLoan();
     this.dispatcher.tick();
     if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();

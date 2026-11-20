@@ -89,11 +89,18 @@ export interface QueueHost {
   after(ms: number, fn: () => void): unknown;
   navigator: AutoNavigator;
   onChange(): void;
+  /** F2b：背景角色離採集點太遠又不能走路時，請求把視角切給它，走近後再還回去。 */
+  requestView?(characterId: string): void;
 }
 
 const DEFAULT_KEY = 'family.queue.v1';
 /** 與宿主工作指令願意動手的距離對齊，避免停在「宿主肯採、外掛卻一直重走」的空檔。 */
 const GATHER_APPROACH_DIST = 240;
+/** 離宿主範圍上限留一點餘裕（位置是快照插值，可能略舊）。 */
+const GATHER_RANGE_MARGIN = 30;
+/** 宿主拒絕採集（TOO_FAR）後改成走到採集點旁邊。 */
+const GATHER_CLOSE_DIST = 40;
+const MAX_VIEW_REQUESTS = 3;
 const RETRY_MS = 450;
 
 function mapRejectToStop(code: string): QueueStopReason | null {
@@ -173,6 +180,11 @@ export class WorkQueue {
   private dialogRetries = 0;
   private openShopSentAt = 0;
   /** 同一個採集點、距離幾乎沒縮短的走路次數。連走仍靠近不了就換下一個點。 */
+  /** 從宿主 TOO_FAR 訊息學到的採集範圍（px）；沒學到之前用預設值，不把宿主的數字寫死。 */
+  private hostGatherRange: number | null = null;
+  private forceClose = false;
+  private tooFarRetries = 0;
+  private viewRequests = 0;
   private approachTries: { pointId: string; dist: number; tries: number } | null = null;
   /** 這次工作已經確認走不過的採集點。直線距離近不代表走得到。 */
   private skippedPoints = new Set<string>();
@@ -447,6 +459,20 @@ export class WorkQueue {
       return;
     }
 
+    if (cur.role === 'WORK' && code === 'TOO_FAR') {
+      const range = /需要\s*[≤<=]+\s*(\d+)\s*px/.exec(message ?? '');
+      if (range) this.hostGatherRange = Number(range[1]);
+      if (this.tooFarRetries < 3) {
+        this.tooFarRetries += 1;
+        this.forceClose = true;
+        this.host.log(`宿主說離採集點太遠（${message ?? 'TOO_FAR'}），先走近再採`, 'info');
+        this.scheduleStep(0);
+        return;
+      }
+      this.stop('TOO_FAR', `工作停止（TOO_FAR）：走近後宿主仍說太遠：${message ?? code}`);
+      return;
+    }
+
     const mapped = mapRejectToStop(code);
     if (mapped) {
       this.stop(mapped, `工作停止（${mapped}）：${message ?? code}`);
@@ -481,6 +507,8 @@ export class WorkQueue {
         const job = this.jobs[this.activeJobIndex];
         if (job) {
           job.doneCount += 1;
+          this.forceClose = false;
+          this.tooFarRetries = 0;
           this.text = this.describeActive();
           this.persist();
           this.host.onChange();
@@ -625,7 +653,18 @@ export class WorkQueue {
     const hasTool = !toolId || tgt.inventory.some(i => i.itemId === toolId && i.count > 0);
     if (toolId && !hasTool) {
       if (!tgt.isViewed) {
-        this.stop('MISSING_TOOL', `背景角色【${tgt.name}】缺少工具 #${toolId}，請切換視角購置或存倉領取`);
+        // 買工具要走到商店、開對話，背景角色做不到：把視角暫時借給它，買好再還。
+        if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
+          this.viewRequests += 1;
+          this.phase = 'WAITING_TOOL_BUY';
+          this.text = `【${tgt.name}】缺少工具 #${toolId}，切換視角去買`;
+          this.persist();
+          this.host.onChange();
+          this.host.requestView(tgt.characterId);
+          this.scheduleStep(1500);
+          return;
+        }
+        this.stop('MISSING_TOOL', `背景角色【${tgt.name}】缺少工具 #${toolId}，無法切換視角購置，請存倉領取`);
         return;
       }
       const boughtAt = this.boughtToolAt.get(toolId);
@@ -685,10 +724,22 @@ export class WorkQueue {
     }
 
     const dist = Math.hypot(tgt.x - pt.x, tgt.y - pt.y);
-    const maxAllowedDist = GATHER_APPROACH_DIST;
+    const range = this.hostGatherRange ?? GATHER_APPROACH_DIST;
+    const maxAllowedDist = this.forceClose ? GATHER_CLOSE_DIST : Math.max(GATHER_CLOSE_DIST, range - GATHER_RANGE_MARGIN);
     if (dist > maxAllowedDist) {
       if (!tgt.isViewed) {
-        this.stop('TOO_FAR', `背景角色【${tgt.name}】離【${pt.name}】太遠 (${Math.round(dist)}px)，請先切換視角走近`);
+        // 背景角色不能走路（宿主只讓視角中的角色走）：把視角暫時切給它，走近後由派工把視角還給前景工作。
+        if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
+          this.viewRequests += 1;
+          this.phase = 'WALKING_TO_POINT';
+          this.text = `【${tgt.name}】離【${pt.name}】太遠 (${Math.round(dist)}px)，切換視角走近`;
+          this.persist();
+          this.host.onChange();
+          this.host.requestView(tgt.characterId);
+          this.scheduleStep(1500);
+          return;
+        }
+        this.stop('TOO_FAR', `背景角色【${tgt.name}】離【${pt.name}】太遠 (${Math.round(dist)}px，需要 ≤ ${range}px)，無法切換視角走近`);
         return;
       }
       const prior = this.approachTries;
@@ -711,6 +762,7 @@ export class WorkQueue {
       return;
     }
     this.approachTries = null;
+    this.viewRequests = 0;
 
     this.phase = 'RUNNING';
     this.text = this.describeActive();
