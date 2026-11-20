@@ -459,10 +459,11 @@ export class QuestChainModule implements BehaviorModule {
 
   private onOpeningRejected(reason: string | undefined, message: string | undefined): void {
     const why = message || reason || '宿主拒絕';
-    if (reason === 'GAME_BUSY') {
+    // 戰鬥中（遇敵剛好打斷）也只是時機不對：戰鬥結束後再送，不算走不下去。
+    if (reason === 'GAME_BUSY' || reason === 'IN_BATTLE') {
       this.openingLatch = null;
       this.openingBusy += 1;
-      if (this.openingBusy >= 5) {
+      if (this.openingBusy >= (reason === 'IN_BATTLE' ? 30 : 5)) {
         this.finish('STUCK', `找不到下一步：開場指令一直被遊戲畫面擋住（${why}）`);
       } else {
         this.host.log(`開場指令被遊戲畫面擋住，稍後再送：${why}`, 'warn');
