@@ -9,7 +9,7 @@ import { assert, done, suite } from './helpers';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 suite('vendored protocol examples pass the vendored guards');
-assert(PROTOCOL_VERSION === 4, 'protocol version 4');
+assert(PROTOCOL_VERSION === 5, 'protocol version 5');
 assert(isHeartbeatMessage(ex.heartbeat), 'heartbeat');
 assert(isSnapshotMessage(ex.snapshot), 'snapshot');
 assert(isStaticDataMessage(ex.staticData), 'staticData');

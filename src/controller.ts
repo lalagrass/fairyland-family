@@ -105,6 +105,7 @@ export class FamilyController {
         this.emit();
       },
       after: (ms: number, fn: () => void) => this.after(ms, fn),
+      now: () => this.now(),
       onChange: () => this.emit(),
     };
 

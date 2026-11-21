@@ -26,7 +26,8 @@ const buildStatic = () => {
   return {
     ...full,
     recipes: (full.recipes ?? []).slice(0, FIXTURE_RECIPE_LIMIT),
-    portalGraph: (full.portalGraph ?? []).filter((n: { mapId: string }) => ['10001', '20010', '20001', '20007', '20009'].includes(n.mapId)),
+    // 公開 repo 不放傳送點座標：只留節點，portals 一律清空。
+    portalGraph: (full.portalGraph ?? []).filter((n: { mapId: string }) => ['10001', '20010', '20001', '20007', '20009'].includes(n.mapId)).map((n: object) => ({ ...n, portals: [] })),
     skills: (full.skills ?? []).slice(0, 6),
     assets: full.assets,
   };

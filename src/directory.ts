@@ -18,6 +18,8 @@ const KEY = 'family.directory.v1';
 
 export class Directory {
   private maps: Record<string, DirMap> = {};
+  /** 宿主傳來的完整傳送點圖（F5，protocol v5）。只放記憶體：每次連線都會重送，不存進瀏覽器。 */
+  private portalNodes = new Map<string, SnapshotPortalNode>();
 
   constructor(private storage: KvStorage | null = null) {
     try {
@@ -29,6 +31,7 @@ export class Directory {
   /** 從靜態資料或快照學到世界鄰接（FX15：portalGraph 已移至 static-data，不一定在每份快照內）。 */
   learnPortalGraph(graph: SnapshotPortalNode[]): void {
     for (const node of graph) {
+      this.portalNodes.set(node.mapId, node);
       const m = this.maps[node.mapId] ?? { mapId: node.mapId, name: node.name, npcs: [], targets: {} };
       if (node.name && !m.name) m.name = node.name;
       for (const t of node.targets) if (!(t in m.targets)) m.targets[t] = null;
@@ -47,6 +50,9 @@ export class Directory {
     };
     this.learnPortalGraph(snap.nav.portalGraph ?? fallbackGraph ?? []);
   }
+
+  /** 宿主提供的傳送點圖（含逐個傳送點）；尚未收到靜態資料時是空陣列。 */
+  portalGraph(): SnapshotPortalNode[] { return [...this.portalNodes.values()]; }
 
   mapName(mapId: string): string | null {
     return this.maps[mapId]?.name ?? null;

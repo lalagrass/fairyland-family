@@ -73,7 +73,7 @@ export interface UiAux {
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
 const NO_AUX: UiAux = {
-  nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置' },
+  nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置', skipped: [] },
   strategy: 'MANUAL',
   known: [],
   queue: NO_QUEUE,
@@ -1115,6 +1115,11 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               <div className="muted" data-testid="nav-route">
                 {`路線：${aux.nav.route.join(' → ')}`}
               </div>
+            )}
+            {(aux.nav.skipped?.length ?? 0) > 0 && (
+              <ul className="muted" data-testid="nav-skipped">
+                {aux.nav.skipped?.map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
             )}
             {navActive && (
               <button

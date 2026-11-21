@@ -84,7 +84,7 @@ try {
       status: 'AVAILABLE',
       points: [{ id: 'g1', name: '虛構點', mapId: snap.mapId, mapName: snap.mapName, x: 120, y: 100, skillId: 5, skillName: '挖礦', requiredToolItemId: null, materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }] }],
     };
-    ctrl.receive({ v: 4, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: 99001, reason: 'REQUESTED', snapshot: snap });
+    ctrl.receive({ v: 5, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: 99001, reason: 'REQUESTED', snapshot: snap });
   });
 
   const noOverflow = async (w, label) => {

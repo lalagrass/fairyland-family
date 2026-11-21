@@ -80,7 +80,7 @@ try {
     if (!ctrl?.receive || !ctrl.state?.characterId) return;
     ctrl.stop?.();
     const characterId = ctrl.state.characterId;
-    const baseMsg = { v: 4, characterId, ts: Date.now() };
+    const baseMsg = { v: 5, characterId, ts: Date.now() };
     ctrl.receive({
       ...baseMsg,
       kind: 'event',
