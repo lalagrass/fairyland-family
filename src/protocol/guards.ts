@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 3dae01500373b7801acbbbc192b2a0a2cfa4150b
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 65162468bc9a08f2450188e15969d70756c4f715
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
