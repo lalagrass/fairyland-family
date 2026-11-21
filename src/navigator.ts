@@ -1,8 +1,9 @@
 import {
   isCommandResultMessage, isEventMessage, isSnapshotMessage, planMapRoute,
-  type PluginCommand, type PluginMessage, type SceneSnapshot, type SnapshotNpc,
+  type PluginCommand, type PluginMessage, type SceneSnapshot, type SnapshotNpc, type SnapshotPortalNode, type SnapshotPortalEdge,
 } from './protocol/index';
 import type { Directory } from './directory';
+import { describeSkipped, planPortalRoute, type SkippedPortal } from './portalRoute';
 import type { FamilyState } from './state';
 
 /** 導航目標：某個 NPC（可選擇到了就對話），或某張地圖。 */
@@ -18,6 +19,8 @@ export interface NavStatus {
   /** 規劃出的地圖序列（含起點與終點）。 */
   route: string[];
   text: string;
+  /** F5：規劃時略過的傳送點與原因（例如通往不存在地圖、走不通），面板逐行顯示。 */
+  skipped?: string[];
 }
 
 export interface NavHost {
@@ -25,6 +28,8 @@ export interface NavHost {
   send(command: PluginCommand, label: string, expect?: string): string | null;
   log(text: string, level?: 'info' | 'warn' | 'error'): void;
   after(ms: number, fn: () => void): unknown;
+  /** 時鐘（毫秒）；沒給就用 Date.now。逾時判斷用。 */
+  now?(): number;
   dir: Directory;
   onChange(): void;
 }
@@ -35,6 +40,15 @@ export const TALK_NEAR = 140;
 const RETRY_MS = 1000;
 const MAX_RETRY = 90;
 const MAX_BLOCKED_EXITS = 12;
+/** 一次導航最多換幾次圖；超過就放棄，避免傳送點把人帶回原處時無限繞圈。 */
+const MAX_LEGS = 24;
+/** 換圖後等新場景快照（宿主 mapReady 之後才送）的上限。 */
+const MAP_WAIT_MS = 30000;
+
+/** 這個出口在傳送點圖裡是否被標成「目的地圖不存在」。 */
+function planStatusMissing(nodes: SnapshotPortalNode[], mapId: string, portalId: string): boolean {
+  return nodes.find(n => n.mapId === mapId)?.portals.some(p => p.id === portalId && p.targetStatus === 'NOT_IMPORTED') ?? false;
+}
 
 const goalText = (g: NavGoal) => (g.kind === 'NPC' ? `${g.talk ? '對話' : '前往'} ${g.query}` : `前往 ${g.name}`);
 
@@ -53,7 +67,10 @@ export class AutoNavigator {
   /** 剛換圖：在看到不同於這張圖的新快照之前，不重新規劃（避免拿舊快照再走一次舊出口）。 */
   private awaitFrom: string | null = null;
   private retries = 0;
-  private status: NavStatus = { phase: 'IDLE', goal: null, route: [], text: '導航：閒置' };
+  /** 這次導航已經換了幾次圖。 */
+  private legs = 0;
+  private waitSeq = 0;
+  private status: NavStatus = { phase: 'IDLE', goal: null, route: [], text: '導航：閒置', skipped: [] };
 
   constructor(private host: NavHost) {}
 
@@ -68,7 +85,8 @@ export class AutoNavigator {
     this.blockedOnce.clear();
     const token = ++this.token;
     this.retries = 0;
-    this.set({ phase: 'WALKING', goal, route: [], text: `導航：${goalText(goal)}` });
+    this.legs = 0;
+    this.set({ phase: 'WALKING', goal, route: [], text: `導航：${goalText(goal)}`, skipped: [] });
     this.step(token);
     return null;
   }
@@ -133,8 +151,10 @@ export class AutoNavigator {
       case 'MAP_CHANGED':
         this.awaitFrom = cur.fromMap;
         this.blocked.clear();
-    this.blockedOnce.clear();
-        this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：已換圖，等新場景快照' });
+        this.blockedOnce.clear();
+        this.retries = 0;
+        if (++this.legs > MAX_LEGS) { this.fail(`已經換了 ${MAX_LEGS} 次圖還沒到目標，放棄（可能繞圈）`); return; }
+        this.enterWait('導航：已換圖，等新場景準備好');
         // 新快照可能已經先到（事件順序不保證），所以立刻檢查一次；還沒到就等 onMessage 的快照。
         this.host.after(0, () => this.step(token));
         return;
@@ -196,9 +216,9 @@ export class AutoNavigator {
     // 宿主在沒有場景資料的地圖（模擬野外）不會送快照；目標就是這張圖時，知道所在位置就算到了。
     if (goal.kind === 'MAP' && st.location?.mapId === goal.mapId) { this.set({ ...this.status, phase: 'DONE', text: `導航：已到達 ${st.location.mapName ?? goal.name}` }); return; }
     const snap = st.snapshot;
-    if (!snap || !st.location || snap.mapId !== st.location.mapId) { this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：等待場景快照' }); return; }
+    if (!snap || !st.location || snap.mapId !== st.location.mapId) { this.enterWait('導航：等待場景快照'); return; }
     if (this.awaitFrom) {
-      if (snap.mapId === this.awaitFrom) { this.set({ ...this.status, phase: 'WAIT_MAP', text: '導航：已換圖，等新場景快照' }); return; }
+      if (snap.mapId === this.awaitFrom) { this.enterWait('導航：已換圖，等新場景準備好'); return; }
       this.awaitFrom = null;
     }
     this.host.dir.learn(snap);
@@ -210,16 +230,11 @@ export class AutoNavigator {
 
     if (snap.mapId !== targetMap) {
       if (this.blocked.size > MAX_BLOCKED_EXITS) { this.fail(`試了 ${this.blocked.size} 個出口都到不了下一張圖`); return; }
-      const route = planMapRoute(this.host.dir.adjacency(snap), snap.mapId, targetMap);
-      if (!route) { this.fail(`找不到從 ${snap.mapName ?? snap.mapId} 到 ${this.host.dir.mapName(targetMap) ?? targetMap} 的路線（只知道看過的地圖出口）`); return; }
-      const next = route[1];
-      const c0 = st.character;
-      const exit = snap.exits.filter(e => e.targetMapId === next && !this.blocked.has(e.id))
-        .sort((a, b) => (c0 ? dist(c0.x, c0.y, a.x, a.y) - dist(c0.x, c0.y, b.x, b.y) : 0))[0];
-      if (!exit) { this.fail(snap.exits.some(e => e.targetMapId === next) ? `通往 ${next} 的出口都走不通` : `這張圖沒有通往 ${next} 的出口`); return; }
-      const names = route.map(m => this.host.dir.mapName(m) ?? m);
-      this.set({ ...this.status, phase: 'WALKING', route, text: `導航：${names.join(' → ')}　現在前往出口「${exit.name}」` });
-      this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: exit.x, y: exit.y }, `導航：走向出口「${exit.name}」`, 'LEG', 'MAP_CHANGED', snap.mapId, exit.id);
+      const pick = this.chooseLeg(snap, targetMap, st.character);
+      if ('error' in pick) { this.set({ ...this.status, skipped: pick.skipped }); this.fail(pick.error); return; }
+      const names = pick.route.map(m => this.host.dir.mapName(m) ?? m);
+      this.set({ ...this.status, phase: 'WALKING', route: pick.route, skipped: pick.skipped, text: `導航：${names.join(' → ')}　現在前往出口「${pick.name}」` });
+      this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: pick.x, y: pick.y }, `導航：走向出口「${pick.name}」`, 'LEG', 'MAP_CHANGED', snap.mapId, pick.id);
       return;
     }
 
@@ -240,6 +255,70 @@ export class AutoNavigator {
     } else {
       this.issue({ type: 'WALK_TO', mapId: snap.mapId, x: npc.x, y: npc.y }, `導航：走向 ${npc.name}`, 'APPROACH', 'ARRIVED', snap.mapId);
     }
+  }
+
+  /**
+   * 下一段要走哪個傳送點。優先用宿主給的完整傳送點圖（protocol v5，含還沒去過的地圖）找最短路線，
+   * 跳過通往不存在地圖（原版資料斷點）與已走不通的傳送點；宿主沒有世界目錄（所有目的地圖狀態都是 UNKNOWN）時，
+   * 退回只憑看過的出口規劃的舊做法。
+   */
+  private chooseLeg(snap: SceneSnapshot, targetMap: string, c0: { x: number; y: number } | null | undefined):
+    { route: string[]; id: string; name: string; x: number; y: number; skipped: string[] } | { error: string; skipped: string[] } {
+    const dir = this.host.dir;
+    const mapLabel = (id: string) => dir.mapName(id) ?? id;
+    const graph = dir.portalGraph();
+    // 目前這張圖的出口以快照為準（座標最準）；圖裡沒有的出口補進去。
+    const known = new Set(snap.exits.map(e => e.id));
+    const hereNode = graph.find(n => n.mapId === snap.mapId);
+    const have = new Set((hereNode?.portals ?? []).map(p => p.id));
+    const extra: SnapshotPortalEdge[] = snap.exits.filter(e => !have.has(e.id)).map(e => ({
+      id: e.id, name: e.name, x: e.x, y: e.y, targetMapId: e.targetMapId, targetMapName: e.targetMapName, targetStatus: 'UNKNOWN' as const,
+    }));
+    const nodes: SnapshotPortalNode[] = graph.filter(n => n.mapId !== snap.mapId);
+    nodes.push({ mapId: snap.mapId, name: snap.mapName, targets: [...new Set(snap.exits.map(e => e.targetMapId))], portals: [...(hereNode?.portals ?? []), ...extra] });
+    const hasStatus = nodes.some(n => n.portals.some(p => p.targetStatus !== 'UNKNOWN'));
+    const plan = planPortalRoute(nodes, snap.mapId, targetMap, { blocked: this.blocked, knownPositions: known });
+    const skippedText = (list: SkippedPortal[]) => list.filter(s => s.reason !== 'BLOCKED').slice(0, 6).map(s => describeSkipped(s, mapLabel));
+    if (plan.ok && plan.legs.length > 0) {
+      const leg = plan.legs[0];
+      // 同一個下一張圖有好幾個出口時，走離現在最近的（規劃只決定「下一張是哪張圖」）。
+      const exit = snap.exits.filter(e => e.targetMapId === leg.edge.targetMapId && !this.blocked.has(e.id)
+        && !(planStatusMissing(nodes, snap.mapId, e.id)))
+        .sort((p, q) => (c0 ? dist(c0.x, c0.y, p.x, p.y) - dist(c0.x, c0.y, q.x, q.y) : 0))[0];
+      const x = exit?.x ?? leg.edge.x, y = exit?.y ?? leg.edge.y;
+      if (typeof x === 'number' && typeof y === 'number') return { route: plan.maps, id: exit?.id ?? leg.edge.id, name: exit?.name ?? leg.edge.name, x, y, skipped: skippedText(plan.skipped) };
+    }
+    if (!hasStatus || (!plan.ok && plan.code === 'UNKNOWN_START')) {
+      // 舊做法：只知道看過的出口。
+      const route = planMapRoute(dir.adjacency(snap), snap.mapId, targetMap);
+      if (route && route.length > 1) {
+        const next = route[1];
+        const exit = snap.exits.filter(e => e.targetMapId === next && !this.blocked.has(e.id))
+          .sort((a, b) => (c0 ? dist(c0.x, c0.y, a.x, a.y) - dist(c0.x, c0.y, b.x, b.y) : 0))[0];
+        if (exit) return { route, id: exit.id, name: exit.name, x: exit.x, y: exit.y, skipped: [] };
+        return { error: snap.exits.some(e => e.targetMapId === next) ? `通往 ${next} 的出口都走不通` : `這張圖沒有通往 ${next} 的出口`, skipped: [] };
+      }
+    }
+    const skipped = skippedText(plan.skipped);
+    const missing = !plan.ok ? plan.skipped.filter(s => s.reason === 'TARGET_MISSING').length : 0;
+    const blockedN = !plan.ok ? plan.skipped.filter(s => s.reason === 'BLOCKED').length : 0;
+    const why = [missing ? `${missing} 個傳送點通往不存在的地圖（原版資料缺）` : '', blockedN ? `${blockedN} 個傳送點走不通` : ''].filter(Boolean).join('、');
+    return { error: `找不到從 ${snap.mapName ?? snap.mapId} 到 ${mapLabel(targetMap)} 的路線${why ? `（已略過 ${why}）` : ''}`, skipped };
+  }
+
+  /** 進入「等新場景」：宿主要等場景載好（mapReady）才會送新快照；超過上限就放棄，不會永遠等。 */
+  private enterWait(text: string): void {
+    const fresh = this.status.phase !== 'WAIT_MAP';
+    this.set({ ...this.status, phase: 'WAIT_MAP', text });
+    if (!fresh) return;
+    const token = this.token;
+    const seq = ++this.waitSeq;
+    const clock = () => (this.host.now ? this.host.now() : Date.now());
+    const since = clock();
+    this.host.after(MAP_WAIT_MS, () => {
+      // 實際經過的時間也要夠久，避免任何提前觸發的計時器誤殺剛換圖、正在載入的場景。
+      if (token === this.token && seq === this.waitSeq && this.status.phase === 'WAIT_MAP' && clock() - since >= MAP_WAIT_MS - 100) this.fail('等不到新場景（逾時）');
+    });
   }
 
   private findNpc(snap: SceneSnapshot, q: string): SnapshotNpc | null {

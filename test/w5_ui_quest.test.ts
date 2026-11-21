@@ -189,8 +189,8 @@ suite('D2 + D3: 任務自動推進依 targetMaps 全程巡邏討伐並自動回�
     status: 'AVAILABLE',
     reachableMaps: [{ mapId: '99001', name: '測試荒原', hops: 1 }],
     portalGraph: [
-      { mapId: '10001', name: '吉恩村', targets: ['99001'] },
-      { mapId: '99001', name: '測試荒原', targets: ['10001'] },
+      { mapId: '10001', name: '吉恩村', targets: ['99001'], portals: [] },
+      { mapId: '99001', name: '測試荒原', targets: ['10001'], portals: [] },
     ],
   };
   const floro = { id: 'npc_floro', name: '佛洛', role: 'QUEST', x: 300, y: 300, gridX: 15, gridY: 15, talkable: true, isAnimal: false, isShop: false };

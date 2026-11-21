@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 4e50759c87ae85caa6e9203c42ab0f14e9f636b1
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 65162468bc9a08f2450188e15969d70756c4f715
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -14,10 +14,12 @@
  * - 版本 2 相對版本 1 的不相容變更：BATTLE_ACTION 改為單一角色的 `action`；`NOT_IMPLEMENTED_P1` 改名
  *   `NOT_IMPLEMENTED`；快照新增 `inventory`／`activity`／`nav.portalGraph`；事件新增 COMMAND_COMPLETED、
  *   DIALOG_UPDATED、SHOP_OPENED、SHOP_CLOSED；BATTLE_TURN_READY 帶敵人與可否逃跑。
+ * - 版本 5（F5，fairyland-family#43）：`SnapshotPortalNode` 新增必填 `portals`（逐個傳送點：id、名稱、座標、目的地圖、
+ *   目的地圖是否已匯入、穿過去的落點），讓外掛不必先走過每張圖就能規劃跨圖路線。
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -346,11 +348,34 @@ export interface SnapshotShop {
   goods: SnapshotShopGood[];
 }
 
-/** 世界地圖鄰接（每張地圖通往哪些地圖）；外掛用它規劃跨圖路線，各地圖的出口座標到了該圖再從 `exits` 取得。 */
+/** 傳送點所通往的目的地圖在宿主端的狀態：IMPORTED＝已匯入可進入；NOT_IMPORTED＝世界目錄沒有或未匯入（原版資料斷點，走過去也進不去）；UNKNOWN＝宿主沒有世界目錄可判斷。 */
+export type PortalTargetStatus = 'IMPORTED' | 'NOT_IMPORTED' | 'UNKNOWN';
+export const PORTAL_TARGET_STATUSES: readonly PortalTargetStatus[] = ['IMPORTED', 'NOT_IMPORTED', 'UNKNOWN'];
+
+/**
+ * v5：傳送點圖的一條邊。`x`／`y` 是這個傳送點在「所屬地圖」的世界像素座標（WALK_TO 的目標，宿主端缺資料時省略）；
+ * `entryX`／`entryY` 是穿過去之後在目的地圖的落點（缺資料時省略）。座標全部由宿主從已載入的世界目錄與場景資料即時算出。
+ */
+export interface SnapshotPortalEdge {
+  id: string;
+  name: string;
+  x?: number;
+  y?: number;
+  targetMapId: string;
+  targetMapName: string | null;
+  targetStatus: PortalTargetStatus;
+  entryX?: number;
+  entryY?: number;
+}
+
+/** 世界地圖鄰接（每張地圖通往哪些地圖）；v5 起每張圖另附逐個傳送點（`portals`），外掛用它規劃跨圖路線並對每個傳送點送 WALK_TO。 */
 export interface SnapshotPortalNode {
   mapId: string;
   name: string | null;
+  /** 可直接通往的地圖 id（含 NOT_IMPORTED 的目的地）。 */
   targets: string[];
+  /** v5：這張圖的傳送點（不含指回本圖的建築入口）。 */
+  portals: SnapshotPortalEdge[];
 }
 
 /** 進行中的互動狀態：外掛重連時用它重建「現在正在對話／戰鬥」。 */

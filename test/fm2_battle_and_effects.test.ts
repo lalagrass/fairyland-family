@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import ex from '../src/protocol/examples.json';
-import type { GameEvent, StaticSkillSummary } from '../src/protocol/index';
+import { PROTOCOL_VERSION, type GameEvent, type StaticSkillSummary } from '../src/protocol/index';
 import { applyMessage, initialState } from '../src/state';
 import { defaultEffectRegistry } from '../src/render/effects/registry';
 import { ParticleSimulation } from '../src/render/effects/particleEmitter';
@@ -50,7 +50,7 @@ st = applyMessage(st, ex.staticData, 1000);
 st = applyMessage(st, ex.snapshot, 1000);
 
 const startMsg = {
-  v: 4,
+  v: PROTOCOL_VERSION,
   characterId: ex.snapshot.characterId,
   ts: 2000,
   kind: 'event',
@@ -68,7 +68,7 @@ assert(st.battle !== null && st.battle.battleId === 77, 'BATTLE_STARTED 建立�
 assertEq(st.battle?.enemyVisuals?.[0]?.modelId, 'MBA011', '保留敵方 modelId 與外觀資訊');
 
 const turnReadyMsg = {
-  v: 4,
+  v: PROTOCOL_VERSION,
   characterId: ex.snapshot.characterId,
   ts: 2050,
   kind: 'event',
@@ -85,7 +85,7 @@ const turnReadyMsg = {
 st = applyMessage(st, turnReadyMsg, 2050);
 
 const tlMsg = {
-  v: 4,
+  v: PROTOCOL_VERSION,
   characterId: ex.snapshot.characterId,
   ts: 2100,
   kind: 'event',
