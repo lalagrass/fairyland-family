@@ -46,7 +46,9 @@ import { ItemMoveRoot } from './panels/ItemMoveRoot';
 import { PanelMark } from './panels/marks';
 import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
+import { WorldMapPanel } from './panels/WorldMapPanel';
 import type { DispatchRecap, DispatchRecord } from './dispatch';
+import { worldMapCharacters } from './render/worldMap';
 
 type Perform = (action: UiAction) => string | null;
 type SubmitText = (text: string) => string | null;
@@ -768,6 +770,25 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             viewModes={aux.viewModes}
             onSetViewMode={(characterId, viewMode) =>
               handleAction({ kind: 'CHAR_VIEWMODE_UPDATE', characterId, viewMode, label: `${characterId} 地圖顯示改為${viewMode === 'modern' ? '現代' : '原版'}` })
+            }
+          />
+          <WorldMapPanel
+            graph={state.staticData?.portalGraph ?? null}
+            characters={worldMapCharacters(
+              state.members,
+              state.characterId,
+              state.characterId && state.location
+                ? { characterId: state.characterId, name: c?.name ?? null, mapId: state.location.mapId }
+                : null,
+            )}
+            route={aux.nav.route}
+            running={running}
+            onSelectCharacter={id => {
+              const name = state.members.find(m => m.characterId === id)?.name ?? id;
+              handleAction(cmdAction({ type: 'SWITCH_VIEW_CHARACTER', characterId: id }, `世界地圖：切換視角 ${name}`));
+            }}
+            onMoveTo={(mapId, name) =>
+              handleAction({ kind: 'NAV', goal: { kind: 'MAP', mapId, name }, label: `世界地圖：移動到 ${name}` })
             }
           />
         </div>
