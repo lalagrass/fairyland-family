@@ -73,6 +73,16 @@ export interface WorldMapHitBox {
   size: number;
 }
 
+/**
+ * 世界地圖的繪製介面。畫面模型在上面，引擎可以換。
+ * 目前的實作是 PixiJS v8（`worldMapStage.ts`），只用程式畫的形狀。
+ */
+export interface WorldMapRenderer {
+  mount(host: HTMLElement): Promise<boolean>;
+  setView(view: WorldMapView): void;
+  destroy(): void;
+}
+
 const EMPTY: WorldMapView = { empty: true, width: 1, height: 1, nodes: [], links: [], brokenCount: 0 };
 
 /** 窄螢幕改顯示可點的地圖清單；寬螢幕以節點圖為主。 */
@@ -153,6 +163,8 @@ export function layoutWorldNodes(
     pos.set(id, { x: Math.cos(ang) * radius, y: Math.sin(ang) * radius });
   });
   relax(pos, sorted, edges, minDist);
+  // 斥力會把圖撐得很大，縮小後節點就點不到。先縮回大約能排開的範圍，再把重疊推開。
+  compact(pos, sorted, minDist);
   separate(pos, sorted, minDist);
   if (hasOverlap(pos, sorted, minDist)) packGrid(pos, sorted, minDist);
   writeLayoutCache(key, pos);
@@ -264,6 +276,32 @@ function clampSpread(pos: Map<string, { x: number; y: number }>, ids: string[], 
     if (d > limit) {
       p.x = cx + (dx / d) * limit;
       p.y = cy + (dy / d) * limit;
+    }
+  }
+}
+
+function compact(pos: Map<string, { x: number; y: number }>, ids: string[], minDist: number): void {
+  let cx = 0;
+  let cy = 0;
+  for (const id of ids) {
+    const p = pos.get(id)!;
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= ids.length;
+  cy /= ids.length;
+  let maxR = 0;
+  for (const id of ids) {
+    const p = pos.get(id)!;
+    maxR = Math.max(maxR, Math.hypot(p.x - cx, p.y - cy));
+  }
+  const target = minDist * Math.sqrt(ids.length) * 0.62;
+  if (maxR > target && maxR > 0) {
+    const scale = target / maxR;
+    for (const id of ids) {
+      const p = pos.get(id)!;
+      p.x = cx + (p.x - cx) * scale;
+      p.y = cy + (p.y - cy) * scale;
     }
   }
 }
