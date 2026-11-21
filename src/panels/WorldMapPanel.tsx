@@ -21,6 +21,14 @@ export interface WorldMapPanelProps {
   onMoveTo: (mapId: string, name: string) => void;
 }
 
+/** 單元測試的 HappyDOM 沒有 WebGL。那種環境不載入 Pixi，改走清單。 */
+function canvasSupported(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  const ua = window.navigator?.userAgent ?? '';
+  if (/HappyDOM|jsdom|Node\.js/i.test(ua)) return false;
+  return typeof window.WebGLRenderingContext !== 'undefined';
+}
+
 function nodeBits(n: WorldMapNodeView): string[] {
   const who = n.characters.map(c => `${c.name || c.characterId}${c.selected ? '（視角）' : ''}`).join('、');
   return [n.name || n.mapId, n.onRoute ? '路線' : '', who, n.brokenOut ? `斷點 ${n.brokenOut}` : ''].filter(Boolean);
@@ -56,6 +64,10 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
     if (view.empty) return;
     const host = canvasRef.current;
     if (!host) return;
+    if (!canvasSupported()) {
+      setCanvasReady('off');
+      return;
+    }
     let stopped = false;
     let renderer: WorldMapRenderer | null = null;
     void import('../render/worldMapStage')
@@ -97,8 +109,15 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
       setBox({ w: rect.width, h: rect.height });
     };
     measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
+    const ResizeObs = window.ResizeObserver;
+    if (!ResizeObs) return;
+    let observer: ResizeObserver;
+    try {
+      observer = new ResizeObs(measure);
+      observer.observe(el);
+    } catch {
+      return;
+    }
     return () => observer.disconnect();
   }, [view.empty, view.width, view.height]);
 
