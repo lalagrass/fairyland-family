@@ -2,7 +2,10 @@
  * F6（fairyland-family#46）：世界地圖的自動排版、路線高亮與斷點標示。
  * 全部使用虛構的地圖 id（m-*／n-*），不含任何原版資料或座標。
  */
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { SnapshotPortalEdge, SnapshotPortalNode } from '../src/protocol/index';
+import { WorldMapPanel } from '../src/panels/WorldMapPanel';
 import {
   WORLD_MAP_MIN_DIST,
   WORLD_MAP_NARROW_BELOW,
@@ -87,6 +90,8 @@ suite('F6: 較密的虛構圖也不重疊');
   const view = buildWorldMapView({ graph: nodes, characters: [], route: [] });
   assert(view.nodes.length === n + 1, '鏈上的節點與斷點目的地都在');
   assert(noOverlap(view), `密圖中心距不小於最小距離（實際 ${minCenterDist(view).toFixed(1)}）`);
+  const packed = WORLD_MAP_MIN_DIST * Math.ceil(Math.sqrt(view.nodes.length)) * 4 + 80;
+  assert(view.width < packed && view.height < packed, `版面維持在點得到的大小（${view.width.toFixed(0)}×${view.height.toFixed(0)}，上限 ${packed}）`);
 }
 
 suite('F6: 路線高亮');
@@ -100,7 +105,7 @@ suite('F6: 路線高亮');
     route: ['m-a', 'm-b', 'm-d'],
   });
   const byId = new Map(view.nodes.map(n => [n.mapId, n]));
-  assert(byId.get('m-a')?.onRoute && byId.get('m-b')?.onRoute && byId.get('m-d')?.onRoute, '路線上的地圖被標成路線');
+  assert(byId.get('m-a')?.onRoute === true && byId.get('m-b')?.onRoute === true && byId.get('m-d')?.onRoute === true, '路線上的地圖被標成路線');
   assert(byId.get('m-c')?.onRoute === false && byId.get('m-e')?.onRoute === false && byId.get('m-z')?.onRoute === false, '沒走的地圖不是路線');
   assert(byId.get('m-a')?.routeIndex === 0 && byId.get('m-b')?.routeIndex === 1 && byId.get('m-d')?.routeIndex === 2, '路線順序跟著規劃');
   const ab = view.links.find(l => l.portalId === 'a-b');
@@ -135,6 +140,29 @@ suite('F6: 斷點標示');
   assert(buildWorldMapView({ graph: [], characters: [], route: [] }).empty, '還沒收到傳送點圖就是空的');
 }
 
+suite('F6: 節點很多時，熱區仍然點得到');
+{
+  const count = 80;
+  const nodes: SnapshotPortalNode[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const id = `w-${String(i).padStart(2, '0')}`;
+    const portals: SnapshotPortalEdge[] = [];
+    if (i + 1 < count) portals.push(edge(`e-${i}`, `w-${String(i + 1).padStart(2, '0')}`, i * 10000, -i));
+    if (i % 7 === 0) portals.push(edge(`x-${i}`, `w-gap-${i}`, 0, 0, 'NOT_IMPORTED'));
+    nodes.push(node(id, portals));
+  }
+  const view = buildWorldMapView({
+    graph: nodes,
+    characters: [{ characterId: 'c', name: '旅人', mapId: 'w-00', selected: true }],
+    route: ['w-00', 'w-01', 'w-02'],
+  });
+  assert(noOverlap(view), `大圖中心距不小於最小距離（實際 ${minCenterDist(view).toFixed(1)}）`);
+  assert(view.links.some(l => l.portalId === 'e-0' && l.onRoute) && view.links.some(l => l.portalId === 'x-0' && l.broken && !l.onRoute), '大圖仍標出路徑與斷點');
+  const hits = worldMapHitBoxes(view, 480, 320);
+  const min = Math.min(...hits.map(h => h.size));
+  assert(min >= 8, `480×320 的熱區至少 8px（實際 ${min.toFixed(1)}，節點 ${view.nodes.length}）`);
+}
+
 suite('F6: 窄螢幕熱區落在視窗內且不重疊');
 {
   const view = buildWorldMapView({
@@ -164,6 +192,27 @@ suite('F6: 窄螢幕熱區落在視窗內且不重疊');
   assert(fit.scale > 0 && fit.scale <= 320 / view.width + 1e-9, '窄視窗整張圖等比縮進去');
   assert(worldMapFrame(320).narrow && worldMapFrame(320).showList, '窄於分界就改用清單');
   assert(!worldMapFrame(WORLD_MAP_NARROW_BELOW).narrow && !worldMapFrame(900).showList, '寬螢幕以節點圖為主');
+}
+
+suite('F6: 面板標出路徑與斷點，點節點走既有的移動回呼');
+{
+  const moves: Array<{ mapId: string; name: string }> = [];
+  const html = renderToStaticMarkup(
+    <WorldMapPanel
+      graph={world}
+      characters={[{ characterId: 'c1', name: '旅人', mapId: 'm-a', selected: true }]}
+      route={['m-a', 'm-b', 'm-d']}
+      running
+      onSelectCharacter={() => {}}
+      onMoveTo={(mapId, name) => moves.push({ mapId, name })}
+    />,
+  );
+  assert(html.includes('data-testid="world-map-panel"') && html.includes('data-broken-count="1"'), '面板帶著斷點數');
+  assert(html.includes('data-testid="world-map-route"') && html.includes('data-route="m-a,m-b,m-d"'), '面板標出 F5 路線');
+  assert(html.includes('圖m-a → 圖m-b → 圖m-d'), '路線用宿主給的名稱，不是另外一張名稱表');
+  assert(html.includes('data-map-id="m-a"') && html.includes('data-on-route="1"') && html.includes('data-map-id="m-gone"') === false, '清單只列出可點的地圖，斷點目的地不在裡面');
+  assert(html.includes('斷點 1'), '來源圖的清單列標出斷點');
+  assert(moves.length === 0, '只畫面板不會自己下移動');
 }
 
 suite('F6: 角色所在由名冊組出來');
