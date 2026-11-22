@@ -790,15 +790,21 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     this.resupply = false;
+    if (st.shop) {
+      if (Object.keys(st.pending).length === 0 && Object.keys(st.inflight).length === 0) {
+        this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉商店', 'DONE');
+      }
+      return;
+    }
     if (this.config.regionId) {
       const travel = planRegionTravel(this.regions(), snap.region?.regionId, this.config.regionId);
       if (travel.kind === 'UNKNOWN_REGION') {
         this.finish('REGION_UNKNOWN', `宿主的區域清單裡沒有設定的區域（${this.config.regionId}），請重新選擇區域`);
         return;
       }
-      const known = this.config.loopActivity === 'GATHER' ? this.loopGathers().length > 0
-        : this.config.loopActivity === 'HUNT' ? this.loopHunts().length > 0 || this.loopGathers().some(p => p.x !== undefined)
-          : true;
+      const known = this.config.loopActivity === 'HUNT'
+        ? this.loopHunts().length > 0 || this.loopGathers().some(p => p.x !== undefined)
+        : this.config.loopActivity === 'CRAFT';
       if (travel.kind === 'TRAVEL' && !known) {
         this.travelToRegion(travel.region, `新手循環（${travel.region.name}）`);
         return;
@@ -860,12 +866,20 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     this.staleQueueStop = null;
-    const point = this.loopGathers().find(p => p.skillId !== null) ?? null;
-    if (!point) {
-      this.finish('STUCK', '找不到下一步：宿主採集清單是空的');
+    const points = this.loopGathers().filter(p => p.skillId !== null);
+    const st = this.host.state();
+    const skills = st.members.find(m => m.characterId === st.characterId)?.workSkills;
+    const options = points.map(point => {
+      const level = Math.max(skills?.[point.skillId!] ?? 1, 10);
+      const mat = point.materials?.find(m => (m.reqLevel ?? 1) <= level);
+      return { point, mat };
+    });
+    const choice = options.find(({ point, mat }) => mat || !point.materials?.length);
+    if (!choice) {
+      this.finish('STUCK', points.length ? '找不到下一步：目前技能等級沒有可採材料' : '找不到下一步：宿主採集清單是空的');
       return;
     }
-    const mat = point.materials?.[0];
+    const { point, mat } = choice;
     this.text = `新手循環：採集 ${mat?.name ?? point.name}`;
     q.enqueue({
       kind: 'GATHER',
