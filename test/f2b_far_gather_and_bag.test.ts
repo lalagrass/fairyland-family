@@ -1,6 +1,6 @@
 import { createWorld } from './f2_world';
 import { selectGatherPoint } from '../src/gatherRoute';
-import { PROTOCOL_VERSION, type PluginCommand, type PluginMessage, type SceneSnapshot, type SnapshotGatherPoint, type SnapshotPortalEdge, type SnapshotPortalNode } from '../src/protocol/index';
+import { PROTOCOL_VERSION, type CommandMessage, type PluginCommand, type PluginMessage, type SceneSnapshot, type SnapshotGatherPoint, type SnapshotPortalEdge, type SnapshotPortalNode } from '../src/protocol/index';
 import { WorkQueue } from '../src/queue';
 import { AutoNavigator } from '../src/navigator';
 import { Directory } from '../src/directory';
@@ -55,6 +55,45 @@ suite('F7：背景採集借視角尚未確認就停工，不再派新工作，�
     && ['WORK_ONCE', 'WALK_TO', 'BUY_ITEM'].includes(c.command.type)), '遲來快照不再讓已停工的角色走路、購買或採集');
   assert(w.ctrl.state.characterId === 'char_1' && w.quests.filter(q => q.status === 'COMPLETED').length > before,
     '視角已歸還，前景任務繼續完成');
+}
+
+suite('F7：玩家在借視角未確認時點選角色，舊歸還只在玩家未成功切換時執行');
+{
+  for (const outcome of ['accepted', 'rejected', 'timeout'] as const) {
+    const w = createWorld({ startOffsetA: 700, bagCapA: 70, questCount: 0, gatherMs: 8000 });
+    w.boot();
+    w.ctrl.dispatcher.assign('char_2', gatherSpec);
+    w.advance(1, 1);
+    assert(w.ctrl.state.characterId === 'char_1'
+      && w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_2'),
+      `${outcome}：背景借視角已送出，宿主尚未確認`);
+
+    const held: CommandMessage[] = [];
+    const sendNow = w.transport.send.bind(w.transport);
+    w.transport.send = msg => {
+      if (msg.command.type === 'SWITCH_VIEW_CHARACTER' && msg.command.characterId === 'char_2') held.push(msg);
+      else sendNow(msg);
+    };
+    w.ctrl.perform({ kind: 'COMMAND', command: { type: 'SWITCH_VIEW_CHARACTER', characterId: 'char_2' }, label: '玩家選擇小石' });
+    w.advance(12_000);
+    const manual = held[0];
+    assert(held.length === 1 && w.ctrl.state.characterId === 'char_2'
+      && w.sent.some(c => c.characterId === 'char_2' && c.command.type === 'WORK_ONCE')
+      && !w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_1'),
+      `${outcome}：已收到早先借視角的快照且已開工，但玩家切換未回覆前不自動歸還`);
+
+    w.transport.send = sendNow;
+    if (outcome === 'accepted') sendNow(manual);
+    if (outcome === 'rejected') {
+      w.push({ v: PROTOCOL_VERSION, kind: 'command-result', characterId: manual.characterId,
+        ts: w.t, commandId: manual.commandId, status: 'REJECTED', reasonCode: 'GAME_BUSY' });
+    }
+    w.advance(outcome === 'timeout' ? 12_000 : 1000);
+    const expected = outcome === 'accepted' ? 'char_2' : 'char_1';
+    const restores = w.sent.filter(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_1');
+    assert(w.ctrl.state.characterId === expected && restores.length === (outcome === 'accepted' ? 0 : 1),
+      `${outcome}：確認成功保留玩家選擇，拒絕或逾時則原借用正常歸還`);
+  }
 }
 
 suite('F2b 遠距採集：宿主說太遠（TOO_FAR）時，視角中的角色走到採集點旁再採');
