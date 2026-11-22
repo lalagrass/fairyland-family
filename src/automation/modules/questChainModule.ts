@@ -771,15 +771,21 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     this.resupply = false;
+    if (st.shop) {
+      if (Object.keys(st.pending).length === 0 && Object.keys(st.inflight).length === 0) {
+        this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉商店', 'DONE');
+      }
+      return;
+    }
     if (this.config.regionId) {
       const travel = planRegionTravel(this.regions(), snap.region?.regionId, this.config.regionId);
       if (travel.kind === 'UNKNOWN_REGION') {
         this.finish('REGION_UNKNOWN', `宿主的區域清單裡沒有設定的區域（${this.config.regionId}），請重新選擇區域`);
         return;
       }
-      const known = this.config.loopActivity === 'GATHER' ? this.loopGathers().length > 0
-        : this.config.loopActivity === 'HUNT' ? this.loopHunts().length > 0 || this.loopGathers().some(p => p.x !== undefined)
-          : true;
+      const known = this.config.loopActivity === 'HUNT'
+        ? this.loopHunts().length > 0 || this.loopGathers().some(p => p.x !== undefined)
+        : this.config.loopActivity === 'CRAFT';
       if (travel.kind === 'TRAVEL' && !known) {
         this.travelToRegion(travel.region, `新手循環（${travel.region.name}）`);
         return;
@@ -841,7 +847,15 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     this.staleQueueStop = null;
-    const point = this.loopGathers().find(p => p.skillId !== null) ?? null;
+    const points = this.loopGathers().filter(p => p.skillId !== null);
+    const st = this.host.state();
+    const skills = st.members.find(m => m.characterId === st.characterId)?.workSkills;
+    const lvOf = (skillId: number) => skills?.[skillId] ?? 1;
+    // 優先挑角色目前技能等級可採（或新手門檻 <= 10）的採集點，避免卡在高等級點。
+    const point = points.find(p => {
+      const lv = Math.max(lvOf(p.skillId!), 10);
+      return !p.materials?.length || p.materials.some(m => (m.reqLevel ?? 1) <= lv);
+    }) ?? points[0] ?? null;
     if (!point) {
       this.finish('STUCK', '找不到下一步：宿主採集清單是空的');
       return;
