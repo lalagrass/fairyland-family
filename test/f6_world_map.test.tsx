@@ -2,7 +2,9 @@
  * F6（fairyland-family#46）：世界地圖的自動排版、路線高亮與斷點標示。
  * 全部使用虛構的地圖 id（m-*／n-*），不含任何原版資料或座標。
  */
-import React from 'react';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SnapshotPortalEdge, SnapshotPortalNode } from '../src/protocol/index';
 import { WorldMapPanel } from '../src/panels/WorldMapPanel';
@@ -213,6 +215,8 @@ suite('F6: 面板標出路徑與斷點，點節點走既有的移動回呼');
   assert(html.includes('data-map-id="m-a"') && html.includes('data-on-route="1"') && html.includes('data-map-id="m-gone"') === false, '清單只列出可點的地圖，斷點目的地不在裡面');
   assert(html.includes('斷點 1'), '來源圖的清單列標出斷點');
   assert(moves.length === 0, '只畫面板不會自己下移動');
+  assert(html.includes('data-testid="world-map-list"'), '尺寸未確認時先提供清單');
+  assert(!html.includes('world-map-stage') && !html.includes('data-testid="world-map-node"'), '尺寸未確認時沒有空白畫布或不可見節點按鈕');
 }
 
 suite('F6: 角色所在由名冊組出來');
@@ -223,6 +227,68 @@ suite('F6: 角色所在由名冊組出來');
     { characterId: 'c1', name: '旅人', mapId: 'm-a' },
   );
   assert(list.length === 2 && list.some(c => c.characterId === 'c1' && c.selected) && list.some(c => c.characterId === 'c2' && !c.selected), '視角角色是選定的那一位，名冊裡的其他人也在');
+}
+
+suite('F6: 窄欄與無畫布時只有可用清單，選角色須等宿主確認');
+{
+  const win = new Window();
+  const rootEl = win.document.createElement('div');
+  win.document.body.append(rootEl);
+  Object.assign(globalThis, { window: win, document: win.document, IS_REACT_ACT_ENVIRONMENT: true });
+  class FakeResizeObserver {
+    static callback: (entries: Array<{ target: Element; contentRect: { width: number } }>) => void;
+    constructor(fn: typeof FakeResizeObserver.callback) { FakeResizeObserver.callback = fn; }
+    observe() {}
+    disconnect() {}
+  }
+  Object.defineProperty(win, 'ResizeObserver', { value: FakeResizeObserver });
+  const root = createRoot(rootEl as unknown as HTMLElement);
+  let selected = 'c1';
+  const switches: string[] = [];
+  const moves: string[] = [];
+  const render = () => act(() => root.render(
+    <WorldMapPanel
+      graph={world}
+      characters={[
+        { characterId: 'c1', name: '旅人', mapId: 'm-a', selected: selected === 'c1' },
+        { characterId: 'c2', name: '同伴', mapId: 'm-z', selected: selected === 'c2' },
+      ]}
+      route={[]} running
+      onSelectCharacter={id => switches.push(id)}
+      onMoveTo={id => moves.push(`${selected}:${id}`)}
+    />,
+  ));
+  render();
+  const panel = rootEl.querySelector('[data-testid="world-map-panel"]')!;
+  const resize = (width: number) => act(() => {
+    FakeResizeObserver.callback([{ target: panel as unknown as Element, contentRect: { width } }]);
+  });
+  const stageOrHit = () => panel.querySelector('.world-map-stage, [data-testid="world-map-node"], [data-testid="world-map-legend"]');
+
+  resize(360);
+  assert(panel.getAttribute('data-narrow') === '1' && panel.querySelector('[data-testid="world-map-list"]') !== null, '360px 量測：清單是主要操作');
+  assert(stageOrHit() === null, '窄欄不建立圖形舞台、幽靈熱區或圖例');
+  const select = panel.querySelector('select')!;
+  act(() => {
+    select.value = 'c2';
+    select.dispatchEvent(new win.Event('change', { bubbles: true }));
+  });
+  const destination = panel.querySelector('[data-testid="world-map-list-item"][data-map-id="m-d"]') as unknown as HTMLButtonElement;
+  assert(switches.join() === 'c2' && destination.disabled, '換角色未確認前不允許下移動');
+  act(() => destination.click());
+  assert(moves.length === 0, '待確認時點目的地，不送指令');
+  selected = 'c2';
+  render();
+  act(() => destination.click());
+  assert(moves.join() === 'c2:m-d', '收到宿主確認後，只移動新選的角色');
+
+  resize(900);
+  assert(panel.getAttribute('data-narrow') === '0' && panel.textContent?.includes('環境畫不了圖'), '900px 但無 WebGL：明示清單替代圖形');
+  assert(stageOrHit() === null && panel.querySelector('[data-testid="world-map-list"]') !== null, '無畫布時沒有空舞台或鍵盤可聚焦的隱形按鈕');
+  resize(360);
+  assert(panel.getAttribute('data-narrow') === '1' && !panel.textContent?.includes('環境畫不了圖') && stageOrHit() === null, '再縮回窄欄，保持清單且不報無畫布警訊');
+  act(() => root.unmount());
+  await win.close();
 }
 
 done();
