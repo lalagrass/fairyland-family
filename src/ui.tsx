@@ -47,6 +47,9 @@ import { PanelMark } from './panels/marks';
 import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
 import { WorldMapPanel } from './panels/WorldMapPanel';
+import { QuestCards } from './panels/QuestCards';
+import { ShopBuyList } from './panels/ShopBuyList';
+import { questCardModels } from './panels/questCardModel';
 import type { DispatchRecap, DispatchRecord } from './dispatch';
 import { worldMapCharacters } from './render/worldMap';
 
@@ -62,6 +65,8 @@ export interface UiAux {
   queues?: Record<string, QueueStatus>;
   devMode?: boolean;
   activeQuestId?: number | null;
+  /** F9：已派給角色、等視角切過去的任務。 */
+  pendingQuestAssign?: { questId: number; characterId: string } | null;
   charStrategies?: Record<string, CharacterStrategyConfig>;
   appearances?: Record<string, string>;
   viewModes?: Record<string, ViewMode>;
@@ -465,11 +470,24 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const qActive = ['RUNNING', 'PAUSED_BATTLE', 'WAITING_TOOL_BUY', 'WALKING_TO_POINT'].includes(activeQueue.phase);
   const navActive = ['WALKING', 'WAIT_MAP', 'PAUSED_BATTLE', 'TALKING'].includes(aux.nav.phase);
 
-  const quests = useMemo(() => {
-    const raw = snap?.quests ?? [];
-    const rank = (x: string) => (x === 'READY' ? 0 : x === 'IN_PROGRESS' ? 1 : x === 'AVAILABLE' ? 2 : 3);
-    return [...raw].sort((a, b) => rank(a.status) - rank(b.status) || a.questId - b.questId);
-  }, [snap?.quests]);
+  const quests = snap?.quests ?? [];
+  const questMembers = useMemo(() => {
+    const list = state.members.map(m => ({ characterId: m.characterId, name: m.name }));
+    if (state.characterId && !list.some(m => m.characterId === state.characterId)) {
+      list.push({ characterId: state.characterId, name: c?.name ?? null });
+    }
+    return list;
+  }, [state.members, state.characterId, c?.name]);
+  const questCards = useMemo(() => {
+    const names = new Map(questMembers.map(m => [m.characterId, m.name]));
+    return questCardModels(snap?.quests, {
+      snapshot: snap ?? null,
+      viewCharacterId: state.characterId,
+      nameOf: id => names.get(id) ?? null,
+      activeQuestId: aux.activeQuestId ?? null,
+      pendingAssign: aux.pendingQuestAssign ?? null,
+    });
+  }, [snap, questMembers, state.characterId, aux.activeQuestId, aux.pendingQuestAssign]);
 
   const menuSections = useMemo(() => {
     if (!snap) return [];
@@ -512,13 +530,6 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
     }
     return [...map.entries()];
   }, [state.members, state.characterId, c?.name]);
-
-  const statusMeta: Record<string, { text: string; cls: string }> = {
-    AVAILABLE: { text: '可接取', cls: 'pill mode' },
-    IN_PROGRESS: { text: '進行中', cls: 'pill warn' },
-    READY: { text: '可回報', cls: 'pill ok' },
-    COMPLETED: { text: '已完成', cls: 'pill' },
-  };
 
   // DV1：僅於 ?dev=1 時準備雙向對照資訊
   const compareInfo = useMemo(() => {
@@ -1188,94 +1199,30 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                     <span className="pill warn">{`主線階段：${snap.openingStage}`}</span>
                   </div>
                 )}
-                {quests.length === 0 ? (
+                {questCards.length === 0 ? (
                   <div className="muted">（目前沒有可用委託清單）</div>
                 ) : (
-                  quests.map(q => {
-                    const st = statusMeta[q.status] ?? { text: q.status, cls: 'pill' };
-                    const isAutoRunning = aux.activeQuestId === q.questId;
-                    return (
-                      <div
-                        key={q.questId}
-                        className="quest-item"
-                        data-testid="quest-entry"
-                        data-quest-id={String(q.questId)}
-                        data-quest-status={q.status}
-                      >
-                        <div className="row">
-                          <span className={st.cls}>{st.text}</span>
-                          <b>{q.title}</b>
-                          <span className="muted">{`Lv.${q.minLevel}｜${q.npcName}｜獎 ${q.rewardExp}EXP / ${q.rewardCoins}金`}</span>
-                          {q.status !== 'COMPLETED' && (
-                            <>
-                              <button
-                                type="button"
-                                className="item"
-                                data-testid="quest-nav-btn"
-                                data-quest-id={String(q.questId)}
-                                disabled={!running}
-                                onClick={() =>
-                                  handleAction({
-                                    kind: 'NAV',
-                                    goal: { kind: 'NPC', query: q.npcName, talk: true },
-                                    label: `前往並對話 ${q.npcName}`,
-                                  })
-                                }
-                              >
-                                {`前往 ${q.npcName}`}
-                              </button>
-                              <button
-                                type="button"
-                                className="item"
-                                data-testid="quest-auto-btn"
-                                data-quest-id={String(q.questId)}
-                                disabled={!running}
-                                onClick={() =>
-                                  handleAction({
-                                    kind: 'QUEST_AUTO',
-                                    questId: q.questId,
-                                    label: `自動處理任務 ${q.title}`,
-                                  })
-                                }
-                              >
-                                {q.status === 'READY' ? '自動回報' : q.status === 'AVAILABLE' ? '自動接取' : '自動推進'}
-                              </button>
-                              {isAutoRunning && (
-                                <button
-                                  type="button"
-                                  className="item"
-                                  data-testid="quest-auto-stop-btn"
-                                  data-quest-id={String(q.questId)}
-                                  disabled={!running}
-                                  onClick={() => handleAction({ kind: 'QUEST_AUTO_STOP', label: '停止自動任務' })}
-                                >
-                                  停止自動
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                        {q.objectives.length > 0 && (
-                          <div className="muted">
-                            {q.objectives
-                              .map(o => {
-                                const maps =
-                                  o.targetMaps && o.targetMaps.length > 0
-                                    ? `［前往：${o.targetMaps
-                                        .slice(0, 3)
-                                        .map(h => h.mapName)
-                                        .join('／')}${
-                                        o.targetMaps.length > 3 ? `…等 ${o.targetMaps.length} 張圖` : ''
-                                      }］`
-                                    : '';
-                                return `${o.description} (${o.current}/${o.required}) ${o.met ? '✓' : '…'}${maps}`;
-                              })
-                              .join(' ｜ ')}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                  <QuestCards
+                    cards={questCards}
+                    members={questMembers}
+                    viewCharacterId={state.characterId}
+                    running={running}
+                    activeQuestId={aux.activeQuestId ?? null}
+                    onGo={card => {
+                      if (!card.go) return;
+                      handleAction(
+                        card.go.kind === 'NPC'
+                          ? { kind: 'NAV', goal: { kind: 'NPC', query: card.go.target, talk: true }, label: `前往並對話 ${card.go.name}` }
+                          : { kind: 'NAV', goal: { kind: 'MAP', mapId: card.go.target, name: card.go.name }, label: `任務卡片：移動到 ${card.go.name}` },
+                      );
+                    }}
+                    onAuto={card => handleAction({ kind: 'QUEST_AUTO', questId: card.questId, label: `自動處理任務 ${card.title}` })}
+                    onAutoStop={() => handleAction({ kind: 'QUEST_AUTO_STOP', label: '停止自動任務' })}
+                    onAssign={(card, characterId) => {
+                      const name = questMembers.find(m => m.characterId === characterId)?.name ?? characterId;
+                      handleAction({ kind: 'QUEST_ASSIGN', questId: card.questId, characterId, label: `派任務「${card.title}」給 ${name}` });
+                    }}
+                  />
                 )}
               </>
             )}
@@ -1467,29 +1414,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 <h2>{`商店：${state.shop.npcName}`}</h2>
                 <div className="row">
                   <span className="k">購買</span>
-                  <div className="items">
-                    {state.shop.goods.slice(0, 60).map(g => (
-                      <button
-                        key={g.itemId}
-                        type="button"
-                        className="item"
-                        data-testid="shop-buy"
-                        data-item-id={String(g.itemId)}
-                        disabled={!running}
-                        onClick={() =>
-                          handleAction(
-                            cmdAction(
-                              { type: 'BUY_ITEM', itemId: g.itemId, count: 1 },
-                              `買 ${g.name ?? g.itemId} ×1`,
-                            ),
-                          )
-                        }
-                      >
-                        {`買 ${g.name ?? `#${g.itemId}`}`}
-                        <small>{`${g.price} 金`}</small>
-                      </button>
+                  <ShopBuyList
+                    goods={state.shop.goods}
+                    running={running}
+                    onBuy={g => handleAction(cmdAction(
+                      { type: 'BUY_ITEM', itemId: g.itemId, count: 1 }, `買 ${g.name ?? g.itemId} ×1`,
                     ))}
-                  </div>
+                  />
                 </div>
                 <div className="row">
                   <span className="k">賣出</span>

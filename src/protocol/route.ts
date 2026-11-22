@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/route.ts @ 65162468bc9a08f2450188e15969d70756c4f715
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/route.ts @ a5a56547c5f1f06d6fa127cb600cc4f09086fec1
 /**
  * 外掛端用的純函式：在「地圖鄰接」上規劃跨圖路線（BFS，經過最少地圖）。
  * 放在協定資料夾，fairyland-family 同步副本後可直接使用；鄰接來源是快照的 `nav.portalGraph`

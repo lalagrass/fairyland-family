@@ -35,6 +35,8 @@ export type UiAction =
   | { kind: 'DISMISS_RECAP'; label: string }
   | { kind: 'QUEST_AUTO'; questId: number; label: string }
   | { kind: 'QUEST_AUTO_STOP'; label: string }
+  /** F9：把任務派給某位角色；不在視角中就先切換視角，等該角色的快照到了再開始自動推進。 */
+  | { kind: 'QUEST_ASSIGN'; questId: number; characterId: string; label: string }
   | { kind: 'QUEST_CHAIN_START'; label: string }
   | { kind: 'QUEST_CHAIN_STOP'; label: string }
   | {

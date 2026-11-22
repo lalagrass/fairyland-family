@@ -9,7 +9,7 @@ import { assert, done, suite } from './helpers';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 suite('vendored protocol examples pass the vendored guards');
-assert(PROTOCOL_VERSION === 5, 'protocol version 5');
+assert(PROTOCOL_VERSION === 6, 'protocol version 6');
 assert(isHeartbeatMessage(ex.heartbeat), 'heartbeat');
 assert(isSnapshotMessage(ex.snapshot), 'snapshot');
 assert(isStaticDataMessage(ex.staticData), 'staticData');
@@ -20,7 +20,7 @@ assert(!isPluginMessage({ kind: 'event', v: PROTOCOL_VERSION }), 'garbage reject
 
 suite('replay fixture only contains valid messages');
 const fx = JSON.parse(fs.readFileSync(path.join(root, 'fixtures/replay_village.json'), 'utf8'));
-assert(fx.format === 'fairyland-replay/1' && fx.steps.length > 5, 'fixture shape');
+assert(fx.format === 'fairyland-replay/1' && fx.protocolVersion === PROTOCOL_VERSION && fx.steps.length > 5, 'fixture shape');
 assert(fx.steps.every((s: any) => isPluginMessage(s.message)), 'every replay step passes the guards');
 assert(fx.steps.every((s: any, i: number, a: any[]) => i === 0 || a[i - 1].at <= s.at), 'steps are time ordered');
 assert(fx.steps.every((s: any) => s.message.characterId === fx.characterId), 'single characterId');
