@@ -22,3 +22,6 @@ saves/
 backups/
 game_client/
 extracted/
+
+# Unit-test failure dumps (only written when a test fails)
+test-results/
