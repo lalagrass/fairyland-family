@@ -102,7 +102,7 @@ try {
     const npc = { id: 'npc_f8', name: '虛構嚮導F8', x: 200, y: 200, gridX: 6, gridY: 6, role: 'VILLAGER', talkable: true, isAnimal: false, isShop: false };
     const b = { x: 210, y: 210, quest: 'AVAILABLE', dialog: false };
     const member = (id, name, x, y) => ({
-      characterId: id, name, level: 5, mapId: base.mapId, mapName: base.mapName, x, y, gold: 10, satiety: 90,
+      characterId: id, name, level: 5, mapId: base.mapId, mapName: base.mapName, region: base.region, x, y, gold: 10, satiety: 90,
       inventoryCount: 0, inventoryCap: 40, inBattle: false, inventory: [], workSkills: {},
     });
     const family = () => ({ maxSlots: 5, warehouse: { gold: 0, cap: 200, items: [] }, members: [member(viewed, '甲', 100, 100), member(B, '乙', b.x, b.y)] });
