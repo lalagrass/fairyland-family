@@ -180,4 +180,68 @@ suite('F7: 總覽顯示每個角色目前所在區域（宿主沒給就是未知
   assert((root.querySelector('[data-testid="quest-chain-resume"]') as HTMLButtonElement | null)?.disabled === true, '沒有可續跑的停工時續跑鍵停用');
 }
 
+suite('F7 回歸：補給關商店後跨區回第二區採集，且優先挑選技能等級可採的點');
+{
+  const w = createF7World({ secondRegionQuest: false, requireTool: false, bagCap: 3 });
+  w.boot();
+  w.ctrl.perform({ kind: 'QUEST_CHAIN_CONFIG', label: '設定', patch: { regionId: 'r-b', newbieLoop: true, loopActivity: 'GATHER' } });
+  w.ctrl.perform({ kind: 'QUEST_CHAIN_START', label: '開始' });
+  assert(w.until(() => w.me.mapId === 'm-b1', 20_000), '先跨區到第二區');
+  assert(w.until(() => w.log.includes('gather'), 20_000), '在第二區開始採集');
+  // 模擬因回村補給而人回到第一區（且商店已開），此時 loopGathers 已記住第二區的點（known=true）
+  w.me.mapId = 'm-a1';
+  w.advance(300);
+  assert(w.ctrl.chainStatus().phase !== 'STOPPED', '回到第一區時不應在第一區直接採第二區點而停工');
+  assert(w.until(() => w.me.mapId === 'm-b1', 25_000), '人在第一區時即使已記住第二區採集點，仍會跨區回到第二區');
+
+  // 驗證 stepGatherLoop 優先挑選技能等級可採（reqLevel <= 10）的點
+  const { QuestChainModule } = await import('../src/automation/modules/questChainModule');
+  const ex = (await import('../src/protocol/examples.json')).default;
+  const enqueued: string[] = [];
+  const baseSnap = JSON.parse(JSON.stringify(ex.snapshot.snapshot));
+  baseSnap.mapId = 'y1';
+  baseSnap.region = RB;
+  baseSnap.quests = [];
+  baseSnap.gatherPoints = {
+    status: 'AVAILABLE',
+    points: [
+      { id: 'gp_hi', name: '高等點', mapId: 'y1', mapName: '乙村', x: 10, y: 10, skillId: 1, skillName: '伐木', requiredToolItemId: null, materials: [{ itemId: 90010, name: '高等木', reqLevel: 20 }] },
+      { id: 'gp_lo', name: '新手點', mapId: 'y1', mapName: '乙村', x: 20, y: 20, skillId: 2, skillName: '採集', requiredToolItemId: null, materials: [{ itemId: 90012, name: '高階草', reqLevel: 30 }, { itemId: 90011, name: '新手草', reqLevel: 10 }] },
+    ],
+  };
+  const fakeState = {
+    characterId: 'c1', phase: 'PLAYING', snapshot: baseSnap,
+    character: { ...baseSnap.character, hp: 100, maxHp: 100, inventoryCount: 0, inventoryCap: 40 },
+    inventory: [], members: [{ characterId: 'c1', name: 'c1', level: 1, mapId: 'y1', mapName: '乙村', region: RB, x: 0, y: 0, gold: 0, satiety: 100, inventoryCount: 0, inventoryCap: 40, inBattle: false, inventory: [], workSkills: { 1: 1, 2: 1 } }],
+    staticData: { regions: [RA, RB], portalGraph: [] },
+    pending: {}, inflight: {}, battle: null, battleResult: null, dialog: null, shop: null, location: null, warehouse: null,
+  };
+  const mod = new QuestChainModule({
+    state: () => fakeState as never,
+    status: () => 'RUNNING',
+    now: () => 1000,
+    getStrategyConfig: () => ({} as never),
+    send: () => '',
+    log: () => {},
+    onChange: () => {},
+    navigator: { isActive: () => false, go: () => null, cancel: () => {}, getStatus: () => ({ phase: 'IDLE', goal: null, route: [], text: '' }) } as never,
+    battler: { setStrategy: () => {}, getStrategy: () => ({} as never), setTurnOverride: () => {} } as never,
+    quest: { isActive: () => false, isBusy: () => false, start: () => null, stop: () => {}, advance: () => {}, getLastStopReason: () => null } as never,
+    getQueue: () => ({
+      isActive: () => false,
+      getStatus: () => ({ phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '' }),
+      enqueue: (j: { targetName?: string }) => { enqueued.push(j.targetName ?? ''); return '1'; },
+      stop: () => {},
+    }) as never,
+    knownNpcs: () => [],
+    knownMaps: () => [],
+    showRecap: () => {},
+  });
+  mod.onMessage({ ...ex.snapshot, characterId: 'c1', snapshot: baseSnap } as never);
+  mod.handleAction({ kind: 'QUEST_CHAIN_CONFIG', label: '設定', patch: { regionId: 'r-y', newbieLoop: true, loopActivity: 'GATHER' } });
+  mod.handleAction({ kind: 'QUEST_CHAIN_START', label: '開始' });
+  mod.tick();
+  assert(enqueued[0] === '新手草', `優先挑選技能等級可採的材料（實際：${enqueued[0]}）`);
+}
+
 done();
