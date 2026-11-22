@@ -850,17 +850,17 @@ export class QuestChainModule implements BehaviorModule {
     const points = this.loopGathers().filter(p => p.skillId !== null);
     const st = this.host.state();
     const skills = st.members.find(m => m.characterId === st.characterId)?.workSkills;
-    const lvOf = (skillId: number) => skills?.[skillId] ?? 1;
-    // 優先挑角色目前技能等級可採（或新手門檻 <= 10）的採集點，避免卡在高等級點。
-    const point = points.find(p => {
-      const lv = Math.max(lvOf(p.skillId!), 10);
-      return !p.materials?.length || p.materials.some(m => (m.reqLevel ?? 1) <= lv);
-    }) ?? points[0] ?? null;
-    if (!point) {
-      this.finish('STUCK', '找不到下一步：宿主採集清單是空的');
+    const options = points.map(point => {
+      const level = Math.max(skills?.[point.skillId!] ?? 1, 10);
+      const mat = point.materials?.find(m => (m.reqLevel ?? 1) <= level);
+      return { point, mat };
+    });
+    const choice = options.find(({ point, mat }) => mat || !point.materials?.length);
+    if (!choice) {
+      this.finish('STUCK', points.length ? '找不到下一步：目前技能等級沒有可採材料' : '找不到下一步：宿主採集清單是空的');
       return;
     }
-    const mat = point.materials?.[0];
+    const { point, mat } = choice;
     this.text = `新手循環：採集 ${mat?.name ?? point.name}`;
     q.enqueue({
       kind: 'GATHER',

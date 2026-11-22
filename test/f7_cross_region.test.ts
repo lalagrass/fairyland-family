@@ -206,7 +206,7 @@ suite('F7 回歸：補給關商店後跨區回第二區採集，且優先挑選�
     status: 'AVAILABLE',
     points: [
       { id: 'gp_hi', name: '高等點', mapId: 'y1', mapName: '乙村', x: 10, y: 10, skillId: 1, skillName: '伐木', requiredToolItemId: null, materials: [{ itemId: 90010, name: '高等木', reqLevel: 20 }] },
-      { id: 'gp_lo', name: '新手點', mapId: 'y1', mapName: '乙村', x: 20, y: 20, skillId: 2, skillName: '採集', requiredToolItemId: null, materials: [{ itemId: 90011, name: '新手草', reqLevel: 10 }] },
+      { id: 'gp_lo', name: '新手點', mapId: 'y1', mapName: '乙村', x: 20, y: 20, skillId: 2, skillName: '採集', requiredToolItemId: null, materials: [{ itemId: 90012, name: '高階草', reqLevel: 30 }, { itemId: 90011, name: '新手草', reqLevel: 10 }] },
     ],
   };
   const fakeState = {
