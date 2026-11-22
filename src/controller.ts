@@ -38,6 +38,9 @@ const PRIMARY_KEY = 'family.queue.primary:v1';
 
 interface KvStorage { getItem(k: string): string | null; setItem(k: string, v: string): void }
 
+/** F9：派給別的角色時，最多等這麼久讓視角切過去。 */
+const PENDING_QUEST_TIMEOUT_MS = 15_000;
+
 export interface ControllerOptions {
   now?: () => number;
   onChange?: (s: FamilyState) => void;
@@ -350,6 +353,10 @@ export class FamilyController {
   navStatus(): NavStatus { return this.navigator.getStatus(); }
   strategy(): BattleStrategy { return this.battler.getStrategy(); }
   activeQuest(): number | null { return this.questModule.getActiveQuestId(); }
+  /** F9：已派給角色、還在等視角切過去的任務。 */
+  pendingQuestAssign(): { questId: number; characterId: string } | null {
+    return this.pendingQuest ? { questId: this.pendingQuest.questId, characterId: this.pendingQuest.characterId } : null;
+  }
   chainStatus() { return this.questChain.getStatus(); }
   coordinatorMode(): CoordinatorMode { return this.automation.getCoordinatorMode(); }
   charStrategies(): Record<string, CharacterStrategyConfig> { return this.strategyStore.snapshotAll(); }
@@ -421,9 +428,68 @@ export class FamilyController {
       q?.onMessage(m);
     }
     this.automation.notifyMessage(m, ctx);
+    if (this.pendingQuest && m.kind === 'snapshot' && m.characterId === this.pendingQuest.characterId) {
+      this.pendingQuest.snapshotSeen = true;
+    }
+    this.settlePendingQuest();
+  }
+
+  /** F9 派給角色：視角中的角色直接開始自動推進；別的角色先切換視角（任務指令宿主只接受視角角色）。 */
+  private assignQuest(action: Extract<UiAction, { kind: 'QUEST_ASSIGN' }>): string | null {
+    const viewed = this.state.characterId;
+    if (!viewed) return '尚未收到角色資料，無法派任務';
+    if (action.characterId === viewed) {
+      this.pendingQuest = null;
+      return this.perform({ kind: 'QUEST_AUTO', questId: action.questId, label: action.label });
+    }
+    const member = this.state.members.find(m => m.characterId === action.characterId);
+    if (!member) return `找不到角色 ${action.characterId}`;
+    const name = member.name ?? member.characterId;
+    const sent = this.sendFor(action.characterId, { type: 'SWITCH_VIEW_CHARACTER', characterId: action.characterId }, `派任務切換視角 ${name}`);
+    if (!sent) {
+      this.pendingQuest = null;
+      return '遊戲未執行，無法切換視角';
+    }
+    this.pendingQuest = {
+      questId: action.questId,
+      characterId: action.characterId,
+      label: action.label,
+      deadline: this.now() + PENDING_QUEST_TIMEOUT_MS,
+      snapshotSeen: false,
+    };
+    this.state = addLog(this.state, '系統', `${action.label}（等待切換視角）`, this.now(), { characterId: action.characterId });
+    this.emit();
+    return null;
+  }
+
+  private settlePendingQuest(): void {
+    const p = this.pendingQuest;
+    if (!p) return;
+    const name = this.state.members.find(m => m.characterId === p.characterId)?.name ?? p.characterId;
+    if (this.now() > p.deadline) {
+      this.pendingQuest = null;
+      this.state = addLog(this.state, '系統', `派任務給 ${name} 逾時：視角沒有切過去，沒有開始自動推進`, this.now(), { level: 'warn', characterId: p.characterId });
+      this.emit();
+      return;
+    }
+    if (!p.snapshotSeen || this.state.characterId !== p.characterId || this.lastViewedId !== p.characterId) return;
+    this.pendingQuest = null;
+    const quest = this.state.snapshot?.quests?.find(q => q.questId === p.questId);
+    if (!quest || quest.status === 'COMPLETED') {
+      this.state = addLog(this.state, '系統', `${name} 的快照沒有這個任務（或已完成），沒有開始自動推進`, this.now(), { level: 'warn', characterId: p.characterId });
+      this.emit();
+      return;
+    }
+    const err = this.perform({ kind: 'QUEST_AUTO', questId: p.questId, label: p.label });
+    if (err) {
+      this.state = addLog(this.state, '系統', `派任務給 ${name} 失敗：${err}`, this.now(), { level: 'warn', characterId: p.characterId });
+    }
+    this.emit();
   }
 
   private lastViewedId: string | null = null;
+  /** F9 派給角色：等視角切到 characterId 並收到它的快照後，才送 QUEST_AUTO。 */
+  private pendingQuest: { questId: number; characterId: string; label: string; deadline: number; snapshotSeen: boolean } | null = null;
 
   private syncViewOwnership(): void {
     const viewed = this.state.characterId;
@@ -443,6 +509,7 @@ export class FamilyController {
     this.afterChange(this.now());
     this.syncViewOwnership();
     this.settleViewLoan();
+    this.settlePendingQuest();
     this.dispatcher.tick();
     if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();
@@ -537,6 +604,7 @@ export class FamilyController {
       const cid = this.state.characterId ?? this.state.activeCharacterId;
       if (cid) this.strategyStore.update(cid, { battleStrategy: action.strategy });
     }
+    if (action.kind === 'QUEST_ASSIGN') return this.assignQuest(action);
     if (action.kind === 'DISPATCH_ASSIGN') {
       const err = this.dispatcher.assign(action.characterId, action.spec);
       this.state = addLog(this.state, '系統', action.label, this.now(), { characterId: action.characterId });

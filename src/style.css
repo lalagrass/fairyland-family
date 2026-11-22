@@ -363,3 +363,55 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   .world-map-list { display: flex; flex-direction: column; }
   .world-map-list button { min-height: 40px; width: 100%; text-align: left; }
 }
+
+/* F9 任務卡片：寬版多欄、窄版單欄。分界 480 與卡片最小寬 240／間距 10 和 questCardsLayout 相同。 */
+.quest-cards { container-type: inline-size; container-name: quest-cards; min-width: 0; }
+.quest-card-grid {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.quest-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  overflow-wrap: anywhere;
+}
+.quest-card.status-ready { border-left-color: var(--ok); }
+.quest-card.status-in_progress { border-left-color: var(--warn); }
+.quest-card.status-available { border-left-color: var(--acc); }
+.quest-card.status-completed { opacity: .7; }
+.quest-card-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.quest-card-title { min-width: 0; }
+.quest-card-fields { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; }
+.quest-card-fields dt { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.quest-card-fields dd { margin: 0; min-width: 0; }
+.quest-card-objectives { list-style: none; margin: 2px 0 0; padding: 0; color: var(--dim); font-size: 12px; }
+.quest-card-objectives li.met { color: var(--ok); }
+.quest-card-foot { font-size: 12px; }
+.quest-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.quest-card-assign-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  z-index: 50;
+}
+@container quest-cards (max-width: 479px) {
+  .quest-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .quest-card-actions { flex-direction: column; }
+  .quest-card-actions .item { width: 100%; min-height: 40px; }
+}
