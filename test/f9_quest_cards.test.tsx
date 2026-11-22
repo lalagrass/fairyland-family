@@ -151,7 +151,9 @@ suite('F9: 沒有出處的值顯示「未知」，不自補');
   const zero = questCardModels([quest({ questId: 9, rewardExp: 0, rewardCoins: 0, objectives: [{ type: 'TALK', description: '說話', current: 0, required: 1, met: false }] })], ctx())[0];
   assert(zero.rewardExp === '0 EXP' && zero.rewardCoins === '0 金' && !zero.hasUnknown, '宿主明確給 0 就顯示 0');
   const pending = byId(questCardModels(quests, ctx({ pendingAssign: { questId: 1, characterId: 'c2' } })), 1);
-  assert(pending.owner.mode === 'PENDING' && pending.owner.text.includes('乙'), '派給別人時寫出等待切換視角');
+  assert(pending.owner.mode === 'PENDING' && pending.owner.text.includes('乙'), '派給別人時寫出等待背景快照');
+  const bgActive = byId(questCardModels(quests, ctx({ lanes: [{ characterId: 'c2', active: true, questId: 1 }] })), 1);
+  assert(bgActive.owner.mode === 'AUTO' && bgActive.owner.text.includes('乙') && bgActive.owner.text.includes('背景推進中'), '背景派工通道推進時顯示背景推進中');
 }
 
 suite('F9: 寬版多欄、窄版單欄');
@@ -310,110 +312,102 @@ suite('F9: 點「前往」與「派給角色」（React 實機 DOM）');
   const trigger = host.querySelector('[data-testid="quest-entry"][data-quest-id="1"] [data-testid="quest-card-assign-btn"]') as unknown as HTMLElement;
   await act(async () => { trigger.click(); });
   const member = win.document.querySelector('[data-testid="quest-card-assign-member"][data-character-id="c2"]') as unknown as HTMLElement | null;
-  assert(member !== null, '「派給角色」打開成員清單（Radix Popover）');
+  const menuText = win.document.querySelector('[data-testid="quest-card-assign-menu"]')?.textContent ?? '';
+  assert(member !== null && menuText.includes('背景派工通道') && !menuText.includes('先切換視角'), '「派給角色」打開成員清單（Radix Popover），提示背景派工不切視角');
   if (member) await act(async () => { member.click(); });
   assert(assigned.length === 1 && assigned[0][0] === 1 && assigned[0][1] === 'c2', '選成員後回報任務與角色');
   await act(async () => { root.unmount(); });
   win.close();
 }
 
-suite('F9: 派給不在視角中的角色＝先切換視角，等快照到了才自動推進');
+suite('F9c: 派給不在視角中的角色＝直接走 F8 背景派工通道，不切視角');
 {
-  const w = createWorld({ questCount: 3, questStepMs: 500 });
+  const w = createWorld({ fx17: true, questCount: 3, questStepMs: 500 });
   w.boot();
   assert(w.viewed === 'char_1', '一開始視角是愛麗絲');
   const before = w.sent.length;
   const err = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '派任務「虛構委託1」給 小石' });
   assert(err === null, '派任務接受');
-  const switched = w.sent.slice(before).filter(c => c.command.type === 'SWITCH_VIEW_CHARACTER');
-  assert(switched.length === 1 && switched[0].characterId === 'char_2', '先送切換視角給小石');
-  assert(w.ctrl.pendingQuestAssign()?.characterId === 'char_2', '等待中的派任務記在控制器');
-  assert(w.ctrl.activeQuest() === null, '視角還沒切過去前不開始自動推進');
+  assert(w.sent.slice(before).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '完全不送 SWITCH_VIEW_CHARACTER');
+  assert(w.sent.slice(before).some(c => c.command.type === 'REQUEST_SNAPSHOT' && c.characterId === 'char_2'), '向宿主索取小石自己的背景快照');
+  assert(w.ctrl.pendingQuestAssign()?.characterId === 'char_2', '等待中的背景派任務記在控制器');
+  const dupErr = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_1', label: '重複派給愛麗絲' });
+  assert(typeof dupErr === 'string' && dupErr.includes('小石'), `等待快照期間同一任務不重複派給別人（${dupErr}）`);
   const fg = new Set(['WALK_TO', 'TALK_TO_NPC', 'CHOOSE_DIALOG_OPTION', 'ACCEPT_QUEST']);
-  assert(w.sent.slice(before).filter(c => fg.has(c.command.type)).length === 0, '切換前沒有送任何任務指令');
+  assert(w.sent.slice(before).filter(c => fg.has(c.command.type)).length === 0, '背景快照到位前沒有送任務指令');
+
   w.advance(2_000);
-  assert(w.viewed === 'char_2', '宿主視角切到小石');
-  assert(w.ctrl.pendingQuestAssign() === null, '切過去後清掉等待中的派任務');
+  assert(w.viewed === 'char_1' && w.ctrl.state.characterId === 'char_1', '宿主與外掛視角都維持在愛麗絲');
+  assert(w.ctrl.pendingQuestAssign() === null, '背景快照到位後清掉等待中紀錄');
+  const laneSum = w.ctrl.laneSummaries().find(l => l.characterId === 'char_2');
+  assert(Boolean(laneSum?.active) && laneSum?.questId === 7000, '小石的 F8 背景通道開始推進 7000');
   const after = w.sent.slice(before).filter(c => fg.has(c.command.type));
-  assert(after.length > 0 && after.every(c => c.characterId === 'char_2'), '任務指令都送給小石');
+  assert(after.length > 0 && after.every(c => c.characterId === 'char_2'), '任務指令全部直接送給小石');
   assert(!w.ctrl.state.log.some(l => l.text.includes('WRONG_CHARACTER')), '宿主沒有回 WRONG_CHARACTER');
+
+  for (let i = 0; i < 40 && w.questsOf('char_2').find(q => q.questId === 7000)?.status !== 'COMPLETED'; i++) {
+    w.advance(250);
+  }
+  assert(w.questsOf('char_2').find(q => q.questId === 7000)?.status === 'COMPLETED', '小石在背景完成這個任務');
+  assert(w.questsOf('char_1').find(q => q.questId === 7000)?.status === 'AVAILABLE', '視角角色愛麗絲的任務沒有被動到');
+  assert(w.sent.slice(before).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '全程零次 SWITCH_VIEW_CHARACTER');
+
+  // 推進一拍讓背景更新快照送達，通道已有新鮮快照（5 秒內），直接再派 7001 不用再等快照也不切視角。
+  w.advance(500);
+  const beforeSecond = w.sent.length;
+  const err2 = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7001, characterId: 'char_2', label: '再派任務「虛構委託2」給 小石' });
+  assert(err2 === null && w.ctrl.pendingQuestAssign() === null, '新鮮快照下直接啟動背景通道任務');
   w.advance(10_000);
-  assert(w.quests[0].status === 'COMPLETED', '小石完成這個任務');
+  assert(w.questsOf('char_2').find(q => q.questId === 7001)?.status === 'COMPLETED', '小石在背景接續完成 7001');
+  assert(w.sent.slice(beforeSecond).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '第二次派任務一樣不切視角');
 }
 
-suite('F9: 派給視角中的角色＝直接自動推進；找不到的角色回錯誤');
+suite('F9c: 派給視角中的角色＝直接自動推進，不切視角；找不到的角色回錯誤');
 {
-  const w = createWorld({ questCount: 3, questStepMs: 500 });
+  const w = createWorld({ fx17: true, questCount: 3, questStepMs: 500 });
   w.boot();
   const before = w.sent.length;
   const err = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7001, characterId: 'char_1', label: '派任務給 愛麗絲' });
   assert(err === null && w.ctrl.activeQuest() === 7001, '視角中的角色直接開始自動推進');
   assert(w.sent.slice(before).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '不用切換視角');
+  w.advance(10_000);
+  assert(w.questsOf('char_1').find(q => q.questId === 7001)?.status === 'COMPLETED', '視角角色完成任務');
   const bad = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7001, characterId: 'char_nobody', label: '派任務給 不存在' });
   assert(typeof bad === 'string' && bad.length > 0, '不存在的角色回錯誤文字');
 }
 
-suite('F7/F9：背景採集借視角時，派任務只等自己的切換確認與新快照');
+suite('F9c: 背景已有派工時改派單筆任務會停掉原派工；快照逾時則放棄且不切視角');
 {
-  for (const outcome of ['accepted', 'rejected', 'superseded', 'timeout'] as const) {
-    const w = createWorld({ startOffsetA: 700, questCount: 3, questStepMs: 500 });
-    w.boot();
-    w.ctrl.dispatcher.assign('char_2', {
-      kind: 'GATHER',
-      gather: { skillId: 5, skillName: '挖礦', targetItemId: 90001, targetName: '虛構礦石', count: 'UNTIL_FULL' },
-      stop: { maxMinutes: null, stopOnBagFull: false, minSatiety: null },
-    });
-    w.advance(1, 1);
-    assert(w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_2')
-      && w.ctrl.state.characterId === 'char_1', '借視角已發送、尚未收到畫面');
-    const send = w.transport.send.bind(w.transport);
-    const held: CommandMessage[] = [];
-    w.transport.send = m => {
-      if (m.command.type === 'SWITCH_VIEW_CHARACTER' && m.command.characterId === 'char_2') held.push(m);
-      else send(m);
-    };
-    assert(w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '派任務給小石' }) === null
-      && held.length === 1, '另外送一次由玩家發起的派任務切換');
-    const fg = new Set(['TALK_TO_NPC', 'CHOOSE_DIALOG_OPTION', 'ACCEPT_QUEST']);
-    const questSent = () => w.sent.some(c => fg.has(c.command.type));
-    const restored = () => w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_1');
-    w.push({ v: PROTOCOL_VERSION, kind: 'command-result', characterId: 'char_2', ts: w.t,
-      commandId: 'unrelated', status: 'ACCEPTED' });
-    w.advance(6000);
-    assert(w.ctrl.state.characterId === 'char_2' && !questSent() && w.ctrl.activeQuest() === null,
-      `${outcome}：借用快照及無關確認都不會提前開始任務`);
-    assert(!restored(), `${outcome}：玩家切換未確認前不會自動歸還視角`);
-    const manual = held[0];
-    w.transport.send = send;
-    if (outcome === 'accepted') {
-      send(manual);
-      w.advance(1, 1);
-      assert(!questSent() && w.ctrl.activeQuest() === null, '收到確認後仍等一份新的宿主快照');
-      w.advance(12_000);
-      assert(w.viewed === 'char_2' && !restored() && w.ctrl.activeQuest() === 7000,
-        '宿主接受及新快照後保持玩家選擇，開始指定任務');
-    } else if (outcome === 'superseded') {
-      w.ctrl.perform({ kind: 'COMMAND', command: { type: 'SWITCH_VIEW_CHARACTER', characterId: 'char_1' }, label: '玩家改看愛麗絲' });
-      w.advance(1000);
-      assert(w.viewed === 'char_1' && w.ctrl.pendingQuestAssign() === null, '選了別的角色，丟棄舊的任務意圖');
-      send(manual);
-      w.advance(1000);
-      assert(!questSent() && w.ctrl.activeQuest() === null, '舊切換即使稍後收到確認與快照，也不開始舊任務');
-    } else if (outcome === 'timeout') {
-      w.advance(15_000);
-      assert(w.viewed === 'char_1' && restored() && w.ctrl.pendingQuestAssign() === null,
-        '逾時後丟棄任務意圖，借用回到原視角');
-      send(manual);
-      w.advance(1000);
-      assert(!questSent() && w.ctrl.activeQuest() === null, '逾時後送達的確認與新快照也不會啟動任務');
-    } else {
-      w.push({ v: PROTOCOL_VERSION, kind: 'command-result', characterId: manual.characterId, ts: w.t,
-        commandId: manual.commandId, status: 'REJECTED', reasonCode: 'GAME_BUSY' });
-      w.advance(12_000);
-      assert(w.viewed === 'char_1' && restored() && !questSent() && w.ctrl.pendingQuestAssign() === null,
-        '派任務切換遭拒，不會開任務，原借用仍正常歸還');
-    }
-  }
+  const w = createWorld({ fx17: true, questCount: 10, questStepMs: 500 });
+  w.boot();
+  assert(w.ctrl.dispatcher.assign('char_2', {
+    kind: 'QUEST_CHAIN',
+    stop: { maxMinutes: null, stopOnBagFull: false, minSatiety: null },
+  }) === null, '先讓小石跑任務鏈派工');
+  w.advance(4_000);
+  const before = w.sent.length;
+  const err = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7005, characterId: 'char_2', label: '改派單筆任務給小石' });
+  assert(err === null, '改派單筆任務成功');
+  const rec = w.ctrl.dispatches().find(r => r.characterId === 'char_2');
+  assert(rec?.phase === 'STOPPED', `原本任務鏈派工已停下（${rec?.phase}）`);
+  w.advance(10_000);
+  assert(w.questsOf('char_2').find(q => q.questId === 7005)?.status === 'COMPLETED', '小石在背景完成指定的單筆任務 7005');
+  assert(w.sent.slice(before).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '改派與執行全程不切視角');
+
+  // 快照逾時情境：攔截 REQUEST_SNAPSHOT 不回傳。
+  const w2 = createWorld({ fx17: true, questCount: 3, questStepMs: 500 });
+  w2.boot();
+  const origSend = w2.transport.send.bind(w2.transport);
+  w2.transport.send = m => {
+    if (m.command.type === 'REQUEST_SNAPSHOT' && m.characterId === 'char_2') return;
+    origSend(m);
+  };
+  assert(w2.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '逾時測試' }) === null, '派任務進入等待背景快照');
+  assert(w2.ctrl.pendingQuestAssign()?.characterId === 'char_2', '紀錄等待中');
+  w2.advance(16_000);
+  assert(w2.ctrl.pendingQuestAssign() === null, '15 秒未收到快照後清除等待狀態');
+  assert(w2.ctrl.laneSummaries().every(l => !l.active), '逾時後沒有啟動通道任務');
+  assert(w2.sent.every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '逾時情境也不會送出切換視角');
 }
 
 done();

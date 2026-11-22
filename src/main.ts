@@ -32,6 +32,7 @@ const controller = new FamilyController(transport, {
     queues: controller.queueStatuses(),
     activeQuestId: controller.activeQuest(),
     pendingQuestAssign: controller.pendingQuestAssign(),
+    pendingQuestAssigns: controller.pendingQuestAssigns(),
     chain: controller.chainStatus(),
     charStrategies: controller.charStrategies(),
     appearances: controller.charAppearances(),

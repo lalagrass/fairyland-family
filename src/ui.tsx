@@ -67,8 +67,9 @@ export interface UiAux {
   queues?: Record<string, QueueStatus>;
   devMode?: boolean;
   activeQuestId?: number | null;
-  /** F9：已派給角色、等視角切過去的任務。 */
+  /** F9c：已派給非視角角色、等背景快照的任務。 */
   pendingQuestAssign?: { questId: number; characterId: string } | null;
+  pendingQuestAssigns?: Array<{ questId: number; characterId: string }>;
   charStrategies?: Record<string, CharacterStrategyConfig>;
   appearances?: Record<string, string>;
   viewModes?: Record<string, ViewMode>;
@@ -525,8 +526,10 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
       nameOf: id => names.get(id) ?? null,
       activeQuestId: aux.activeQuestId ?? null,
       pendingAssign: aux.pendingQuestAssign ?? null,
+      pendingAssigns: aux.pendingQuestAssigns,
+      lanes: aux.lanes,
     });
-  }, [snap, questMembers, state.characterId, aux.activeQuestId, aux.pendingQuestAssign]);
+  }, [snap, questMembers, state.characterId, aux.activeQuestId, aux.pendingQuestAssign, aux.pendingQuestAssigns, aux.lanes]);
 
   const menuSections = useMemo(() => {
     if (!snap) return [];

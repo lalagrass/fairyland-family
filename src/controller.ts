@@ -24,7 +24,7 @@ import type { AutomationHostContext, BehaviorModule, CoordinatorMode } from './a
 import { AutoBattler, type BattleStrategy } from './battler';
 import { Directory } from './directory';
 import { CharacterDispatcher, DispatchStore, type DispatchRecap, type DispatchRecord, type DispatchStop, type GatherSpec } from './dispatch';
-import { CharacterLane, type LaneSummary } from './lanes';
+import { CharacterLane, LANE_SNAPSHOT_REFRESH_MS, type LaneSummary } from './lanes';
 import { AutoNavigator, type NavStatus } from './navigator';
 import { WorkNotifier, type NotificationAdapter } from './notify';
 import { parseInput, type UiAction } from './parse';
@@ -39,7 +39,7 @@ const PRIMARY_KEY = 'family.queue.primary:v1';
 
 interface KvStorage { getItem(k: string): string | null; setItem(k: string, v: string): void }
 
-/** F9：派給別的角色時，最多等這麼久讓視角切過去。 */
+/** F9c：派給非視角角色時，最多等這麼久取得背景角色快照。 */
 const PENDING_QUEST_TIMEOUT_MS = 15_000;
 
 export interface ControllerOptions {
@@ -280,10 +280,13 @@ export class FamilyController {
     return lane;
   }
 
-  /** F8：這件任務是不是別人正在做（派工通道，或視角角色手動的單筆任務／任務鏈）；回傳那位角色的 id。 */
+  /** F8／F9c：這件任務是不是別人正在做（派工通道、待啟動的背景派任務，或視角角色手動的單筆任務／任務鏈）；回傳那位角色的 id。 */
   questHolder(questId: number, exceptId: string | null = null): string | null {
     for (const [id, lane] of this.lanes) {
       if (id !== exceptId && lane.heldQuestId() === questId) return id;
+    }
+    for (const [id, p] of this.pendingLaneQuests) {
+      if (id !== exceptId && p.questId === questId) return id;
     }
     const viewed = this.state.characterId;
     const viewOwner = this.questChain.isActive() ? this.chainOwner : viewed;
@@ -305,7 +308,7 @@ export class FamilyController {
         questId,
         questTitle: q ? q.title || null : null,
         progress: q && objs.length ? `${objs.filter(o => o.met).length}/${objs.length} 項目標` : null,
-        text: lane.chainStatus().text,
+        text: lane.chain.isActive() ? lane.chainStatus().text : lane.quest.getSummary(),
       });
     }
     return out;
@@ -461,10 +464,17 @@ export class FamilyController {
 
   navStatus(): NavStatus { return this.navigator.getStatus(); }
   strategy(): BattleStrategy { return this.battler.getStrategy(); }
-  activeQuest(): number | null { return this.questModule.getActiveQuestId(); }
-  /** F9：已派給角色、還在等視角切過去的任務。 */
+  activeQuest(): number | null {
+    const viewedLane = this.state.characterId ? this.lanes.get(this.state.characterId) : undefined;
+    return viewedLane?.quest.getActiveQuestId() ?? this.questModule.getActiveQuestId();
+  }
+  /** F9c：已派給非視角角色、還在等背景快照的任務。 */
   pendingQuestAssign(): { questId: number; characterId: string } | null {
-    return this.pendingQuest ? { questId: this.pendingQuest.questId, characterId: this.pendingQuest.characterId } : null;
+    const first = this.pendingLaneQuests.values().next().value;
+    return first ? { questId: first.questId, characterId: first.characterId } : null;
+  }
+  pendingQuestAssigns(): Array<{ questId: number; characterId: string }> {
+    return [...this.pendingLaneQuests.values()].map(p => ({ questId: p.questId, characterId: p.characterId }));
   }
   /** 視角角色的任務鏈狀態：派工通道在跑就回通道的，否則回手動任務鏈的。 */
   chainStatus() {
@@ -498,6 +508,7 @@ export class FamilyController {
         this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
         lane.onMessage(raw);
         if (lane.active()) this.getOrCreateQueue(raw.characterId).onMessage(raw);
+        this.settlePendingLaneQuests();
         this.emit();
         return;
       }
@@ -566,21 +577,10 @@ export class FamilyController {
       q?.onMessage(m);
     }
     if (!laneOwned) this.automation.notifyMessage(m, ctx);
-    const quest = this.pendingQuest;
-    if (quest && m.kind === 'command-result' && m.commandId === quest.switchCommandId) {
-      if (m.status === 'ACCEPTED') quest.switchAccepted = true;
-      else {
-        this.pendingQuest = null;
-        this.state = addLog(this.state, '系統', `派任務失敗：${m.message ?? m.reasonCode ?? '宿主拒絕切換視角'}`, this.now(), { level: 'warn', characterId: quest.characterId });
-      }
-    }
-    if (quest?.switchAccepted && m.kind === 'snapshot' && m.characterId === quest.characterId) {
-      quest.snapshotSeen = true;
-    }
-    this.settlePendingQuest();
+    this.settlePendingLaneQuests();
   }
 
-  /** F9 派給角色：視角中的角色直接開始自動推進；別的角色先切換視角（任務指令宿主只接受視角角色）。 */
+  /** F9c 派給角色：視角中的角色直接自動推進；非視角角色直接走 F8 背景派工通道，不切視角。 */
   private assignQuest(action: Extract<UiAction, { kind: 'QUEST_ASSIGN' }>): string | null {
     const viewed = this.state.characterId;
     if (!viewed) return '尚未收到角色資料，無法派任務';
@@ -588,67 +588,86 @@ export class FamilyController {
     const holder = this.questHolder(action.questId, action.characterId);
     if (holder) return `這件任務【${this.memberName(holder)}】正在做，先停下他的派工再改派`;
     if (action.characterId === viewed) {
-      this.pendingQuest = null;
+      this.pendingLaneQuests.delete(action.characterId);
       return this.perform({ kind: 'QUEST_AUTO', questId: action.questId, label: action.label });
     }
     const member = this.state.members.find(m => m.characterId === action.characterId);
     if (!member) return `找不到角色 ${action.characterId}`;
+    if (this.status() !== 'RUNNING') return '遊戲未執行，無法派任務';
     const name = member.name ?? member.characterId;
-    const switchCommandId = this.sendExplicitViewSwitch(action.characterId, action.characterId, `派任務切換視角 ${name}`);
-    if (!switchCommandId) {
-      this.pendingQuest = null;
-      return '遊戲未執行，無法切換視角';
+    this.pendingLaneQuests.delete(action.characterId);
+    const prevRec = this.dispatcher.recordFor(action.characterId);
+    if (
+      (prevRec && (prevRec.phase === 'RUNNING' || prevRec.phase === 'PAUSED' || prevRec.phase === 'WAITING_VIEW')) ||
+      this.lanes.get(action.characterId)?.active() ||
+      this.queues.get(action.characterId)?.isActive()
+    ) {
+      this.dispatcher.stop(action.characterId, 'USER_STOPPED', '改為指派單筆任務');
     }
-    this.pendingQuest = {
+    const lane = this.laneFor(action.characterId);
+    lane.stop('改為指派單筆任務');
+    const fresh = lane.ready() && this.now() - (lane.state.snapshotAt ?? -Infinity) <= LANE_SNAPSHOT_REFRESH_MS;
+    if (fresh) {
+      return this.startLaneQuest(lane, action.questId, name);
+    }
+    this.pendingLaneQuests.set(action.characterId, {
       questId: action.questId,
       characterId: action.characterId,
       label: action.label,
       deadline: this.now() + PENDING_QUEST_TIMEOUT_MS,
-      switchCommandId,
-      switchAccepted: false,
-      snapshotSeen: false,
-    };
-    this.state = addLog(this.state, '系統', `${action.label}（等待切換視角）`, this.now(), { characterId: action.characterId });
+      priorSnap: lane.state.snapshot,
+    });
+    lane.requestSnapshot('派單筆任務');
+    this.state = addLog(this.state, '系統', `${action.label}（等待背景快照）`, this.now(), { characterId: action.characterId });
     this.emit();
     return null;
   }
 
-  private settlePendingQuest(): void {
-    const p = this.pendingQuest;
-    if (!p) return;
-    const name = this.state.members.find(m => m.characterId === p.characterId)?.name ?? p.characterId;
-    if (this.now() > p.deadline) {
-      this.pendingQuest = null;
-      this.state = addLog(this.state, '系統', `派任務給 ${name} 逾時：視角沒有切過去，沒有開始自動推進`, this.now(), { level: 'warn', characterId: p.characterId });
-      this.emit();
-      return;
-    }
-    if (!p.snapshotSeen || this.state.characterId !== p.characterId || this.lastViewedId !== p.characterId) return;
-    this.pendingQuest = null;
-    const quest = this.state.snapshot?.quests?.find(q => q.questId === p.questId);
+  private startLaneQuest(lane: CharacterLane, questId: number, name: string): string | null {
+    const quest = lane.state.snapshot?.quests?.find(q => q.questId === questId);
     if (!quest || quest.status === 'COMPLETED') {
-      this.state = addLog(this.state, '系統', `${name} 的快照沒有這個任務（或已完成），沒有開始自動推進`, this.now(), { level: 'warn', characterId: p.characterId });
+      const msg = `${name} 的快照沒有這個任務（或已完成），沒有開始自動推進`;
+      this.state = addLog(this.state, '系統', msg, this.now(), { level: 'warn', characterId: lane.characterId });
       this.emit();
-      return;
+      return msg;
     }
-    const err = this.perform({ kind: 'QUEST_AUTO', questId: p.questId, label: p.label });
+    const err = lane.quest.start(questId);
     if (err) {
-      this.state = addLog(this.state, '系統', `派任務給 ${name} 失敗：${err}`, this.now(), { level: 'warn', characterId: p.characterId });
+      this.state = addLog(this.state, '系統', `派任務給 ${name} 失敗：${err}`, this.now(), { level: 'warn', characterId: lane.characterId });
+      this.emit();
+      return err;
     }
     this.emit();
+    return null;
+  }
+
+  private settlePendingLaneQuests(): void {
+    if (this.pendingLaneQuests.size === 0) return;
+    const now = this.now();
+    for (const [id, p] of [...this.pendingLaneQuests]) {
+      const name = this.memberName(id);
+      if (now > p.deadline) {
+        this.pendingLaneQuests.delete(id);
+        this.state = addLog(this.state, '系統', `派任務給 ${name} 逾時：未收到背景角色快照，沒有開始自動推進`, now, { level: 'warn', characterId: id });
+        this.emit();
+        continue;
+      }
+      const lane = this.lanes.get(id);
+      if (!lane || !lane.ready() || lane.state.snapshot === p.priorSnap) continue;
+      this.pendingLaneQuests.delete(id);
+      this.startLaneQuest(lane, p.questId, name);
+    }
   }
 
   private lastViewedId: string | null = null;
-  /** F9：派任務切換指令必須先獲得宿主確認，再等該角色的新快照。 */
-  private pendingQuest: {
+  /** F9c：派給非視角角色後，等待該角色自己的通道快照到位再啟動單筆任務。 */
+  private pendingLaneQuests = new Map<string, {
     questId: number;
     characterId: string;
     label: string;
     deadline: number;
-    switchCommandId: string;
-    switchAccepted: boolean;
-    snapshotSeen: boolean;
-  } | null = null;
+    priorSnap: unknown;
+  }>();
 
   private syncViewOwnership(): void {
     const viewed = this.state.characterId;
@@ -668,7 +687,7 @@ export class FamilyController {
     this.afterChange(this.now());
     this.syncViewOwnership();
     this.settleViewLoan();
-    this.settlePendingQuest();
+    this.settlePendingLaneQuests();
     this.dispatcher.tick();
     for (const lane of this.lanes.values()) lane.tick();
     if (this.questChain.isActive()) this.questChain.tick();
@@ -744,7 +763,7 @@ export class FamilyController {
     if (action.kind === 'COMMAND') {
       const target = action.targetCharacterId ?? this.state.characterId;
       if (action.command.type === 'SWITCH_VIEW_CHARACTER') {
-        if (this.sendExplicitViewSwitch(target, action.command.characterId, action.label)) this.pendingQuest = null;
+        this.sendExplicitViewSwitch(target, action.command.characterId, action.label);
       } else {
         this.sendFor(target, action.command, action.label);
       }
@@ -812,8 +831,11 @@ export class FamilyController {
         this.questChain.stop('玩家改為手動操作');
         this.questModule.stop();
       }
-      // F8：玩家手動操作派工通道正在跑的角色＝手動接手，停掉那位的派工（別的角色照跑）。
-      if (target && this.lanes.get(target)?.active()) this.dispatcher.stop(target, 'USER_STOPPED', '玩家改為手動操作');
+      // F8：玩家手動操作派工通道正在跑的角色＝手動接手，停掉那位的派工與通道（別的角色照跑）。
+      if (target && this.lanes.get(target)?.active()) {
+        this.dispatcher.stop(target, 'USER_STOPPED', '玩家改為手動操作');
+        this.lanes.get(target)?.stop('玩家改為手動操作');
+      }
     }
     const res = this.automation.dispatchAction(action, this.moduleContext());
     if (res.handled) return res.error;

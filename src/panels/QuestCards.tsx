@@ -76,7 +76,7 @@ function AssignMenu({ card, members, viewCharacterId, running, onAssign }: {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className="quest-card-assign-menu" data-testid="quest-card-assign-menu" sideOffset={6} align="start">
-          <div className="muted">任務需要角色在視角中；派給別人會先切換視角。</div>
+          <div className="muted">派給其他角色會在背景派工通道執行，不切換視角。</div>
           {members.map(m => (
             <button
               key={m.characterId}
