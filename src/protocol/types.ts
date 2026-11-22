@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 65162468bc9a08f2450188e15969d70756c4f715
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ a5a56547c5f1f06d6fa127cb600cc4f09086fec1
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -16,10 +16,11 @@
  *   DIALOG_UPDATED、SHOP_OPENED、SHOP_CLOSED；BATTLE_TURN_READY 帶敵人與可否逃跑。
  * - 版本 5（F5，fairyland-family#43）：`SnapshotPortalNode` 新增必填 `portals`（逐個傳送點：id、名稱、座標、目的地圖、
  *   目的地圖是否已匯入、穿過去的落點），讓外掛不必先走過每張圖就能規劃跨圖路線。
+ * - 版本 6（FX18）：快照任務和商店貨品增加佔位旗標；數值與宿主規則不變。
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -266,6 +267,8 @@ export interface SnapshotShopGood {
   itemId: number;
   name: string | null;
   price: number;
+  /** 價格來自佔位值；保留宿主扣款用數字，介面不要顯示成正式價。 */
+  pricePlaceholder?: boolean;
   category?: string;
 }
 
@@ -528,6 +531,9 @@ export interface SnapshotQuestObjective {
   itemName?: string;
 }
 
+export const QUEST_PLACEHOLDER_FIELDS = ['minLevel', 'rewardExp', 'rewardCoins'] as const;
+export type SnapshotQuestPlaceholderField = (typeof QUEST_PLACEHOLDER_FIELDS)[number];
+
 export interface SnapshotQuestEntry {
   questId: number;
   title: string;
@@ -539,6 +545,8 @@ export interface SnapshotQuestEntry {
   objectives: SnapshotQuestObjective[];
   rewardExp: number;
   rewardCoins: number;
+  /** 僅列有來源註記的佔位欄位；0 不代表未知。 */
+  placeholderFields?: SnapshotQuestPlaceholderField[];
 }
 
 export interface BattleEnemyState {

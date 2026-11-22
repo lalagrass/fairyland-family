@@ -88,7 +88,8 @@ try {
   await page.waitForSelector('[data-testid="character-stats"]', { timeout: 15000 });
 
   // 回放會一直送自己的快照，所以每 200ms 檢查一次，被蓋掉就再塞回虛構任務。
-  const inject = () => page.evaluate(() => {
+  const inject = () => page.evaluate(async () => {
+    const { PROTOCOL_VERSION } = await import('/family/src/protocol/index.ts');
     const ctrl = window.__family.controller;
     const apply = () => {
     if (ctrl.state.snapshot?.quests?.some(x => x.questId === 99101)) return;
@@ -112,7 +113,7 @@ try {
       q(99104, 'AVAILABLE', { title: '', npcName: '' }),
       q(99105, 'COMPLETED'),
     ];
-    ctrl.receive({ v: 5, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: Date.now(), reason: 'REQUESTED', snapshot: snap });
+    ctrl.receive({ v: PROTOCOL_VERSION, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: Date.now(), reason: 'REQUESTED', snapshot: snap });
     };
     apply();
     setInterval(apply, 200);
