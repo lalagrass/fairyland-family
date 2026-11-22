@@ -236,6 +236,11 @@ export class FamilyController {
           if (this.questModule.isActive()) this.questModule.stop();
         }
       },
+      stopSingleQuest: (id, text) => {
+        this.pendingLaneQuests.delete(id);
+        const lane = this.lanes.get(id);
+        if (lane?.quest.isActive()) lane.stop(text);
+      },
       viewChainOwner: () => (this.questChain.isActive() ? this.chainOwner : null),
       viewedId: () => this.state.characterId,
       requestSnapshot: id => this.laneFor(id).requestSnapshot('派工恢復'),
@@ -800,14 +805,31 @@ export class FamilyController {
     }
     if (action.kind === 'QUEST_ASSIGN') return this.assignQuest(action);
     if (action.kind === 'DISPATCH_ASSIGN') {
+      this.pendingLaneQuests.delete(action.characterId);
       const err = this.dispatcher.assign(action.characterId, action.spec);
       this.state = addLog(this.state, '系統', action.label, this.now(), { characterId: action.characterId });
       this.emit();
       return err;
     }
     if (action.kind === 'DISPATCH_STOP') {
+      this.pendingLaneQuests.delete(action.characterId);
       this.dispatcher.stop(action.characterId);
       return null;
+    }
+    if (action.kind === 'QUEST_AUTO_STOP') {
+      const target = action.targetCharacterId ?? this.state.characterId;
+      if (target && this.pendingLaneQuests.delete(target)) {
+        this.state = addLog(this.state, '系統', `已取消【${this.memberName(target)}】的背景派任務`, this.now(), { characterId: target });
+      }
+      if (action.targetCharacterId && action.targetCharacterId !== this.state.characterId) {
+        const lane = this.lanes.get(action.targetCharacterId);
+        if (lane?.active()) {
+          this.dispatcher.stop(action.targetCharacterId, 'USER_STOPPED', '玩家取消任務自動推進');
+          lane.stop('玩家取消任務自動推進');
+        }
+        this.emit();
+        return null;
+      }
     }
     const viewedLane = this.activeLaneFor(this.state.characterId);
     if (viewedLane && action.kind === 'QUEST_CHAIN_STOP') {

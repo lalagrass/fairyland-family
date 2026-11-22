@@ -316,6 +316,34 @@ suite('F9: 點「前往」與「派給角色」（React 實機 DOM）');
   assert(member !== null && menuText.includes('背景派工通道') && !menuText.includes('先切換視角'), '「派給角色」打開成員清單（Radix Popover），提示背景派工不切視角');
   if (member) await act(async () => { member.click(); });
   assert(assigned.length === 1 && assigned[0][0] === 1 && assigned[0][1] === 'c2', '選成員後回報任務與角色');
+  const stoppedCards: number[] = [];
+  const bgCtx = ctx({
+    pendingAssign: { questId: 1, characterId: 'c2' },
+    lanes: [{ characterId: 'c2', active: true, questId: 2 }],
+  });
+  await act(async () => {
+    root.render(
+      <QuestCards
+        cards={questCardModels(quests, bgCtx)}
+        members={[{ characterId: 'c1', name: '甲' }, { characterId: 'c2', name: '乙' }]}
+        viewCharacterId="c1"
+        running
+        activeQuestId={null}
+        initialWidth={1280}
+        onGo={card => went.push(card)}
+        onAuto={() => {}}
+        onAutoStop={card => stoppedCards.push(card.questId)}
+        onAssign={(card, id) => assigned.push([card.questId, id])}
+      />,
+    );
+  });
+  const stopPending = host.querySelector('[data-testid="quest-entry"][data-quest-id="1"] [data-testid="quest-auto-stop-btn"]') as unknown as HTMLElement | null;
+  const stopBgAuto = host.querySelector('[data-testid="quest-entry"][data-quest-id="2"] [data-testid="quest-auto-stop-btn"]') as unknown as HTMLElement | null;
+  assert(stopPending !== null && stopBgAuto !== null, '背景等待快照（PENDING）與背景推進（AUTO）卡片都顯示「停止自動」');
+  if (stopPending) await act(async () => { stopPending.click(); });
+  if (stopBgAuto) await act(async () => { stopBgAuto.click(); });
+  assert(stoppedCards.join(',') === '1,2', '點背景卡片「停止自動」會回報對應的任務');
+
   await act(async () => { root.unmount(); });
   win.close();
 }
@@ -408,6 +436,60 @@ suite('F9c: 背景已有派工時改派單筆任務會停掉原派工；快照�
   assert(w2.ctrl.pendingQuestAssign() === null, '15 秒未收到快照後清除等待狀態');
   assert(w2.ctrl.laneSummaries().every(l => !l.active), '逾時後沒有啟動通道任務');
   assert(w2.sent.every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '逾時情境也不會送出切換視角');
+}
+
+suite('F9c: QUEST_AUTO_STOP 與 DISPATCH_ASSIGN / DISPATCH_STOP 正確中止背景待啟動與執行中的單筆任務');
+{
+  // 1. 背景 PENDING 時可用 QUEST_AUTO_STOP 單獨取消，不影響視角角色正在跑的任務。
+  const w = createWorld({ fx17: true, questCount: 4, questStepMs: 500 });
+  w.boot();
+  assert(w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7001, characterId: 'char_1', label: '視角角色跑 7001' }) === null, '視角角色開始 7001');
+  assert(w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '背景角色派 7000' }) === null, '背景角色進入等待快照');
+  assert(w.ctrl.pendingQuestAssign()?.characterId === 'char_2', '小石在 PENDING 中');
+  assert(w.ctrl.perform({ kind: 'QUEST_AUTO_STOP', label: '取消小石背景任務', targetCharacterId: 'char_2' }) === null, '取消小石背景任務');
+  assert(w.ctrl.pendingQuestAssign() === null, '小石的 PENDING 已清除');
+  assert(w.ctrl.activeQuest() === 7001, '視角角色愛麗絲的 7001 沒有被停掉');
+  w.advance(2_000);
+  assert(!w.ctrl.laneSummaries().find(l => l.characterId === 'char_2')?.active, '即使快照隨後到達，小石也不會啟動已取消的 7000');
+
+  // 2. 背景 AUTO 進行中時可用 QUEST_AUTO_STOP(targetCharacterId) 單獨停下，且不影響視角角色。
+  assert(w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7002, characterId: 'char_2', label: '背景角色跑 7002' }) === null, '小石啟動 7002');
+  assert(Boolean(w.ctrl.laneSummaries().find(l => l.characterId === 'char_2')?.active), '小石通道正在推進 7002');
+  assert(w.ctrl.perform({ kind: 'QUEST_AUTO_STOP', label: '停止小石背景單筆任務', targetCharacterId: 'char_2' }) === null, '對小石送 QUEST_AUTO_STOP');
+  assert(!w.ctrl.laneSummaries().find(l => l.characterId === 'char_2')?.active, '小石背景單筆任務已停止');
+  w.advance(10_000);
+  assert(w.questsOf('char_1').find(q => q.questId === 7001)?.status === 'COMPLETED', '愛麗絲照常完成 7001');
+  assert(w.questsOf('char_2').find(q => q.questId === 7002)?.status !== 'COMPLETED', '小石停止後不再推進 7002');
+
+  // 3. DISPATCH_ASSIGN 與 DISPATCH_STOP 都要清掉 pendingLaneQuests 並停掉 active 的單筆 lane.quest。
+  const w2 = createWorld({ fx17: true, questCount: 5, questStepMs: 500 });
+  w2.boot();
+  assert(w2.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '派 7000' }) === null, '進入 PENDING');
+  assert(w2.ctrl.perform({
+    kind: 'DISPATCH_ASSIGN',
+    characterId: 'char_2',
+    label: '改派任務鏈',
+    spec: { kind: 'QUEST_CHAIN', stop: { maxMinutes: null, stopOnBagFull: false, minSatiety: null } },
+  }) === null, 'DISPATCH_ASSIGN 取代待啟動的背景單筆任務');
+  assert(w2.ctrl.pendingQuestAssign() === null, 'DISPATCH_ASSIGN 清掉 pendingLaneQuests');
+  w2.advance(1_000);
+  assert(w2.ctrl.dispatches().find(r => r.characterId === 'char_2')?.kind === 'QUEST_CHAIN', '改為執行任務鏈派工');
+
+  // DISPATCH_STOP 停掉進行中的單筆 lane.quest；也驗證對 PENDING 狀態下 DISPATCH_STOP 同樣清除。
+  assert(w2.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7003, characterId: 'char_2', label: '派單筆 7003' }) === null, '派單筆 7003');
+  w2.advance(1_000);
+  assert(Boolean(w2.ctrl.laneSummaries().find(l => l.characterId === 'char_2' && l.active && l.questId === 7003)), '小石通道正在跑單筆 7003');
+  w2.ctrl.perform({ kind: 'DISPATCH_STOP', characterId: 'char_2', label: '停止小石派工' });
+  assert(!w2.ctrl.laneSummaries().find(l => l.characterId === 'char_2')?.active, 'DISPATCH_STOP 停掉進行中的單筆 lane.quest');
+
+  const w3 = createWorld({ fx17: true, questCount: 3, questStepMs: 500 });
+  w3.boot();
+  w3.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '派 7000' });
+  assert(w3.ctrl.pendingQuestAssign()?.characterId === 'char_2', 'PENDING 中');
+  w3.ctrl.perform({ kind: 'DISPATCH_STOP', characterId: 'char_2', label: '派工停止' });
+  assert(w3.ctrl.pendingQuestAssign() === null, 'DISPATCH_STOP 清掉 pendingLaneQuests');
+  w3.advance(2_000);
+  assert(!w3.ctrl.laneSummaries().find(l => l.characterId === 'char_2')?.active, '清掉後不會在快照到達時啟動');
 }
 
 done();

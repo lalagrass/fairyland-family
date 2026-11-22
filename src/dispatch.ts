@@ -203,6 +203,8 @@ export interface DispatchHost {
   /** 在這位角色的派工通道啟動任務鏈；回傳錯誤文字或 null。 */
   startChain(id: string, loopOnly: boolean, stop: DispatchStop, remainingMs: number | null): string | null;
   stopChain(id: string, text: string): void;
+  /** F9c：停止該角色在背景通道待啟動或進行中的單筆任務。 */
+  stopSingleQuest?(id: string, text: string): void;
   /** 玩家手動開的視角任務鏈屬於誰（沒有就是 null）；只有它需要留在視角中。 */
   viewChainOwner(): string | null;
   viewedId(): string | null;
@@ -367,10 +369,11 @@ export class CharacterDispatcher {
     return this.host.startChain(rec.characterId, rec.kind === 'NOVICE_LOOP', rec.stop, remaining);
   }
 
-  /** 這個角色自己的工作全部收掉（佇列、任務鏈），不碰別人。 */
+  /** 這個角色自己的工作全部收掉（佇列、任務鏈、背景單筆任務），不碰別人。 */
   private releaseJob(id: string, text: string): void {
     if (this.host.queueActive(id)) this.host.stopQueue(id, 'USER_STOPPED', text);
     if (this.host.chainActive(id)) this.host.stopChain(id, text);
+    this.host.stopSingleQuest?.(id, text);
   }
 
   private finish(rec: DispatchRecord, phase: 'STOPPED' | 'DONE', code: string, text: string): void {

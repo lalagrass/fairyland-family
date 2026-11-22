@@ -1266,7 +1266,11 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                       );
                     }}
                     onAuto={card => handleAction({ kind: 'QUEST_AUTO', questId: card.questId, label: `自動處理任務 ${card.title}` })}
-                    onAutoStop={() => handleAction({ kind: 'QUEST_AUTO_STOP', label: '停止自動任務' })}
+                    onAutoStop={card => handleAction({
+                      kind: 'QUEST_AUTO_STOP',
+                      label: card.owner.characterId ? `停止自動任務（${card.owner.characterId}）` : '停止自動任務',
+                      ...(card.owner.characterId ? { targetCharacterId: card.owner.characterId } : {}),
+                    })}
                     onAssign={(card, characterId) => {
                       const name = questMembers.find(m => m.characterId === characterId)?.name ?? characterId;
                       handleAction({ kind: 'QUEST_ASSIGN', questId: card.questId, characterId, label: `派任務「${card.title}」給 ${name}` });

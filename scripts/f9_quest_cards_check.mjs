@@ -96,7 +96,7 @@ try {
     const cid = ctrl.state.characterId;
     const snap = JSON.parse(JSON.stringify(ctrl.state.snapshot));
     const member = (id, name) => ({
-      characterId: id, name, level: 5, mapId: snap.mapId, mapName: snap.mapName, x: 100, y: 100, gold: 10, satiety: 90,
+      characterId: id, name, level: 5, mapId: snap.mapId, mapName: snap.mapName, region: snap.region ?? null, x: 100, y: 100, gold: 10, satiety: 90,
       inventoryCount: 0, inventoryCap: 40, inBattle: false, inventory: [], workSkills: {},
     });
     snap.family = { activeCharacterId: cid, maxSlots: 5, warehouse: { gold: 0, cap: 200, items: [] }, members: [member(cid, '甲'), member('char_f9_b', '乙')] };
@@ -145,6 +145,8 @@ try {
   const menu = page.locator('[data-testid="quest-card-assign-menu"]');
   await menu.waitFor({ timeout: 3000 }).catch(() => {});
   await check((await menu.locator('[data-testid="quest-card-assign-member"]').count()) === 2, '1280px：「派給角色」列出兩位成員', 'desktop-1280-assign');
+  const menuText = (await menu.textContent().catch(() => '')) ?? '';
+  await check(menuText.includes('背景派工通道') && !menuText.includes('先切換視角'), '1280px：「派給角色」提示背景派工通道不切換視角', 'desktop-1280-assign');
   await page.keyboard.press('Escape');
 
   await page.setViewportSize({ width: 360, height: 800 });
