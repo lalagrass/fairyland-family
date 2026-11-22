@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ a5a56547c5f1f06d6fa127cb600cc4f09086fec1
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ e496d17377f6df5eb41c712c375fcbc14b049fb3
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -100,7 +100,8 @@ const isQuestEntry = (q: unknown): boolean =>
     && (o.itemName === undefined || isNonEmptyStr(o.itemName)))
   && isNum(q.rewardExp) && isNum(q.rewardCoins)
   && (q.placeholderFields === undefined || (isArr(q.placeholderFields)
-    && q.placeholderFields.every(f => typeof f === 'string' && (QUEST_PLACEHOLDER_FIELDS as readonly string[]).includes(f))));
+    && q.placeholderFields.every(f => typeof f === 'string' && (QUEST_PLACEHOLDER_FIELDS as readonly string[]).includes(f))))
+  && (q.regionId === undefined || isNonEmptyStr(q.regionId));
 
 /** 指令內容（不含信封）。 */
 export function isPluginCommand(x: unknown): x is PluginCommand {
@@ -184,6 +185,12 @@ export function isGameEvent(x: unknown): x is GameEvent {
 
 const AVAIL = ['AVAILABLE', 'UNAVAILABLE', 'RECONSTRUCTED_DEMO'];
 
+/** v7：區域欄位必填，值可以是 null（地圖不在區域清單裡）。 */
+const isRegionRefOrNull = (r: unknown): boolean => r === null || (isRec(r) && isNonEmptyStr(r.regionId) && isNonEmptyStr(r.name));
+const isStaticRegion = (r: unknown): boolean =>
+  isRec(r) && isNonEmptyStr(r.regionId) && isNonEmptyStr(r.name) && isNonEmptyStr(r.villageMapId)
+  && isArr(r.mapIds) && r.mapIds.every(isNonEmptyStr);
+
 const isGatherPoint = (p: unknown): boolean =>
   isRec(p) && isStr(p.id) && isStr(p.name) && isNum(p.x) && isNum(p.y) && numOrNull(p.skillId) && numOrNull(p.requiredToolItemId)
   && (p.materials === undefined || (isArr(p.materials) && p.materials.every(m => isRec(m) && isNum(m.itemId) && isStr(m.name) && isNum(m.reqLevel))));
@@ -194,7 +201,7 @@ const isWorkRecipe = (r: unknown): boolean =>
 
 /** 場景快照內容。只檢核外掛會用到的結構，不做資料語意檢查。 */
 export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
-  if (!isRec(x) || x.schema !== 'scene-snapshot' || !isNonEmptyStr(x.mapId) || !strOrNull(x.mapName)) return false;
+  if (!isRec(x) || x.schema !== 'scene-snapshot' || !isNonEmptyStr(x.mapId) || !strOrNull(x.mapName) || !isRegionRefOrNull(x.region)) return false;
   const c = x.character;
   if (!isRec(c) || !strOrNull(c.name) || !isNum(c.level) || !numOrNull(c.hp) || !numOrNull(c.maxHp)
     || !numOrNull(c.mp) || !numOrNull(c.maxMp) || !isNum(c.gold) || !isNum(c.x) || !isNum(c.y) || !isNum(c.dir) || !isBool(c.inBattle)
@@ -233,7 +240,7 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
     const isItem = (i: unknown): boolean => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count);
     const isMember = (m: unknown): boolean =>
       isRec(m) && isNonEmptyStr(m.characterId) && strOrNull(m.name) && isNum(m.level)
-      && isNonEmptyStr(m.mapId) && strOrNull(m.mapName) && isNum(m.x) && isNum(m.y)
+      && isNonEmptyStr(m.mapId) && strOrNull(m.mapName) && isRegionRefOrNull(m.region) && isNum(m.x) && isNum(m.y)
       && optNum(m.dir) && optStr(m.modelId) && optStr(m.weaponModel) && isRampTintOrUndef(m.tint)
       && isVisualActionOrUndef(m.action) && isMovePathOrNullOrUndef(m.movePath)
       && isNum(m.gold) && isNum(m.satiety) && isNum(m.inventoryCount) && isNum(m.inventoryCap)
@@ -305,7 +312,8 @@ export function isStaticDataMessage(x: unknown): x is StaticDataMessage {
     && isArr(d.recipes) && d.recipes.every(isWorkRecipe)
     && isArr(d.portalGraph) && d.portalGraph.every(isPortalNode)
     && isArr(d.skills) && d.skills.every(isStaticSkillSummary)
-    && isStaticAssetManifest(d.assets);
+    && isStaticAssetManifest(d.assets)
+    && isArr(d.regions) && d.regions.every(isStaticRegion);
 }
 
 export function isEventMessage(x: unknown): x is EventMessage {

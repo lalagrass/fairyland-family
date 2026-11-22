@@ -46,6 +46,7 @@ suite('FM7: 宿主事件套用後背包與倉庫才變');
       level: 5,
       mapId: '10001',
       mapName: '吉恩村',
+      region: { regionId: 'r-start', name: '起始村' },
       x: 3880,
       y: 3740,
       gold: 1200,

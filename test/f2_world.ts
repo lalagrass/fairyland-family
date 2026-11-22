@@ -101,6 +101,7 @@ export function createWorld(opts: WorldOpts = {}) {
     const me = chars[id];
     base.mapId = '99001';
     base.mapName = '虛構草原';
+    base.region = { regionId: 'r-f2', name: '虛構區' };
     base.openingStage = 'DONE';
     base.character = { ...base.character, name: me.name, level: me.level, gold: me.gold, x: me.x, y: me.y, satiety: me.satiety, maxSatiety: 100, inventoryCount: me.bag, inventoryCap: me.cap, inBattle: false };
     base.inventory = me.bag > 0 ? [{ itemId: 90001, name: '虛構礦石', count: me.bag }] : [];
@@ -131,7 +132,7 @@ export function createWorld(opts: WorldOpts = {}) {
       maxSlots: 5,
       warehouse: { gold: 0, cap: 200, items: [] },
       members: Object.values(chars).filter(c => !offline.has(c.id)).map(c => ({
-        characterId: c.id, name: c.name, level: c.level, mapId: '99001', mapName: '虛構草原', x: c.x, y: c.y, gold: c.gold, satiety: c.satiety,
+        characterId: c.id, name: c.name, level: c.level, mapId: '99001', mapName: '虛構草原', region: { regionId: 'r-f2', name: '虛構區' }, x: c.x, y: c.y, gold: c.gold, satiety: c.satiety,
         inventoryCount: c.bag, inventoryCap: c.cap, inBattle: false,
         inventory: c.bag > 0 ? [{ itemId: 90001, name: '虛構礦石', count: c.bag }] : [], workSkills: { 5: 5 },
       })),

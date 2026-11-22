@@ -763,7 +763,7 @@ export class FamilyController {
       this.dispatcher.stop(action.characterId);
       return null;
     }
-    if (action.kind === 'QUEST_CHAIN_START') {
+    if (action.kind === 'QUEST_CHAIN_START' || action.kind === 'QUEST_CHAIN_RESUME') {
       this.chainOwner = this.state.characterId;
       const viewed = this.state.characterId;
       if (viewed && this.lanes.get(viewed)?.active()) this.dispatcher.stop(viewed, 'USER_STOPPED', '玩家改為手動操作');

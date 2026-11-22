@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ a5a56547c5f1f06d6fa127cb600cc4f09086fec1
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ e496d17377f6df5eb41c712c375fcbc14b049fb3
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -17,10 +17,13 @@
  * - 版本 5（F5，fairyland-family#43）：`SnapshotPortalNode` 新增必填 `portals`（逐個傳送點：id、名稱、座標、目的地圖、
  *   目的地圖是否已匯入、穿過去的落點），讓外掛不必先走過每張圖就能規劃跨圖路線。
  * - 版本 6（FX18）：快照任務和商店貨品增加佔位旗標；數值與宿主規則不變。
+ * - 版本 7（F7，fairyland-family#48）：快照新增必填 `region`（目前角色所在區域）、家族成員新增必填 `region`、
+ *   任務可帶 `regionId`（接任務 NPC 所在區域）；STATIC_DATA 新增必填 `regions`（區域清單：村莊地圖與所屬地圖）。
+ *   區域來自宿主的區域清單（工具產出），清單沒列到的地圖是 null，外掛顯示「未知」、不自己猜。
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -399,12 +402,29 @@ export interface SnapshotActivity {
   command: { commandId: string; type: string } | null;
 }
 
+/** v7：角色目前所在的區域（宿主區域清單的一筆）；地圖不在任何區域裡時整個欄位是 null。 */
+export interface SnapshotRegionRef {
+  regionId: string;
+  name: string;
+}
+
+/** v7：STATIC_DATA 的區域清單一筆。`mapIds` 是這個區域的地圖（一張地圖只屬於一個區域）。 */
+export interface StaticRegion {
+  regionId: string;
+  name: string;
+  /** 區域的村莊地圖；外掛跨區時以它為目的地。 */
+  villageMapId: string;
+  mapIds: string[];
+}
+
 export interface SnapshotFamilyMember {
   characterId: string;
   name: string | null;
   level: number;
   mapId: string;
   mapName: string | null;
+  /** v7：所在區域；null＝這張地圖不在宿主的區域清單裡。 */
+  region: SnapshotRegionRef | null;
   x: number;
   y: number;
   dir?: number;
@@ -438,6 +458,8 @@ export interface SceneSnapshot {
   schema: 'scene-snapshot';
   mapId: string;
   mapName: string | null;
+  /** v7：目前角色所在區域；null＝這張地圖不在宿主的區域清單裡。 */
+  region: SnapshotRegionRef | null;
   character: SnapshotCharacter;
   /** FX4+FX7：家族成員摘要、目前視角與家族共用倉庫。 */
   family?: SnapshotFamilyState;
@@ -547,6 +569,8 @@ export interface SnapshotQuestEntry {
   rewardCoins: number;
   /** 僅列有來源註記的佔位欄位；0 不代表未知。 */
   placeholderFields?: SnapshotQuestPlaceholderField[];
+  /** v7：接任務 NPC 所在區域（宿主區域清單）；不在任何區域裡就省略。 */
+  regionId?: string;
 }
 
 export interface BattleEnemyState {
@@ -681,6 +705,8 @@ export interface StaticDataPayload {
   portalGraph: SnapshotPortalNode[];
   skills: StaticSkillSummary[];
   assets: StaticAssetManifest;
+  /** v7：區域清單（宿主區域清單的工具產出）。 */
+  regions: StaticRegion[];
 }
 
 export interface HeartbeatMessage extends EnvelopeBase {

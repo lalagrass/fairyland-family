@@ -38,6 +38,7 @@ import type { CoordinatorMode } from './automation/types';
 import { buildPaletteSuggestions } from './dv6_palette';
 import type { QuestChainStatus } from './automation/modules/questChainModule';
 import { DEFAULT_CHAIN_CONFIG } from './automation/questPlan';
+import { CHAIN_STOP_REASON_LABEL, regionLabel, type ChainStopReason } from './automation/regionPlan';
 import type { WelcomeRecapSummary } from './dv7_recap';
 import { initialState, type FamilyState, type LogTag } from './state';
 import { CharacterStats } from './panels/CharacterStats';
@@ -244,10 +245,13 @@ type MobileTab = 'stage' | 'roster' | 'active' | 'feed';
 function QuestChainControls({
   running,
   chain,
+  regions,
   onAction,
 }: {
   running: boolean;
   chain?: QuestChainStatus;
+  /** F7：宿主 STATIC_DATA 的區域清單（協定 v7）；沒有就只有「不限區域」。 */
+  regions?: ReadonlyArray<{ regionId: string; name: string }>;
   onAction: (action: UiAction) => void;
 }) {
   const cfg = chain?.config ?? DEFAULT_CHAIN_CONFIG;
@@ -283,6 +287,38 @@ function QuestChainControls({
       >
         停止
       </button>
+      <button
+        type="button"
+        className="item"
+        data-testid="quest-chain-resume"
+        disabled={!running || !chain?.resumable}
+        title={chain?.stopReason ? `停工原因：${CHAIN_STOP_REASON_LABEL[chain.stopReason as ChainStopReason] ?? chain.stopReason}` : undefined}
+        onClick={() => onAction({ kind: 'QUEST_CHAIN_RESUME', label: '續跑無人任務' })}
+      >
+        續跑
+      </button>
+      <label>
+        區域
+        <select
+          data-testid="chain-region"
+          value={cfg.regionId ?? ''}
+          onChange={e =>
+            onAction({
+              kind: 'QUEST_CHAIN_CONFIG',
+              patch: { regionId: e.currentTarget.value || null },
+              label: e.currentTarget.value ? `任務鏈區域：${e.currentTarget.selectedOptions[0]?.textContent ?? e.currentTarget.value}` : '任務鏈區域：不限',
+            })
+          }
+        >
+          <option value="">不限區域</option>
+          {(regions ?? []).map(r => (
+            <option key={r.regionId} value={r.regionId}>{r.name}</option>
+          ))}
+          {cfg.regionId && !(regions ?? []).some(r => r.regionId === cfg.regionId) && (
+            <option value={cfg.regionId}>{`（宿主沒有這個區域：${cfg.regionId}）`}</option>
+          )}
+        </select>
+      </label>
       <label>
         時間(分)
         <input
@@ -827,6 +863,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                         <span className={`pill ${isActive ? 'ok' : ''}`}>{isActive ? '視角中' : '待機中'}</span>
                         <span>{`${m.name ?? m.characterId} Lv.${m.level}`}</span>
                         <span>{`${m.mapName ?? m.mapId}`}</span>
+                        <span data-testid="member-region" data-region-id={m.region?.regionId ?? ''}>{`區域 ${regionLabel(m.region)}`}</span>
                         <span>{`金 ${m.gold}`}</span>
                         <span>{`體 ${m.satiety}`}</span>
                         <span>{`袋 ${m.inventoryCount}/${m.inventoryCap}`}</span>
@@ -947,6 +984,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                         <span>{`HP ${c.hp ?? '?'}/${c.maxHp ?? '?'}`}</span>
                         <span>{`MP ${c.mp ?? '?'}/${c.maxMp ?? '?'}`}</span>
                         <span data-testid="gold">{`金錢 ${c.gold}`}</span>
+                        <span data-testid="region" data-region-id={snap?.region?.regionId ?? ''}>{`區域 ${regionLabel(snap?.region)}`}</span>
                         <span data-testid="pos">{`位置 (${c.x}, ${c.y})`}</span>
                         <span data-testid="satiety">{`飽食 ${c.satiety ?? 100}/${c.maxSatiety ?? 100}`}</span>
                         <span data-testid="bag-cap">{`背包 ${invUsed}/${c.inventoryCap ?? 40}`}</span>
@@ -1178,6 +1216,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             <QuestChainControls
               running={running}
               chain={aux.chain}
+              regions={state.staticData?.regions}
               onAction={handleAction}
             />
             <div className="panel-head-row">
