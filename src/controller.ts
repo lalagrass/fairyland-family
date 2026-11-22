@@ -29,7 +29,7 @@ import { AutoNavigator, type NavStatus } from './navigator';
 import { WorkNotifier, type NotificationAdapter } from './notify';
 import { parseInput, type UiAction } from './parse';
 import { RecapTracker, type WelcomeRecapSummary } from './dv7_recap';
-import { WorkQueue, type QueueStatus } from './queue';
+import { WorkQueue, type QueueHost, type QueueStatus } from './queue';
 import { CharacterAppearanceStore } from './render/appearanceStore';
 import { CharacterViewModeStore, parseViewMode } from './render/viewMode';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
@@ -128,16 +128,7 @@ export class FamilyController {
     this.battler = new AutoBattler(host, opts.storage ?? null);
     const self = this;
     this.queue = new WorkQueue(
-      {
-        ...host,
-        get characterId() {
-          return self.primaryCharacterId ?? self.state.characterId ?? undefined;
-        },
-        send: (c: PluginCommand, l: string, e?: string) =>
-          this.sendFor(this.primaryCharacterId ?? this.state.characterId, c, l, e),
-        navigator: this.navigator,
-        requestView: (id: string) => this.requestViewFor(id),
-      },
+      this.makeQueueHost(() => self.primaryCharacterId ?? self.state.characterId ?? undefined),
       opts.storage ?? null,
     );
 
@@ -391,6 +382,45 @@ export class FamilyController {
     this.sendFor(loan.returnTo, { type: 'SWITCH_VIEW_CHARACTER', characterId: loan.returnTo }, `走近完成，視角還給 ${name}`);
   }
 
+  private activeLaneFor(charId: string | null | undefined): CharacterLane | undefined {
+    if (!charId) return undefined;
+    const lane = this.lanes.get(charId);
+    return lane?.active() ? lane : undefined;
+  }
+
+  private makeQueueHost(getCharId: () => string | undefined): QueueHost {
+    const self = this;
+    const activeLane = () => self.activeLaneFor(getCharId());
+    return {
+      get characterId() {
+        return getCharId();
+      },
+      state: () => {
+        const lane = activeLane();
+        return lane ? { ...lane.state, phase: self.state.phase } : self.state;
+      },
+      send: (c: PluginCommand, l: string, e?: string) => {
+        const lane = activeLane();
+        return lane ? lane.sendCommand(c, l, e) : self.sendFor(getCharId() ?? null, c, l, e);
+      },
+      log: (t: string, level: 'info' | 'warn' | 'error' = 'info') => {
+        const cid = getCharId();
+        self.state = addLog(self.state, '系統', t, self.now(), { level, ...(cid ? { characterId: cid } : {}) });
+        self.emit();
+      },
+      after: (ms: number, fn: () => void) => self.after(ms, fn),
+      get navigator() {
+        return activeLane()?.navigator ?? self.navigator;
+      },
+      onChange: () => self.emit(),
+      requestView: (id: string) => {
+        // F8：有派工通道在跑的角色，其走路與採集都在背景通道自行完成，不借用也不搶主視角。
+        if (self.activeLaneFor(id)) return;
+        self.requestViewFor(id);
+      },
+    };
+  }
+
   private getOrCreateQueue(charId: string): WorkQueue {
     if (!this.primaryCharacterId) {
       this.primaryCharacterId = charId;
@@ -405,19 +435,7 @@ export class FamilyController {
     if (!q) {
       const storage = this.opts.storage ?? null;
       q = new WorkQueue(
-        {
-          characterId: charId,
-          state: () => this.state,
-          send: (c: PluginCommand, l: string, e?: string) => this.sendFor(charId, c, l, e),
-          log: (t: string, level: 'info' | 'warn' | 'error' = 'info') => {
-            this.state = addLog(this.state, '系統', t, this.now(), { level });
-            this.emit();
-          },
-          after: (ms: number, fn: () => void) => this.after(ms, fn),
-          navigator: this.navigator,
-          onChange: () => this.emit(),
-          requestView: (id: string) => this.requestViewFor(id),
-        },
+        this.makeQueueHost(() => charId),
         storage,
         `family.queue.v1:${charId}`,
       );
@@ -529,16 +547,24 @@ export class FamilyController {
       this.navigator.onMessage(m);
       this.battler.onMessage(m);
     }
-    if (this.queues.size === 0) this.queue.onMessage(m);
-    else if (m.kind === 'snapshot' || m.kind === 'heartbeat') {
+    if (m.kind === 'static-data') for (const l of this.lanes.values()) l.onMessage(m);
+    else lane?.onMessage(m);
+    if (this.queues.size === 0) {
+      const owner = this.primaryCharacterId ?? this.state.characterId;
+      if (m.kind !== 'snapshot' || !this.activeLaneFor(owner) || m.characterId === owner) {
+        this.queue.onMessage(m);
+      }
+    } else if (m.kind === 'snapshot') {
+      for (const [id, q] of this.queues) {
+        if (!this.activeLaneFor(id) || m.characterId === id) q.onMessage(m);
+      }
+    } else if (m.kind === 'heartbeat') {
       for (const q of this.queues.values()) q.onMessage(m);
     } else {
       const q = this.queues.get(m.characterId) ?? (m.characterId === this.state.characterId ? this.queue : undefined);
       q?.onMessage(m);
     }
     if (!laneOwned) this.automation.notifyMessage(m, ctx);
-    if (m.kind === 'static-data') for (const l of this.lanes.values()) l.onMessage(m);
-    else lane?.onMessage(m);
     const quest = this.pendingQuest;
     if (quest && m.kind === 'command-result' && m.commandId === quest.switchCommandId) {
       if (m.status === 'ACCEPTED') quest.switchAccepted = true;

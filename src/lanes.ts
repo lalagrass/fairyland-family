@@ -201,6 +201,11 @@ export class CharacterLane {
     if (this.navigator.isActive()) this.navigator.cancel();
   }
 
+  /** 供派工通道共用的工作佇列透過通道送出指令（會寫入通道自己的 pending 狀態）。 */
+  sendCommand(command: PluginCommand, label: string, expect?: string): string | null {
+    return this.send(command, label, expect);
+  }
+
   private send(command: PluginCommand, label: string, expect?: string, target?: string): string | null {
     const characterId = target ?? this.characterId;
     const id = this.deps.sendFor(characterId, command, label, expect);

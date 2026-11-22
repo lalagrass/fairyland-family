@@ -1,3 +1,7 @@
+import { FamilyController } from '../src/controller';
+import { PROTOCOL_VERSION, type CommandMessage, type PluginMessage } from '../src/protocol/index';
+import protocolExamples from '../src/protocol/examples.json';
+import type { Transport } from '../src/transport/types';
 import { createWorld, type World } from './f2_world';
 import type { DispatchSpec } from '../src/dispatch';
 import { dispatchOverview } from '../src/panels/DispatchPanel';
@@ -186,6 +190,199 @@ suite('F8 家族總覽：目前任務、進度、預計完成時間只讀紀錄�
   w.advance(5_000);
   const s = w.ctrl.laneSummaries().find(l => l.characterId === 'char_2');
   assert(s?.active === true && s.questId !== null && (s.questTitle ?? '').startsWith('虛構委託'), `通道摘要讀小石自己的快照（${s?.questTitle}）`);
+}
+
+suite('F8 回歸：背景角色任務鏈含走近採集點時不切視角，缺工具僅該角色停工');
+{
+  const runGatherChain = (hasTool: boolean) => {
+    let now = 1_000_000;
+    let seq = 1;
+    let view = 'char_1';
+    const sent: CommandMessage[] = [];
+    const pos: Record<string, { x: number; y: number }> = {
+      char_1: { x: 100, y: 100 },
+      char_2: { x: 100, y: 100 },
+      char_3: { x: 120, y: 120 },
+    };
+    const questStatus: Record<string, 'AVAILABLE' | 'IN_PROGRESS' | 'READY' | 'COMPLETED'> = {
+      char_2: 'AVAILABLE',
+      char_3: 'AVAILABLE',
+    };
+    const dialogs: Record<string, boolean> = { char_2: false, char_3: false };
+    const mem = (id: string, name: string) => ({
+      characterId: id, name, level: 5, mapId: '99001', mapName: '虛構村', region: { regionId: 'r-f8', name: '虛構區' },
+      x: pos[id].x, y: pos[id].y, gold: 100, satiety: 100, inventoryCount: 0, inventoryCap: 40,
+      inBattle: false,
+      inventory: id === 'char_2' && hasTool ? [{ itemId: 95001, name: '虛構十字鎬', count: 1 }] : [],
+      workSkills: { 5: 1 },
+    });
+    const snapOf = (id: string) => {
+      const base = JSON.parse(JSON.stringify(protocolExamples.snapshot.snapshot)) as Record<string, any>;
+      base.mapId = '99001';
+      base.mapName = '虛構村';
+      base.region = { regionId: 'r-f8', name: '虛構區' };
+      base.openingStage = 'DONE';
+      base.character = {
+        ...base.character,
+        name: id === 'char_1' ? '愛麗絲' : id === 'char_2' ? '小石' : '阿花',
+        level: 5, x: pos[id].x, y: pos[id].y, dir: 0, gold: 100, satiety: 100, inventoryCount: 0, inventoryCap: 40,
+      };
+      base.inventory = mem(id, id).inventory;
+      base.npcs = [
+        { id: 'npc_2', name: '虛構礦師', x: 100, y: 100, gridX: 3, gridY: 3, role: 'VILLAGER', talkable: true, isAnimal: false, isShop: false },
+        { id: 'npc_3', name: '虛構村長', x: 120, y: 120, gridX: 4, gridY: 4, role: 'VILLAGER', talkable: true, isAnimal: false, isShop: false },
+      ];
+      base.exits = [];
+      base.shops = [];
+      base.gatherPoints = {
+        status: 'AVAILABLE',
+        points: [{
+          id: 'gp_far', name: '遠處礦點', mapId: '99001', mapName: '虛構村', x: 600, y: 120,
+          skillId: 5, skillName: '採礦', requiredToolItemId: 95001, requiredToolName: '虛構十字鎬',
+          materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }],
+        }],
+      };
+      base.quests = id === 'char_2'
+        ? [{
+            questId: 99102, title: '虛構採礦', npcId: 'npc_2', npcName: '虛構礦師', minLevel: 1,
+            status: questStatus.char_2,
+            objectives: [{ type: 'COLLECT_ITEMS', description: '採集「虛構礦石」', itemId: 90001, itemName: '虛構礦石', current: questStatus.char_2 === 'READY' || questStatus.char_2 === 'COMPLETED' ? 1 : 0, required: 1, met: questStatus.char_2 === 'READY' || questStatus.char_2 === 'COMPLETED' }],
+            rewardExp: 10, rewardCoins: 0,
+          }]
+        : id === 'char_3'
+          ? [{
+              questId: 99103, title: '虛構交談', npcId: 'npc_3', npcName: '虛構村長', minLevel: 1,
+              status: questStatus.char_3,
+              objectives: [{ type: 'TALK_TO_NPC', description: '與「虛構村長」交談', current: questStatus.char_3 === 'AVAILABLE' ? 0 : 1, required: 1, met: questStatus.char_3 !== 'AVAILABLE' }],
+              rewardExp: 10, rewardCoins: 0,
+            }]
+          : [];
+      base.activity = { dialog: null, shop: null, battle: null, battleResult: null, command: null };
+      base.family = {
+        maxSlots: 5, activeCharacterId: id, warehouse: { gold: 0, cap: 200, items: [] },
+        members: [mem('char_1', '愛麗絲'), mem('char_2', '小石'), mem('char_3', '阿花')],
+      };
+      return base;
+    };
+    const timers: Array<{ at: number; fn: () => void }> = [];
+    const later = (ms: number, fn: () => void) => timers.push({ at: now + ms, fn });
+    let onMsg: ((raw: unknown) => void) | null = null;
+    const emit = (raw: PluginMessage) => onMsg?.(raw);
+    const transport: Transport = {
+      name: 'f8-gather-test',
+      start: fn => { onMsg = fn; },
+      stop: () => {},
+      send: (msg: CommandMessage) => {
+        sent.push(msg);
+        const cid = msg.characterId;
+        const c = msg.command;
+        if (c.type === 'SWITCH_VIEW_CHARACTER') {
+          view = c.characterId;
+          later(0, () => emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'command-result', commandId: msg.commandId, status: 'ACCEPTED' }));
+          return;
+        }
+        later(0, () => emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'command-result', commandId: msg.commandId, status: 'ACCEPTED' }));
+        if (c.type === 'REQUEST_SNAPSHOT') {
+          later(20, () => emit({ ...protocolExamples.snapshot, characterId: cid, ts: now, seq: ++seq, inReplyTo: msg.commandId, snapshot: snapOf(cid) } as PluginMessage));
+          return;
+        }
+        if (c.type === 'WALK_TO') {
+          later(50, () => {
+            pos[cid] = { x: c.x, y: c.y };
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'MOVED', mapId: '99001', x: c.x, y: c.y, dir: 0 } });
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'ARRIVED' } });
+          });
+          return;
+        }
+        if (c.type === 'TALK_TO_NPC') {
+          later(50, () => {
+            dialogs[cid] = true;
+            const qid = cid === 'char_2' ? 99102 : 99103;
+            const st = questStatus[cid];
+            const opt = st === 'AVAILABLE' ? `ACCEPT_QUEST:${qid}` : st === 'READY' ? `COMPLETE_QUEST:${qid}` : null;
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: {
+              type: 'DIALOG_OPENED', npcId: c.npcId, npcName: cid === 'char_2' ? '虛構礦師' : '虛構村長',
+              role: null, lines: ['對白'], optionsAvailable: true,
+              options: [...(opt ? [{ id: opt, label: '好' }] : []), { id: 'CLOSE', label: '離開' }],
+            } });
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'DIALOG_OPENED' } });
+          });
+          return;
+        }
+        if (c.type === 'CHOOSE_DIALOG_OPTION') {
+          later(50, () => {
+            if (c.optionId.startsWith('ACCEPT_QUEST:')) questStatus[cid] = cid === 'char_2' ? 'AVAILABLE' : 'READY';
+            if (c.optionId.startsWith('ACCEPT_QUEST:99102')) {
+              questStatus[cid] = 'IN_PROGRESS';
+            }
+            if (c.optionId.startsWith('COMPLETE_QUEST:')) questStatus[cid] = 'COMPLETED';
+            dialogs[cid] = false;
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'DIALOG_CLOSED', npcId: cid === 'char_2' ? 'npc_2' : 'npc_3' } });
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+          return;
+        }
+        if (c.type === 'ACCEPT_QUEST') {
+          later(50, () => {
+            if (cid === 'char_2') questStatus.char_2 = 'IN_PROGRESS';
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+          return;
+        }
+        if (c.type === 'WORK_ONCE') {
+          later(50, () => {
+            if (cid === 'char_2' && !hasTool) {
+              emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_REJECTED', commandId: msg.commandId, reasonCode: 'MISSING_TOOL', message: '缺少【虛構十字鎬】' } });
+              return;
+            }
+            if (cid === 'char_2') questStatus.char_2 = 'READY';
+            emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+          return;
+        }
+        later(20, () => emit({ v: PROTOCOL_VERSION, characterId: cid, ts: now, kind: 'event', seq: ++seq, event: { type: 'COMMAND_COMPLETED', commandId: msg.commandId, outcome: 'DONE', code: 'DONE' } }));
+      },
+    };
+    const ctrl = new FamilyController(transport, { now: () => now, after: later });
+    ctrl.start();
+    emit({ ...protocolExamples.heartbeat, kind: 'heartbeat', characterId: 'char_1', ts: now, sessionId: 's1', phase: 'PLAYING', mapId: '99001' });
+    emit({ ...protocolExamples.snapshot, characterId: 'char_1', ts: now, seq: ++seq, snapshot: snapOf('char_1') } as PluginMessage);
+    const err2 = ctrl.dispatcher.assign('char_2', chainSpec());
+    if (!hasTool) {
+      const lane2 = (ctrl as unknown as { laneFor(id: string): { chain: { handleAction(a: unknown): void } } }).laneFor('char_2');
+      lane2.chain.handleAction({ kind: 'QUEST_CHAIN_CONFIG', label: '設定採集循環', patch: { loopActivity: 'GATHER' } });
+    }
+    const err3 = ctrl.dispatcher.assign('char_3', chainSpec());
+    assert(err2 === null && err3 === null, `派工成功（err2=${err2}, err3=${err3}）`);
+
+    for (let step = 0; step < 80; step++) {
+      now += 250;
+      if (step % 4 === 0) {
+        emit({ ...protocolExamples.heartbeat, kind: 'heartbeat', characterId: view, ts: now, sessionId: 's1', phase: 'PLAYING', mapId: '99001' });
+      }
+      ctrl.tick();
+      for (let i = 0; i < timers.length; i++) {
+        if (timers[i].at <= now) {
+          const [t] = timers.splice(i--, 1);
+          t.fn();
+        }
+      }
+    }
+    return { ctrl, sent, view, questStatus };
+  };
+
+  const ok = runGatherChain(true);
+  assert(ok.view === 'char_1' && !ok.sent.some(m => m.command.type === 'SWITCH_VIEW_CHARACTER'), '備齊工具時背景走近採集不送 SWITCH_VIEW_CHARACTER');
+  assert(ok.sent.some(m => m.characterId === 'char_2' && m.command.type === 'WALK_TO' && m.command.x === 600), '小石自己在背景走到遠處採集點 (600, 120)');
+  assert(ok.sent.some(m => m.characterId === 'char_2' && m.command.type === 'WORK_ONCE'), '小石自己在背景執行 WORK_ONCE');
+  assert(ok.questStatus.char_2 === 'COMPLETED' && ok.questStatus.char_3 === 'COMPLETED', `兩位各自完成任務鏈（char_2=${ok.questStatus.char_2}, char_3=${ok.questStatus.char_3}）`);
+
+  const miss = runGatherChain(false);
+  const d2 = miss.ctrl.dispatches().find(r => r.characterId === 'char_2');
+  const d3 = miss.ctrl.dispatches().find(r => r.characterId === 'char_3');
+  assert(miss.view === 'char_1' && !miss.sent.some(m => m.command.type === 'SWITCH_VIEW_CHARACTER'), '缺工具時也不切視角');
+  assert(d2?.phase === 'STOPPED' && (d2.stopped?.text ?? '').includes('MISSING_TOOL'), `缺工具只有小石停工（${d2?.phase}/${d2?.stopped?.text}）`);
+  assert(d3?.phase === 'RUNNING' && miss.questStatus.char_3 === 'COMPLETED', `阿花不受影響照常完成任務（${d3?.phase}, ${miss.questStatus.char_3}）`);
 }
 
 done();

@@ -100,10 +100,10 @@ try {
     const viewed = ctrl.state.characterId;
     const base = JSON.parse(JSON.stringify(ctrl.state.snapshot));
     const npc = { id: 'npc_f8', name: '虛構嚮導F8', x: 200, y: 200, gridX: 6, gridY: 6, role: 'VILLAGER', talkable: true, isAnimal: false, isShop: false };
-    const b = { x: 210, y: 210, quest: 'AVAILABLE', dialog: false };
+    const b = { x: 210, y: 210, quest: 'AVAILABLE', quest2: 'AVAILABLE', dialog: false };
     const member = (id, name, x, y) => ({
       characterId: id, name, level: 5, mapId: base.mapId, mapName: base.mapName, region: base.region, x, y, gold: 10, satiety: 90,
-      inventoryCount: 0, inventoryCap: 40, inBattle: false, inventory: [], workSkills: {},
+      inventoryCount: 0, inventoryCap: 40, inBattle: false, inventory: [], workSkills: { 5: 1 },
     });
     const family = () => ({ maxSlots: 5, warehouse: { gold: 0, cap: 200, items: [] }, members: [member(viewed, '甲', 100, 100), member(B, '乙', b.x, b.y)] });
     const quest = () => ({
@@ -111,11 +111,24 @@ try {
       objectives: [{ type: 'TALK', description: `與「${npc.name}」交談`, current: b.quest === 'AVAILABLE' ? 0 : 1, required: 1, met: b.quest !== 'AVAILABLE' }],
       rewardExp: 5, rewardCoins: 0,
     });
+    const quest2 = () => ({
+      questId: 99802, title: '虛構採礦F8', npcId: npc.id, npcName: npc.name, minLevel: 1, status: b.quest2,
+      objectives: [{ type: 'COLLECT_ITEMS', description: '採集「虛構礦石」', itemId: 90001, itemName: '虛構礦石', current: b.quest2 === 'READY' || b.quest2 === 'COMPLETED' ? 1 : 0, required: 1, met: b.quest2 === 'READY' || b.quest2 === 'COMPLETED' }],
+      rewardExp: 5, rewardCoins: 0,
+    });
     const snapB = () => {
       const s = JSON.parse(JSON.stringify(base));
       s.character = { ...s.character, name: '乙', x: b.x, y: b.y, level: 5 };
       s.npcs = [npc]; s.exits = []; s.openingStage = 'DONE';
-      s.quests = [quest()];
+      s.gatherPoints = {
+        status: 'AVAILABLE',
+        points: [{
+          id: 'gp_f8_far', name: '遠處礦點F8', mapId: base.mapId, mapName: base.mapName, x: 600, y: 200,
+          skillId: 5, skillName: '採礦', requiredToolItemId: null,
+          materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }],
+        }],
+      };
+      s.quests = [quest(), quest2()];
       s.activity = { dialog: null, shop: null, battle: null, battleResult: null, command: null };
       s.family = { ...family(), activeCharacterId: B };
       return s;
@@ -137,17 +150,24 @@ try {
       else if (c.type === 'WALK_TO') done('ARRIVED', () => { b.x = c.x; b.y = c.y; ev({ type: 'MOVED', mapId: base.mapId, x: c.x, y: c.y, dir: 0 }); });
       else if (c.type === 'TALK_TO_NPC') done('DIALOG_OPENED', () => {
         b.dialog = true;
-        const opt = b.quest === 'AVAILABLE' ? 'ACCEPT_QUEST:99801' : b.quest === 'READY' ? 'COMPLETE_QUEST:99801' : null;
+        const opt = b.quest === 'AVAILABLE' ? 'ACCEPT_QUEST:99801'
+          : b.quest === 'READY' ? 'COMPLETE_QUEST:99801'
+          : b.quest2 === 'AVAILABLE' ? 'ACCEPT_QUEST:99802'
+          : b.quest2 === 'READY' ? 'COMPLETE_QUEST:99802'
+          : null;
         ev({ type: 'DIALOG_OPENED', npcId: npc.id, npcName: npc.name, role: null, lines: ['虛構對白'], optionsAvailable: true,
           options: [...(opt ? [{ id: opt, label: '好' }] : []), { id: 'CLOSE', label: '離開' }] });
       });
       else if (c.type === 'CHOOSE_DIALOG_OPTION' || c.type === 'ACCEPT_QUEST') done('DONE', () => {
-        const id = c.type === 'ACCEPT_QUEST' ? 'ACCEPT_QUEST:99801' : c.optionId;
-        if (id.startsWith('ACCEPT_QUEST')) b.quest = 'READY';
-        else if (id.startsWith('COMPLETE_QUEST')) b.quest = 'COMPLETED';
+        const id = c.type === 'ACCEPT_QUEST' ? `ACCEPT_QUEST:${c.questId ?? 99801}` : c.optionId;
+        if (id === 'ACCEPT_QUEST:99801') b.quest = 'READY';
+        else if (id === 'COMPLETE_QUEST:99801') b.quest = 'COMPLETED';
+        else if (id === 'ACCEPT_QUEST:99802') b.quest2 = 'IN_PROGRESS';
+        else if (id === 'COMPLETE_QUEST:99802') b.quest2 = 'COMPLETED';
         b.dialog = false;
         ev({ type: 'DIALOG_CLOSED', npcId: npc.id });
       });
+      else if (c.type === 'WORK_ONCE') done('DONE', () => { b.quest2 = 'READY'; });
       else done('DONE');
     };
     // 回放會一直送視角角色自己的快照；每 200ms 補回兩位成員的名冊。
@@ -176,16 +196,17 @@ try {
   await page.waitForFunction(() => window.__family.controller.dispatches().find(r => r.characterId === 'char_f8_b')?.phase === 'RUNNING', null, { timeout: 10000 }).catch(() => {});
   const phaseB = await rowB.getAttribute('data-phase');
   await check(phaseB === 'RUNNING', `乙要到自己的快照後開始跑（data-phase=${phaseB}）`, 'assign-b');
-  await page.waitForFunction(() => window.__f8.b.quest === 'COMPLETED', null, { timeout: 20000 }).catch(() => {});
+  await page.waitForFunction(() => window.__f8.b.quest === 'COMPLETED' && window.__f8.b.quest2 === 'COMPLETED', null, { timeout: 25000 }).catch(() => {});
   const r = await page.evaluate(() => ({
     quest: window.__f8.b.quest,
+    quest2: window.__f8.b.quest2,
     sent: [...new Set(window.__f8.sentToB)],
     viewed: window.__family.controller.state.characterId,
     viewedName: window.__family.controller.state.snapshot?.character?.name ?? null,
     switched: window.__family.controller.state.log.filter(l => l.tag === '送出' && l.text.includes('SWITCH_VIEW_CHARACTER')).length,
     wrong: window.__family.controller.state.log.filter(l => l.text.includes('WRONG_CHARACTER') && l.characterId === 'char_f8_b').length,
   }));
-  await check(r.quest === 'COMPLETED', `乙在背景接任務並回報完成（${r.quest}；送給乙：${r.sent.join('、')}）`, 'quest-b');
+  await check(r.quest === 'COMPLETED' && r.quest2 === 'COMPLETED' && r.sent.includes('WALK_TO') && r.sent.includes('WORK_ONCE'), `乙在背景接任務並走近採集後回報完成（${r.quest}/${r.quest2}；送給乙：${r.sent.join('、')}）`, 'quest-b');
   await check(r.viewed === (await page.evaluate(() => window.__f8.viewed)) && r.viewedName !== '乙', `視角角色的畫面狀態沒有被乙的快照蓋掉（${r.viewed}／${r.viewedName}）`, 'quest-b');
   await check(r.switched === 0 && r.wrong === 0, `沒有切換視角、沒有 WRONG_CHARACTER（切換 ${r.switched}、拒絕 ${r.wrong}）`, 'quest-b');
   const overflow1280 = await page.evaluate(() => document.documentElement.scrollWidth);
