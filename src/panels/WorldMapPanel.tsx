@@ -36,18 +36,20 @@ function nodeBits(n: WorldMapNodeView): string[] {
 
 /**
  * 世界地圖面板。圖從宿主的傳送點圖來；點已匯入的節點，對選定的視角角色下移動。
- * 畫布交給 WorldMapRenderer（目前是 PixiJS v8）。窄螢幕另外給一排夠大的清單按鈕。
+ * 畫布交給 WorldMapRenderer（目前是 PixiJS v8）。窄欄或畫布不可用時只顯示清單。
  */
 export function WorldMapPanel({ graph, characters, route, running, onSelectCharacter, onMoveTo }: WorldMapPanelProps) {
   const view = useMemo(
     () => buildWorldMapView({ graph, characters, route }),
     [graph, characters, route],
   );
+  const panelRef = useRef<HTMLElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<WorldMapRenderer | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+  const [panelWidth, setPanelWidth] = useState<number | null>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [canvasReady, setCanvasReady] = useState<'pending' | 'ready' | 'off'>('pending');
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -61,12 +63,37 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
   const canMove = running && Boolean(viewId) && selectedId === viewId;
 
   useEffect(() => {
-    if (view.empty) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const update = (width: number) => setPanelWidth(width > 0 ? width : null);
+    const measure = () => {
+      const { paddingLeft, paddingRight } = window.getComputedStyle(panel);
+      update(panel.clientWidth - (parseFloat(paddingLeft) || 0) - (parseFloat(paddingRight) || 0));
+    };
+    measure();
+    if (typeof window.ResizeObserver !== 'function') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new window.ResizeObserver(entries => {
+      const entry = entries.find(e => e.target === panel);
+      if (entry) update(entry.contentRect.width);
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+
+  const narrow = panelWidth !== null && worldMapFrame(panelWidth).narrow;
+  const wantsGraphic = !view.empty && panelWidth !== null && !narrow;
+  const graphicVisible = wantsGraphic && canvasReady === 'ready';
+
+  useEffect(() => {
+    if (!wantsGraphic) return;
     const host = canvasRef.current;
     if (!host) return;
     if (!canvasSupported()) {
       setCanvasReady('off');
-      return;
+      return () => setCanvasReady('pending');
     }
     let stopped = false;
     let renderer: WorldMapRenderer | null = null;
@@ -74,6 +101,7 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
       .then(async ({ PixiWorldMapRenderer }) => {
         if (stopped) return;
         const created = new PixiWorldMapRenderer();
+        renderer = created;
         const ok = await created.mount(host);
         if (stopped || !ok) {
           created.destroy();
@@ -81,21 +109,20 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
           return;
         }
         created.setView(viewRef.current);
-        renderer = created;
         rendererRef.current = created;
-        if (!stopped) setCanvasReady('ready');
+        setCanvasReady('ready');
       })
       .catch(() => {
+        renderer?.destroy();
         if (!stopped) setCanvasReady('off');
       });
     return () => {
       stopped = true;
       renderer?.destroy();
-      rendererRef.current?.destroy();
       rendererRef.current = null;
       setCanvasReady('pending');
     };
-  }, [view.empty]);
+  }, [wantsGraphic]);
 
   useEffect(() => {
     rendererRef.current?.setView(view);
@@ -103,7 +130,7 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
 
   useEffect(() => {
     const el = stageRef.current;
-    if (!el) return;
+    if (!el || !graphicVisible) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
       setBox({ w: rect.width, h: rect.height });
@@ -119,7 +146,7 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
       return;
     }
     return () => observer.disconnect();
-  }, [view.empty, view.width, view.height]);
+  }, [graphicVisible, view.width, view.height]);
 
   const hits = box.w > 0 && box.h > 0 ? worldMapHitBoxes(view, box.w, box.h) : [];
   const hitAt = new Map(hits.map(h => [h.mapId, h]));
@@ -129,7 +156,6 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
     .sort((a, b) => (a.name ?? a.mapId).localeCompare(b.name ?? b.mapId, 'zh-Hant') || a.mapId.localeCompare(b.mapId));
   const nameOf = (id: string) => view.nodes.find(n => n.mapId === id)?.name || id;
   const routeText = route.length > 1 ? `路線：${route.map(nameOf).join(' → ')}` : '尚無規劃路線';
-  const narrow = box.w > 0 && worldMapFrame(box.w).narrow;
 
   const move = (n: WorldMapNodeView) => {
     if (!canMove || !n.clickable) return;
@@ -138,11 +164,13 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
 
   return (
     <section
-      className={canvasReady === 'off' ? 'world-map is-fallback' : 'world-map'}
+      ref={panelRef}
+      className={graphicVisible ? 'world-map' : 'world-map is-fallback'}
+      style={{ position: 'relative' }}
       data-testid="world-map-panel"
       data-empty={view.empty ? '1' : '0'}
       data-broken-count={view.brokenCount}
-      data-narrow={box.w > 0 ? (narrow ? '1' : '0') : ''}
+      data-narrow={panelWidth !== null ? (narrow ? '1' : '0') : ''}
       aria-label="世界地圖"
     >
       <h2>世界地圖</h2>
@@ -176,55 +204,68 @@ export function WorldMapPanel({ graph, characters, route, running, onSelectChara
           <p className="muted world-map-route" data-testid="world-map-route" data-route={route.join(',')}>{routeText}</p>
           {switching && <p className="muted">正在切換視角，完成後再點地圖。</p>}
           {!running && <p className="muted">遊戲未執行，不能移動。</p>}
-          <div className="world-map-stage" ref={stageRef}>
-            <div className="world-map-canvas" ref={canvasRef} data-testid="world-map-canvas" />
-            <div className="world-map-hits">
-              {clickable.map(n => {
-                const hit = hitAt.get(n.mapId);
-                if (!hit || hit.size < 1) return null;
-                return (
+          {wantsGraphic && canvasReady !== 'off' && (
+            <div
+              className="world-map-stage"
+              ref={stageRef}
+              style={graphicVisible ? undefined : { position: 'absolute', insetInlineStart: 0, visibility: 'hidden' }}
+              aria-hidden={graphicVisible ? undefined : true}
+            >
+              <div className="world-map-canvas" ref={canvasRef} data-testid="world-map-canvas" />
+              {graphicVisible && (
+                <div className="world-map-hits">
+                  {clickable.map(n => {
+                    const hit = hitAt.get(n.mapId);
+                    if (!hit || hit.size < 1) return null;
+                    return (
+                      <button
+                        key={n.mapId}
+                        type="button"
+                        className="world-map-node-hit"
+                        data-testid="world-map-node"
+                        data-map-id={n.mapId}
+                        data-on-route={n.onRoute ? '1' : '0'}
+                        data-broken-out={String(n.brokenOut)}
+                        aria-label={nodeBits(n).join('，')}
+                        disabled={!canMove}
+                        style={{ left: hit.left + hit.size / 2, top: hit.top + hit.size / 2, width: hit.size, height: hit.size }}
+                        onClick={() => move(n)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {graphicVisible && (
+            <div className="world-map-legend" data-testid="world-map-legend">
+              <span>圓＝已匯入地圖</span>
+              <span>黃線＝規劃路線</span>
+              <span>紅叉＝斷掉的傳送</span>
+              <span>色點＝角色</span>
+            </div>
+          )}
+          {wantsGraphic && canvasReady === 'off' && <p className="muted">這個環境畫不了圖，請用下面的清單點選地圖。</p>}
+          {!graphicVisible && (
+            <ul className="world-map-list" data-testid="world-map-list">
+              {clickable.map(n => (
+                <li key={n.mapId}>
                   <button
-                    key={n.mapId}
                     type="button"
-                    className="world-map-node-hit"
-                    data-testid="world-map-node"
+                    className="item"
+                    data-testid="world-map-list-item"
                     data-map-id={n.mapId}
                     data-on-route={n.onRoute ? '1' : '0'}
                     data-broken-out={String(n.brokenOut)}
-                    aria-label={nodeBits(n).join('，')}
                     disabled={!canMove}
-                    style={{ left: hit.left + hit.size / 2, top: hit.top + hit.size / 2, width: hit.size, height: hit.size }}
                     onClick={() => move(n)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-          <div className="world-map-legend" data-testid="world-map-legend">
-            <span>圓＝已匯入地圖</span>
-            <span>黃線＝規劃路線</span>
-            <span>紅叉＝斷掉的傳送</span>
-            <span>色點＝角色</span>
-          </div>
-          {canvasReady === 'off' && <p className="muted">這個環境畫不了圖，請用下面的清單點選地圖。</p>}
-          <ul className="world-map-list" data-testid="world-map-list">
-            {clickable.map(n => (
-              <li key={n.mapId}>
-                <button
-                  type="button"
-                  className="item"
-                  data-testid="world-map-list-item"
-                  data-map-id={n.mapId}
-                  data-on-route={n.onRoute ? '1' : '0'}
-                  data-broken-out={String(n.brokenOut)}
-                  disabled={!canMove}
-                  onClick={() => move(n)}
-                >
-                  {nodeBits(n).join(' · ')}
-                </button>
-              </li>
-            ))}
-          </ul>
+                  >
+                    {nodeBits(n).join(' · ')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </section>
