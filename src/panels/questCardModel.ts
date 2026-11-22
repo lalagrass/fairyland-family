@@ -56,7 +56,7 @@ export interface QuestCardOwner {
   /** 進行者的角色 id；沒人在做時為 null。 */
   characterId: string | null;
   text: string;
-  /** AUTO＝family 自動推進中；PENDING＝派給角色、等視角切過去；MANUAL＝快照裡這位角色接著；NONE＝沒人接；DONE＝已完成。 */
+  /** AUTO＝family 自動推進中；PENDING＝派給非視角角色、等背景快照；MANUAL＝快照裡這位角色接著；NONE＝沒人接；DONE＝已完成。 */
   mode: 'AUTO' | 'PENDING' | 'MANUAL' | 'NONE' | 'DONE';
 }
 
@@ -91,8 +91,12 @@ export interface QuestCardContext {
   nameOf: (characterId: string) => string | null;
   /** family 自動推進中的任務。 */
   activeQuestId: number | null;
-  /** 已派給角色、正在等視角切過去的任務。 */
+  /** 已派給非視角角色、正在等背景快照的任務。 */
   pendingAssign: { questId: number; characterId: string } | null;
+  /** 多位非視角角色同時在等背景快照時的清單（選填）。 */
+  pendingAssigns?: readonly { questId: number; characterId: string }[];
+  /** F8／F9c：各角色背景派工通道目前推進中的任務（選填）。 */
+  lanes?: readonly { characterId: string; active: boolean; questId: number | null }[];
 }
 
 const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -128,9 +132,18 @@ function nextObjective(q: SnapshotQuestEntry): SnapshotQuestObjective | undefine
 
 function ownerOf(q: SnapshotQuestEntry, ctx: QuestCardContext): QuestCardOwner {
   const viewName = ctx.viewCharacterId ? ctx.nameOf(ctx.viewCharacterId) ?? ctx.viewCharacterId : null;
-  if (ctx.pendingAssign && ctx.pendingAssign.questId === q.questId) {
-    const id = ctx.pendingAssign.characterId;
-    return { characterId: id, mode: 'PENDING', text: `派給 ${ctx.nameOf(id) ?? id}（等待切換視角）` };
+  const pending = ctx.pendingAssigns?.find(p => p.questId === q.questId)
+    ?? (ctx.pendingAssign && ctx.pendingAssign.questId === q.questId ? ctx.pendingAssign : null);
+  if (pending) {
+    const id = pending.characterId;
+    return { characterId: id, mode: 'PENDING', text: `派給 ${ctx.nameOf(id) ?? id}（等待背景快照）` };
+  }
+  const laneHolder = ctx.lanes?.find(l => l.active && l.questId === q.questId);
+  if (laneHolder) {
+    const id = laneHolder.characterId;
+    const name = ctx.nameOf(id) ?? id;
+    const suffix = id === ctx.viewCharacterId ? '自動推進中' : '背景推進中';
+    return { characterId: id, mode: 'AUTO', text: `${name}（${suffix}）` };
   }
   if (ctx.activeQuestId === q.questId && ctx.viewCharacterId) {
     return { characterId: ctx.viewCharacterId, mode: 'AUTO', text: `${viewName}（自動推進中）` };

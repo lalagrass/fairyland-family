@@ -24,7 +24,7 @@ export interface QuestCardsProps {
   initialWidth?: number;
   onGo: (card: QuestCardModel) => void;
   onAuto: (card: QuestCardModel) => void;
-  onAutoStop: () => void;
+  onAutoStop: (card: QuestCardModel) => void;
   onAssign: (card: QuestCardModel, characterId: string) => void;
 }
 
@@ -76,7 +76,7 @@ function AssignMenu({ card, members, viewCharacterId, running, onAssign }: {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className="quest-card-assign-menu" data-testid="quest-card-assign-menu" sideOffset={6} align="start">
-          <div className="muted">任務需要角色在視角中；派給別人會先切換視角。</div>
+          <div className="muted">派給其他角色會在背景派工通道執行，不切換視角。</div>
           {members.map(m => (
             <button
               key={m.characterId}
@@ -111,7 +111,7 @@ export function QuestCards(props: QuestCardsProps) {
     >
       <ul className="quest-card-grid">
         {props.cards.map(card => {
-          const isAutoRunning = props.activeQuestId === card.questId;
+          const isAutoRunning = props.activeQuestId === card.questId || card.owner.mode === 'AUTO' || card.owner.mode === 'PENDING';
           const actionable = card.status !== 'COMPLETED';
           return (
             <li
@@ -186,7 +186,7 @@ export function QuestCards(props: QuestCardsProps) {
                       data-testid="quest-auto-stop-btn"
                       data-quest-id={String(card.questId)}
                       disabled={!props.running}
-                      onClick={props.onAutoStop}
+                      onClick={() => props.onAutoStop(card)}
                     >
                       停止自動
                     </button>

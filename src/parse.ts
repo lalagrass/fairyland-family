@@ -34,8 +34,8 @@ export type UiAction =
   | { kind: 'QUEUE_STOP_CONDITIONS'; patch: Partial<QueueStopConditions>; label: string; targetCharacterId?: string }
   | { kind: 'DISMISS_RECAP'; label: string }
   | { kind: 'QUEST_AUTO'; questId: number; label: string }
-  | { kind: 'QUEST_AUTO_STOP'; label: string }
-  /** F9：把任務派給某位角色；不在視角中就先切換視角，等該角色的快照到了再開始自動推進。 */
+  | { kind: 'QUEST_AUTO_STOP'; label: string; targetCharacterId?: string }
+  /** F9c：把任務派給某位角色；非視角角色走 F8 背景派工通道，不切換視角。 */
   | { kind: 'QUEST_ASSIGN'; questId: number; characterId: string; label: string }
   | { kind: 'QUEST_CHAIN_START'; label: string }
   | { kind: 'QUEST_CHAIN_STOP'; label: string }
