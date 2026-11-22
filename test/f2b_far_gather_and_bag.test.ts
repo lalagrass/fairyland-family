@@ -1,4 +1,11 @@
 import { createWorld } from './f2_world';
+import { selectGatherPoint } from '../src/gatherRoute';
+import { PROTOCOL_VERSION, type PluginCommand, type PluginMessage, type SceneSnapshot, type SnapshotGatherPoint, type SnapshotPortalEdge, type SnapshotPortalNode } from '../src/protocol/index';
+import { WorkQueue } from '../src/queue';
+import { AutoNavigator } from '../src/navigator';
+import { Directory } from '../src/directory';
+import { initialState } from '../src/state';
+import examples from '../src/protocol/examples.json';
 import { pickDepositItem, sellableItems } from '../src/automation/questPlan';
 import type { DispatchSpec } from '../src/dispatch';
 import { assert, done, suite } from './helpers';
@@ -54,6 +61,139 @@ suite('F2b 背包滿：沒有可賣的東西時改存家族倉庫，存不下才
   assert(pickDepositItem(inv, ['虛構礦石', '虛構木材'], new Set(), { cap: 200, items: [] }) === undefined, '任務要用的（keep）不存');
   assert(pickDepositItem(inv, [], new Set(), { cap: 5, items: [it(1, 5, '倉庫既有')] }) === undefined, '倉庫已滿不存');
   assert(pickDepositItem(inv, [], new Set(), null)?.itemId === 90001, '沒有倉庫資訊時仍先試著存');
+}
+
+// F7：只從宿主快照挑採集地圖，不包含真實地圖或素材。
+const f7Point = (id: string, mapId: string, x = 30): SnapshotGatherPoint => ({
+  id, name: id, mapId, mapName: mapId, x, y: 0, skillId: 88, skillName: '測試技能',
+  requiredToolItemId: null, requiredToolName: null,
+  materials: [{ itemId: 881, name: '測試材料', reqLevel: 1 }],
+});
+const f7Edge = (id: string, targetMapId: string, targetStatus: SnapshotPortalEdge['targetStatus'] = 'IMPORTED'): SnapshotPortalEdge =>
+  ({ id, name: id, targetMapId, targetMapName: targetMapId, x: 10, y: 0, targetStatus });
+const f7Node = (mapId: string, portals: SnapshotPortalEdge[] = []): SnapshotPortalNode =>
+  ({ mapId, name: mapId, portals, targets: portals.map(p => p.targetMapId) });
+const remote = {
+  blocked: f7Point('blocked-resource', 'f7-blocked'),
+  far: f7Point('far-resource', 'f7-far'),
+  near: f7Point('near-resource', 'f7-near'),
+  unseen: f7Point('unseen-resource', 'f7-unseen'),
+};
+const f7Graph = [
+  f7Node('f7-start', [
+    f7Edge('blocked', 'f7-blocked', 'NOT_IMPORTED'),
+    f7Edge('first-leg', 'f7-middle'),
+    f7Edge('direct', 'f7-near'),
+  ]),
+  f7Node('f7-blocked'), f7Node('f7-middle', [f7Edge('second-leg', 'f7-far')]),
+  f7Node('f7-near'), f7Node('f7-far'),
+];
+type F7Scene = Parameters<typeof selectGatherPoint>[1];
+const f7Snap = (nearbyGatherPoints: SnapshotGatherPoint[], points: SnapshotGatherPoint[] = []): F7Scene => ({
+  mapId: 'f7-start', mapName: '起點', exits: [], nearbyGatherPoints,
+  gatherPoints: { status: 'AVAILABLE', points },
+  nav: { status: 'AVAILABLE', reachableMaps: [], pixelWidth: null, pixelHeight: null },
+});
+const f7Member = { mapId: 'f7-start', x: 0, y: 0, isViewed: true };
+const f7Job = { skillId: 88, targetItemId: 881 };
+const f7Selection = (snap: F7Scene, graph?: SnapshotPortalNode[], skip = new Set<string>()) =>
+  selectGatherPoint(f7Job, snap, f7Member, skip, graph);
+
+suite('F7 採集找路：先就地採，否則從宿主路線選最近可達地圖');
+{
+  const r = f7Selection(f7Snap([remote.blocked, remote.far, remote.near]), f7Graph);
+  assert(r.kind === 'POINT' && r.point.id === remote.near.id, '首選是斷點、次選較遠時，走最短的可達路線');
+  const skip = f7Selection(f7Snap([remote.blocked, remote.far, remote.near]), f7Graph, new Set([remote.near.id]));
+  assert(skip.kind === 'POINT' && skip.point.id === remote.far.id, '避開已失敗的採集點，選仍可達的遠點');
+  const close = f7Point('local-close', 'f7-start', 10);
+  const local = f7Selection(f7Snap([remote.near], [f7Point('local-far', 'f7-start', 90), close]), f7Graph);
+  assert(local.kind === 'POINT' && local.point.id === close.id, '同圖優先，即使遠點可達；有多點時選角色附近');
+}
+suite('F7 採集找路：區分快照缺資料、尚未能確認、宿主明示的斷點');
+{
+  assert(f7Selection(f7Snap([remote.blocked]), f7Graph).kind === 'NO_ROUTE', '明確斷點沒有替代地圖，不派移動');
+  assert(f7Selection(f7Snap([]), f7Graph).kind === 'NO_POINT', '沒有符合材料的候選，與沒有路線不同');
+  for (const graph of [undefined, [], f7Graph.slice(1), f7Graph]) {
+    const r = f7Selection(f7Snap([remote.unseen]), graph);
+    assert(r.kind === 'POINT' && r.point.id === remote.unseen.id, '尚無目錄或圖未收錄目的地時保留原導航');
+  }
+  const disconnected = f7Selection(f7Snap([remote.unseen, remote.near]), [...f7Graph, f7Node('f7-unseen')]);
+  assert(disconnected.kind === 'POINT' && disconnected.point.id === remote.near.id, '已知可達優先於目錄有地圖但找不到路的候選');
+  const snapshotGraph = [f7Node('f7-start', [f7Edge('updated', 'f7-blocked')]), f7Node('f7-blocked')];
+  const patched = f7Snap([remote.blocked, remote.near]);
+  patched.nav.portalGraph = snapshotGraph;
+  const recent = f7Selection(patched, f7Graph);
+  assert(recent.kind === 'POINT' && recent.point.id === remote.blocked.id, '使用宿主最新快照的傳送關係，不依過期靜態圖拒絕');
+  const background = selectGatherPoint(f7Job, f7Snap([remote.blocked, remote.near]), { ...f7Member, mapId: 'f7-near', isViewed: false }, new Set(), f7Graph);
+  assert(background.kind === 'POINT' && background.point.id === remote.near.id, '背景選自己的地圖而不是視角地圖');
+}
+
+suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不送任何指令');
+{
+  const testQueue = (points: SnapshotGatherPoint[]) => {
+    const makeSnap = (mapId: string, nearby: SnapshotGatherPoint[], local: SnapshotGatherPoint[] = []): SceneSnapshot => ({
+      ...(examples.snapshot.snapshot as SceneSnapshot),
+      ...f7Snap(nearby, local), mapId, mapName: mapId,
+      character: { ...(examples.snapshot.snapshot.character as SceneSnapshot['character']), x: 0, y: 0 },
+      inventory: [],
+      nav: { ...f7Snap([]).nav, portalGraph: f7Graph },
+    });
+    const start = makeSnap('f7-start', points);
+    const state = { ...initialState(), phase: 'PLAYING' as const, characterId: 'f7-character',
+      location: { mapId: start.mapId, mapName: start.mapName }, snapshot: start, character: start.character };
+    const sent: Array<{ id: string; command: PluginCommand }> = [];
+    const timers: Array<{ ms: number; fn: () => void }> = [];
+    const after = (ms: number, fn: () => void) => timers.push({ ms, fn });
+    const send = (command: PluginCommand) => {
+      const id = `f7-command-${sent.length + 1}`;
+      sent.push({ id, command });
+      return id;
+    };
+    const log = () => {};
+    const dir = new Directory(null);
+    dir.learnPortalGraph(f7Graph);
+    const host = { state: () => state, send, after, log, onChange: () => {} };
+    const navigator = new AutoNavigator({ ...host, dir });
+    const queue = new WorkQueue({ ...host, navigator });
+    const inbound = (m: PluginMessage) => { navigator.onMessage(m); queue.onMessage(m); };
+    const drain = () => {
+      for (let guard = 0; guard < 20; guard++) {
+        const i = timers.findIndex(timer => timer.ms <= 100);
+        if (i < 0) break;
+        timers.splice(i, 1)[0].fn();
+      }
+    };
+    const messageBase = { v: PROTOCOL_VERSION, characterId: 'f7-character', ts: 1, seq: 1 } as const;
+    queue.enqueue({ kind: 'GATHER', ...f7Job, skillName: '測試技能', targetName: '測試材料', targetCount: 1 });
+    drain();
+    return {
+      sent, queue, drain,
+      complete(id: string, code: 'MAP_CHANGED' | 'DONE') {
+        inbound({ ...messageBase, kind: 'event', event: { type: 'COMMAND_COMPLETED', commandId: id, outcome: 'DONE', code } });
+        drain();
+      },
+      enter(point: SnapshotGatherPoint) {
+        const snap = makeSnap(point.mapId!, [], [point]);
+        state.location = { mapId: snap.mapId, mapName: snap.mapName };
+        state.snapshot = snap;
+        state.character = snap.character;
+        inbound({ ...messageBase, kind: 'snapshot', reason: 'REQUESTED', snapshot: snap });
+        drain();
+      },
+    };
+  };
+  const run = testQueue([remote.blocked, remote.far, remote.near]);
+  const move = run.sent[0];
+  assert(move?.command.type === 'WALK_TO' && move.command.mapId === 'f7-start', '由 F5 導航器派發跨圖第一段');
+  run.complete(move.id, 'MAP_CHANGED');
+  assert(!run.sent.some(x => x.command.type === 'WORK_ONCE'), '舊快照不開工');
+  run.enter(remote.near);
+  const work = run.sent[1];
+  assert(work?.command.type === 'WORK_ONCE' && work.command.targetItemId === f7Job.targetItemId, '抵達可達的目的地才採集一次');
+  run.complete(work.id, 'DONE');
+  assert(run.queue.getStatus().phase === 'DONE' && run.queue.getStatus().jobs[0]?.doneCount === 1, '宿主完成事件結算一單位');
+  const blocked = testQueue([remote.blocked]);
+  assert(blocked.sent.length === 0 && blocked.queue.getStatus().stopReason === 'NAV_FAILED', '只有斷點：不派指令，明確停工原因');
 }
 
 done();
