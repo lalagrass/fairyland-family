@@ -6,6 +6,9 @@ import type { Transport } from '../src/transport/types';
 /**
  * F2 測試用的假宿主：兩位家族成員，宿主規則照 fairyland command_router——
  * 只有採集（WORK_ONCE）能替背景角色做，走路／對話／任務指令只接受視角角色，否則 WRONG_CHARACTER。
+ * `fx17: true` 時改照 FX17 之後的宿主（fairyland #111）：背景角色也能走路、對話、接交任務；
+ * 每位角色各有自己的任務清單；背景角色的快照宿主不會主動送，只在 `REQUEST_SNAPSHOT`（信封帶該角色）時
+ * 回該角色自己的快照（`inReplyTo`＝請求的 commandId，`family.activeCharacterId` 跟真宿主一樣寫成該角色）。
  * 時間是虛擬的（world.t），測試用 advance() 往前推；全部虛構資料，沒有任何原版素材。
  */
 
@@ -35,6 +38,8 @@ export interface WorldOpts {
   viewed?: string;
   /** A（小石）一開始離採集點多遠（px）；預設貼著採集點。 */
   startOffsetA?: number;
+  /** F8：照 FX17 之後的宿主規則（背景角色可跑任務、各自的任務清單）。 */
+  fx17?: boolean;
 }
 
 interface Quest {
@@ -57,11 +62,19 @@ export function createWorld(opts: WorldOpts = {}) {
     char_2: { id: 'char_2', name: '小石', level: 3, gold: 200, satiety: 100, x: POINT.x + (opts.startOffsetA ?? 40), y: POINT.y, bag: 0, cap: opts.bagCapA ?? 40 },
   };
   let viewed = opts.viewed ?? 'char_1';
-  const quests: Quest[] = Array.from({ length: opts.questCount ?? 60 }, (_, i) => ({
+  const fx17 = Boolean(opts.fx17);
+  const makeQuests = (): Quest[] => Array.from({ length: opts.questCount ?? 60 }, (_, i) => ({
     questId: 7000 + i,
     title: `虛構委託${i + 1}`,
     status: 'AVAILABLE' as const,
   }));
+  const quests: Quest[] = makeQuests();
+  // FX17 之前只有視角角色有任務（共用一份）；FX17 之後每位角色各自一份。
+  const questsByChar: Record<string, Quest[]> = { char_1: quests, char_2: fx17 ? makeQuests() : quests };
+  const questsOf = (id: string): Quest[] => questsByChar[id] ?? [];
+  /** 每位角色在宿主那邊「進行中」的任務（同時有兩位在做同一件時記下來，測試互斥用）。 */
+  const working: Record<string, number | null> = {};
+  const overlaps: Array<{ questId: number; a: string; b: string; at: number }> = [];
   const dialogs: Record<string, string | null> = {}; // 每位角色各自開著的對話（任務編號字串）
   let t = opts.startAt ?? 1_000_000;
   let seq = 1;
@@ -71,6 +84,10 @@ export function createWorld(opts: WorldOpts = {}) {
   const sent: CommandMessage[] = [];
   let sessionId = 's-f2';
   let connected = true;
+  /** false＝宿主（fairyland 分頁）關掉：不送心跳、不回指令。 */
+  let hostUp = true;
+  /** 名冊裡暫時拿掉的角色（模擬角色離線）。 */
+  const offline = new Set<string>();
 
   const envelope = (characterId: string) => ({ v: PROTOCOL_VERSION, characterId, ts: t });
   const emitEvent = (characterId: string, event: unknown) =>
@@ -96,12 +113,12 @@ export function createWorld(opts: WorldOpts = {}) {
         requiredToolItemId: null, materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }],
       }],
     };
-    base.quests = id === viewed ? quests.map(q => ({
+    base.quests = fx17 || id === viewed ? questsOf(id).map(q => ({
       questId: q.questId, title: q.title, npcId: NPC.id, npcName: NPC.name, minLevel: 1, status: q.status,
       objectives: [{ type: 'TALK_TO_NPC', description: `與「${NPC.name}」交談`, current: q.status === 'AVAILABLE' ? 0 : 1, required: 1, met: q.status !== 'AVAILABLE' }],
       rewardExp: 5, rewardCoins: 0,
     })) : [];
-    const open = id === viewed && dialogs[id] ? quests.find(q => String(q.questId) === dialogs[id]) : undefined;
+    const open = (fx17 || id === viewed) && dialogs[id] ? questsOf(id).find(q => String(q.questId) === dialogs[id]) : undefined;
     base.activity = {
       dialog: open
         ? { npcId: NPC.id, npcName: NPC.name, lines: ['虛構對白'], options: [{ id: open.status === 'AVAILABLE' ? `ACCEPT_QUEST:${open.questId}` : `COMPLETE_QUEST:${open.questId}`, label: open.status === 'AVAILABLE' ? '答應' : '回報' }, { id: 'CLOSE', label: '離開' }] }
@@ -109,10 +126,11 @@ export function createWorld(opts: WorldOpts = {}) {
       shop: null, battle: null, battleResult: null, command: null,
     };
     (base as any).family = {
-      activeCharacterId: viewed,
+      // 真宿主的背景快照把 activeCharacterId 寫成該角色自己（fairyland background_runtime.snapshot）。
+      activeCharacterId: fx17 ? id : viewed,
       maxSlots: 5,
       warehouse: { gold: 0, cap: 200, items: [] },
-      members: Object.values(chars).map(c => ({
+      members: Object.values(chars).filter(c => !offline.has(c.id)).map(c => ({
         characterId: c.id, name: c.name, level: c.level, mapId: '99001', mapName: '虛構草原', x: c.x, y: c.y, gold: c.gold, satiety: c.satiety,
         inventoryCount: c.bag, inventoryCap: c.cap, inBattle: false,
         inventory: c.bag > 0 ? [{ itemId: 90001, name: '虛構礦石', count: c.bag }] : [], workSkills: { 5: 5 },
@@ -123,6 +141,11 @@ export function createWorld(opts: WorldOpts = {}) {
 
   const sendSnapshot = (reason: 'STARTED' | 'REQUESTED' | 'SCENE_RELOADED' = 'REQUESTED') =>
     push({ ...envelope(viewed), kind: 'snapshot', seq: seq++, reason, snapshot: snapshotFor(viewed) });
+  /** FX17：回某位角色自己的快照（背景角色只有在要求時才送）。 */
+  const sendSnapshotOf = (id: string, inReplyTo?: string) =>
+    push({ ...envelope(id), kind: 'snapshot', seq: seq++, reason: 'REQUESTED', ...(inReplyTo ? { inReplyTo } : {}), snapshot: snapshotFor(id) });
+  /** 視角角色的進度變動宿主會主動推快照；背景角色不會。 */
+  const refreshAfter = (id: string) => { if (!fx17 || id === viewed) sendSnapshot('REQUESTED'); };
   const heartbeat = () =>
     push({ ...envelope(viewed), kind: 'heartbeat', sessionId, seq: seq++, mapId: '99001', phase: 'PLAYING', inBattle: false });
 
@@ -131,7 +154,7 @@ export function createWorld(opts: WorldOpts = {}) {
     start: cb => { push = cb; },
     stop: () => {},
     send(cmd) {
-      if (!connected) return;
+      if (!connected || !hostUp) return;
       sent.push(cmd);
       const c = cmd.command as { type: string; [k: string]: any };
       const fromViewed = cmd.characterId === viewed;
@@ -139,7 +162,8 @@ export function createWorld(opts: WorldOpts = {}) {
       switch (c.type) {
         case 'REQUEST_SNAPSHOT':
           emitResult(cmd, 'ACCEPTED');
-          later(50, () => sendSnapshot('REQUESTED'));
+          if (fx17) later(50, () => sendSnapshotOf(cmd.characterId, cmd.commandId));
+          else later(50, () => sendSnapshot('REQUESTED'));
           return;
         case 'SWITCH_VIEW_CHARACTER': {
           emitResult(cmd, 'ACCEPTED');
@@ -164,6 +188,7 @@ export function createWorld(opts: WorldOpts = {}) {
             emitEvent(me.id, { type: 'COMMAND_COMPLETED', commandId: cmd.commandId, outcome: 'DONE', code: 'DONE' });
             // 宿主在背景成員進度改變時刷新快照（名冊的飽食度、背包才會更新）。
             sendSnapshot('REQUESTED');
+
           });
           return;
         }
@@ -171,21 +196,33 @@ export function createWorld(opts: WorldOpts = {}) {
         case 'TALK_TO_NPC':
         case 'CHOOSE_DIALOG_OPTION':
         case 'ACCEPT_QUEST': {
-          if (!fromViewed) return reject('WRONG_CHARACTER', '此操作需要在主畫面觀察中才能執行');
+          if (!fromViewed && !fx17) return reject('WRONG_CHARACTER', '此操作需要在主畫面觀察中才能執行');
+          if (!chars[cmd.characterId]) return reject('CHARACTER_NOT_FOUND');
           emitResult(cmd, 'ACCEPTED');
           const done = (code: string, after: () => void = () => {}) => later(questStepMs, () => {
             after();
             emitEvent(cmd.characterId, { type: 'COMMAND_COMPLETED', commandId: cmd.commandId, outcome: 'DONE', code });
           });
-          if (c.type === 'WALK_TO') { done('ARRIVED', () => { const me = chars[cmd.characterId]; me.x = c.x; me.y = c.y; sendSnapshot('REQUESTED'); }); return; }
+          if (c.type === 'WALK_TO') {
+            done('ARRIVED', () => {
+              const me = chars[cmd.characterId]; me.x = c.x; me.y = c.y;
+              if (fx17 && cmd.characterId !== viewed) emitEvent(cmd.characterId, { type: 'MOVED', mapId: '99001', x: c.x, y: c.y, dir: 0 });
+              refreshAfter(cmd.characterId);
+            });
+            return;
+          }
           if (c.type === 'TALK_TO_NPC') {
-            const next = quests.find(q => q.status !== 'COMPLETED');
+            const mine = questsOf(cmd.characterId);
+            // FX17：對話列出這位角色所有可接／可回報的任務；之前只給下一件。
+            const open = fx17 ? mine.filter(q => q.status !== 'COMPLETED') : mine.filter(q => q.status !== 'COMPLETED').slice(0, 1);
             done('DIALOG_OPENED', () => {
-              dialogs[cmd.characterId] = next ? String(next.questId) : null;
-              const open = next;
+              dialogs[cmd.characterId] = open[0] ? String(open[0].questId) : null;
               emitEvent(cmd.characterId, {
                 type: 'DIALOG_OPENED', npcId: NPC.id, npcName: NPC.name, role: null, lines: ['虛構對白'], optionsAvailable: true,
-                options: open ? [{ id: open.status === 'AVAILABLE' ? `ACCEPT_QUEST:${open.questId}` : `COMPLETE_QUEST:${open.questId}`, label: '繼續' }, { id: 'CLOSE', label: '離開' }] : [{ id: 'CLOSE', label: '離開' }],
+                options: [
+                  ...open.map(q => ({ id: q.status === 'AVAILABLE' ? `ACCEPT_QUEST:${q.questId}` : `COMPLETE_QUEST:${q.questId}`, label: q.title })),
+                  { id: 'CLOSE', label: '離開' },
+                ],
               });
             });
             return;
@@ -193,13 +230,19 @@ export function createWorld(opts: WorldOpts = {}) {
           const optionId: string = c.type === 'ACCEPT_QUEST' ? `ACCEPT_QUEST:${c.questId}` : c.optionId;
           done('DONE', () => {
             const [kind, rawId] = optionId.split(':');
-            const q = quests.find(x => String(x.questId) === rawId);
-            if (kind === 'ACCEPT_QUEST' && q) { q.status = 'READY'; dialogs[cmd.characterId] = String(q.questId); }
-            else if (kind === 'COMPLETE_QUEST' && q) { q.status = 'COMPLETED'; dialogs[cmd.characterId] = null; }
+            const q = questsOf(cmd.characterId).find(x => String(x.questId) === rawId);
+            if (kind === 'ACCEPT_QUEST' && q) {
+              q.status = 'READY'; dialogs[cmd.characterId] = String(q.questId);
+              working[cmd.characterId] = q.questId;
+              for (const [other, qid] of Object.entries(working)) {
+                if (other !== cmd.characterId && qid === q.questId) overlaps.push({ questId: q.questId, a: other, b: cmd.characterId, at: t });
+              }
+            }
+            else if (kind === 'COMPLETE_QUEST' && q) { q.status = 'COMPLETED'; dialogs[cmd.characterId] = null; if (working[cmd.characterId] === q.questId) working[cmd.characterId] = null; }
             else if (optionId === 'CLOSE') dialogs[cmd.characterId] = null;
             if (kind === 'ACCEPT_QUEST' || kind === 'COMPLETE_QUEST' || optionId === 'CLOSE') {
               emitEvent(cmd.characterId, { type: 'DIALOG_CLOSED', npcId: NPC.id });
-              sendSnapshot('REQUESTED');
+              refreshAfter(cmd.characterId);
             }
           });
           return;
@@ -229,7 +272,7 @@ export function createWorld(opts: WorldOpts = {}) {
         if (hi >= 0 && (ti < 0 || hostEvents[hi].at <= timers[ti].at)) hostEvents.splice(hi, 1)[0].fn();
         else timers.splice(ti, 1)[0].fn();
       }
-      if (connected && t - lastBeat >= 1000) { lastBeat = t; heartbeat(); }
+      if (connected && hostUp && t - lastBeat >= 1000) { lastBeat = t; heartbeat(); }
       ctrl.tick();
     }
   }
@@ -266,6 +309,23 @@ export function createWorld(opts: WorldOpts = {}) {
       }
     },
     setViewed(id: string) { viewed = id; },
+    questsOf,
+    /** 兩位角色同時在做同一件任務的紀錄（應該永遠是空的）。 */
+    overlaps,
+    /** 宿主分頁關掉：送一則 GAME_STOPPED，之後不送心跳、不回指令。 */
+    stopHost() {
+      push({ ...envelope(viewed), kind: 'event', seq: seq++, event: { type: 'GAME_STOPPED', sessionId, reason: 'SHUTDOWN' } });
+      hostUp = false;
+    },
+    /** 宿主分頁重開：新的 session，重新送心跳與快照。 */
+    startHost() {
+      hostUp = true;
+      sessionId = `${sessionId}+`;
+      lastBeat = -1e9;
+      heartbeat();
+      sendSnapshot('STARTED');
+    },
+    setOffline(id: string, off: boolean) { if (off) offline.add(id); else offline.delete(id); sendSnapshot('REQUESTED'); },
     emitEvent,
     snapshotFor,
     /** 宿主送給控制器的原始訊息（測試直接餵事件用）。 */
