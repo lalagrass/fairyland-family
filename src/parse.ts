@@ -54,8 +54,11 @@ export type UiAction =
         loopActivity?: 'HUNT' | 'GATHER' | 'CRAFT';
         returnHpPct?: number;
         loopOnly?: boolean;
+        regionId?: string | null;
       };
     }
+  /** F7：停工原因可續跑時（背包滿、缺工具、路線走不通…）從原地接著跑，保留已完成的任務。 */
+  | { kind: 'QUEST_CHAIN_RESUME'; label: string }
   | { kind: 'DISPATCH_ASSIGN'; characterId: string; spec: DispatchSpec; label: string }
   | { kind: 'DISPATCH_STOP'; characterId: string; label: string };
 

@@ -668,7 +668,7 @@ export class FamilyController {
       this.dispatcher.stop(action.characterId);
       return null;
     }
-    if (action.kind === 'QUEST_CHAIN_START') {
+    if (action.kind === 'QUEST_CHAIN_START' || action.kind === 'QUEST_CHAIN_RESUME') {
       this.chainOwner = this.state.characterId;
     }
     if (['NAV', 'NAV_CANCEL', 'QUEUE_GATHER', 'QUEUE_CRAFT', 'QUEUE_STOP', 'QUEST_AUTO', 'QUEST_AUTO_STOP'].includes(action.kind)) {

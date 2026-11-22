@@ -28,6 +28,8 @@ export interface QuestChainConfig {
   returnHpPct: number;
   /** F2：跳過任務目錄，開場結束後直接進新手循環（派工「新手循環」用）。 */
   loopOnly?: boolean;
+  /** F7：只做這個區域（宿主 `regionId`）的任務、在這個區域循環；不在區域裡就先沿傳送點圖跨區。null／省略＝不限。 */
+  regionId?: string | null;
 }
 
 export const DEFAULT_CHAIN_CONFIG: QuestChainConfig = {
@@ -82,6 +84,8 @@ export interface ChainQuest {
   objectives: ChainObjective[];
   rewardExp: number;
   rewardCoins: number;
+  /** v7：接任務 NPC 所在區域（宿主給的）。 */
+  regionId?: string;
 }
 
 export interface ChainObjective {
