@@ -272,10 +272,16 @@ export class FamilyController {
   }
 
   /** 視角借用：背景採集需要走近時暫時把視角切給它，走近開工後還給原本的角色。 */
-  private viewLoan: { borrower: string; returnTo: string; since: number } | null = null;
+  private static readonly viewSwitchTimeoutMs = 20_000;
+  private viewLoan: {
+    borrower: string;
+    returnTo: string;
+    since: number;
+    manualChoice?: { commandId: string; deadline: number };
+  } | null = null;
 
   private requestViewFor(id: string): void {
-    if (this.state.characterId === id) return;
+    if (this.state.characterId === id || this.viewLoan?.manualChoice) return;
     if (!this.viewLoan) {
       const back = this.state.characterId;
       if (back) this.viewLoan = { borrower: id, returnTo: back, since: this.now() };
@@ -284,11 +290,24 @@ export class FamilyController {
     this.sendFor(id, { type: 'SWITCH_VIEW_CHARACTER', characterId: id }, `採集需要走近，切換視角 ${name}`);
   }
 
+  private settleManualViewChoice(m: PluginMessage): void {
+    const loan = this.viewLoan;
+    const choice = loan?.manualChoice;
+    if (!choice || m.kind !== 'command-result' || m.commandId !== choice.commandId) return;
+    // 宿主先完成切換才回 ACCEPTED；別把相同角色的借用快照當成手動切換已成功。
+    if (m.status === 'ACCEPTED') this.viewLoan = null;
+    else delete loan.manualChoice;
+  }
+
   private settleViewLoan(): void {
     const loan = this.viewLoan;
     if (!loan) return;
+    if (loan.manualChoice) {
+      if (this.now() < loan.manualChoice.deadline) return;
+      delete loan.manualChoice;
+    }
     if (this.state.characterId !== loan.borrower) {
-      if (this.now() - loan.since > 20_000) this.viewLoan = null; // 一直切不過去：放棄，不要卡住
+      if (this.now() - loan.since > FamilyController.viewSwitchTimeoutMs) this.viewLoan = null; // 一直切不過去：放棄，不要卡住
       return;
     }
     const q = this.getOrCreateQueue(loan.borrower).getStatus();
@@ -412,6 +431,7 @@ export class FamilyController {
   }
 
   private dispatchToAgents(m: PluginMessage): void {
+    this.settleManualViewChoice(m);
     // 視角剛換掉：前景工作（走路、對話、任務鏈）都屬於舊視角角色，先收掉再處理訊息，避免指令送給別的角色。
     this.syncViewOwnership();
     const ctx = this.moduleContext();
@@ -428,8 +448,16 @@ export class FamilyController {
       q?.onMessage(m);
     }
     this.automation.notifyMessage(m, ctx);
-    if (this.pendingQuest && m.kind === 'snapshot' && m.characterId === this.pendingQuest.characterId) {
-      this.pendingQuest.snapshotSeen = true;
+    const quest = this.pendingQuest;
+    if (quest && m.kind === 'command-result' && m.commandId === quest.switchCommandId) {
+      if (m.status === 'ACCEPTED') quest.switchAccepted = true;
+      else {
+        this.pendingQuest = null;
+        this.state = addLog(this.state, '系統', `派任務失敗：${m.message ?? m.reasonCode ?? '宿主拒絕切換視角'}`, this.now(), { level: 'warn', characterId: quest.characterId });
+      }
+    }
+    if (quest?.switchAccepted && m.kind === 'snapshot' && m.characterId === quest.characterId) {
+      quest.snapshotSeen = true;
     }
     this.settlePendingQuest();
   }
@@ -445,8 +473,8 @@ export class FamilyController {
     const member = this.state.members.find(m => m.characterId === action.characterId);
     if (!member) return `找不到角色 ${action.characterId}`;
     const name = member.name ?? member.characterId;
-    const sent = this.sendFor(action.characterId, { type: 'SWITCH_VIEW_CHARACTER', characterId: action.characterId }, `派任務切換視角 ${name}`);
-    if (!sent) {
+    const switchCommandId = this.sendExplicitViewSwitch(action.characterId, action.characterId, `派任務切換視角 ${name}`);
+    if (!switchCommandId) {
       this.pendingQuest = null;
       return '遊戲未執行，無法切換視角';
     }
@@ -455,6 +483,8 @@ export class FamilyController {
       characterId: action.characterId,
       label: action.label,
       deadline: this.now() + PENDING_QUEST_TIMEOUT_MS,
+      switchCommandId,
+      switchAccepted: false,
       snapshotSeen: false,
     };
     this.state = addLog(this.state, '系統', `${action.label}（等待切換視角）`, this.now(), { characterId: action.characterId });
@@ -488,8 +518,16 @@ export class FamilyController {
   }
 
   private lastViewedId: string | null = null;
-  /** F9 派給角色：等視角切到 characterId 並收到它的快照後，才送 QUEST_AUTO。 */
-  private pendingQuest: { questId: number; characterId: string; label: string; deadline: number; snapshotSeen: boolean } | null = null;
+  /** F9：派任務切換指令必須先獲得宿主確認，再等該角色的新快照。 */
+  private pendingQuest: {
+    questId: number;
+    characterId: string;
+    label: string;
+    deadline: number;
+    switchCommandId: string;
+    switchAccepted: boolean;
+    snapshotSeen: boolean;
+  } | null = null;
 
   private syncViewOwnership(): void {
     const viewed = this.state.characterId;
@@ -569,10 +607,25 @@ export class FamilyController {
     return msg.commandId;
   }
 
+  private sendExplicitViewSwitch(targetCharacterId: string | null, characterId: string, label: string): string | null {
+    const loan = this.viewLoan;
+    const commandId = this.sendFor(targetCharacterId, { type: 'SWITCH_VIEW_CHARACTER', characterId }, label);
+    if (loan && this.viewLoan === loan && commandId) {
+      // sendFor 中同步收到的結果也會先排入佇列，等指令 id 已記錄後才交給代理處理。
+      loan.manualChoice = { commandId, deadline: this.now() + FamilyController.viewSwitchTimeoutMs };
+    }
+    return commandId;
+  }
+
   /** 選單按鈕與文字輸入共用的執行入口；回傳錯誤文字（無法執行）或 null。 */
   perform(action: UiAction): string | null {
     if (action.kind === 'COMMAND') {
-      this.sendFor(action.targetCharacterId ?? this.state.characterId, action.command, action.label);
+      const target = action.targetCharacterId ?? this.state.characterId;
+      if (action.command.type === 'SWITCH_VIEW_CHARACTER') {
+        if (this.sendExplicitViewSwitch(target, action.command.characterId, action.label)) this.pendingQuest = null;
+      } else {
+        this.sendFor(target, action.command, action.label);
+      }
       return null;
     }
     if (action.kind === 'CHAR_STRATEGY_UPDATE') {
