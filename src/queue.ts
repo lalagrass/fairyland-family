@@ -844,7 +844,8 @@ export class WorkQueue {
       if (!this.host.navigator.isActive() || this.navStartedKey !== key) {
         this.navStartedKey = key;
         const err = this.host.navigator.go({ kind: 'NPC', query: '收破爛阿利', talk: true }, this);
-        if (!err) return;
+        // F7：找不到那位商人（例如不在這個區域的資料裡）時導航會立刻失敗；這時停工並給 MISSING_TOOL，不卡在等待買工具。
+        if (!err && this.host.navigator.getStatus().phase !== 'FAILED') return;
       } else {
         return;
       }

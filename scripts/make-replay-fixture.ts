@@ -21,15 +21,20 @@ const catalog = { maps: { '20001': { name: '雜貨店' }, '20007': { name: '醫�
 const profile = { name: '阿草', level: 5, coins: 1200, hp: 90, mp: 40, stats: { str: 8, con: 8, int: 5, agi: 6, cha: 5, luk: 5 }, inventory: [], modelId: 'PHM011', weaponModel: 'WP01' };
 // 本 repo 公開：原版提取的完整配方表與全地圖列表不放進 fixture，只留極少數示範（AGENTS.md：不轉載提取資料）。
 const FIXTURE_RECIPE_LIMIT = 3;
+const FIXTURE_MAPS = ['10001', '20010', '20001', '20007', '20009'];
 const buildStatic = () => {
   const full = buildStaticDataPayload({ catalog });
   return {
     ...full,
     recipes: (full.recipes ?? []).slice(0, FIXTURE_RECIPE_LIMIT),
     // 公開 repo 不放傳送點座標：只留節點，portals 一律清空。
-    portalGraph: (full.portalGraph ?? []).filter((n: { mapId: string }) => ['10001', '20010', '20001', '20007', '20009'].includes(n.mapId)).map((n: object) => ({ ...n, portals: [] })),
+    portalGraph: (full.portalGraph ?? []).filter((n: { mapId: string }) => FIXTURE_MAPS.includes(n.mapId)).map((n: object) => ({ ...n, portals: [] })),
     skills: (full.skills ?? []).slice(0, 6),
     assets: full.assets,
+    // v7：區域清單同樣只留示範地圖，不轉載完整的區域地圖表。
+    regions: (full.regions ?? [])
+      .map((r: { mapIds: string[] }) => ({ ...r, mapIds: r.mapIds.filter(m => FIXTURE_MAPS.includes(m)) }))
+      .filter((r: { mapIds: string[] }) => r.mapIds.length > 0),
   };
 };
 const snap = (scene: unknown, x: number, y: number) =>

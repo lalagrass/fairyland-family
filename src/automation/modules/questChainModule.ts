@@ -25,11 +25,24 @@ import {
   type QuestChainConfig,
   type StuckState,
 } from '../questPlan';
+import {
+  chainStopForQueue,
+  isResumable,
+  planRegionTravel,
+  questsInRegion,
+  regionOfMapId,
+  type ChainStopReason,
+} from '../regionPlan';
 import type { AutomationHostContext, BehaviorModule } from '../types';
 import type { QuestBehaviorModule } from './questModule';
+import type { StaticRegion } from '../../protocol/index';
 
 /** 一次無人任務最多略過幾件任務；達到就停下，請人看宿主資料。 */
 export const MAX_SKIPPED_QUESTS = 3;
+/** F7：同一趟跨區導航「走完了卻還不在目標區域」最多重來幾次，超過就以 NAV_FAILED 停下。 */
+export const MAX_REGION_TRAVEL_ATTEMPTS = 3;
+/** 落敗後最多等宿主送回這麼久，再從目前位置重新跨區。 */
+const RESCUE_WAIT_MS = 10_000;
 
 /**
  * 導航因為已經有對話框或商店開著而被拒：人其實已經到了，只是視窗還沒關。
@@ -52,7 +65,10 @@ export interface QuestChainHost extends AutomationHostContext {
 export interface QuestChainStatus {
   phase: 'IDLE' | 'OPENING' | 'QUESTS' | 'LOOP' | 'STOPPED';
   text: string;
+  /** 停工原因碼（`ChainStopReason`）；執行中為 null。 */
   stopReason: string | null;
+  /** F7：停下的原因可以續跑（QUEST_CHAIN_RESUME）。 */
+  resumable: boolean;
   completedQuestTitles: string[];
   config: QuestChainConfig;
 }
@@ -104,6 +120,8 @@ export class QuestChainModule implements BehaviorModule {
   private healSent = false;
   private savedStrategy: ReturnType<AutoBattler['getStrategy']> | null = null;
   private deaths = 0;
+  /** 落敗後還沒被宿主送回（LOCATION_CHANGED）的時間點；這段期間不重新跨區，免得從舊地圖出發。 */
+  private rescueSince: number | null = null;
   private countedBattle: number | null = null;
   private completed: ChainQuest[] = [];
   /** 開工當下已經完成的任務。摘要只列這次新完成的。 */
@@ -141,6 +159,10 @@ export class QuestChainModule implements BehaviorModule {
   private loopStartedAt: number | null = null;
   private loopLogged = false;
   private sealWarned = false;
+  /** F7：目前這趟跨區的目標區域與已重來次數；途中戰鬥中的提示只寫一次。 */
+  private travel: { regionId: string; attempts: number; battleLogged: boolean } | null = null;
+  /** F7：續跑時佇列還留著上次的停止原因；這個舊原因不再當成新的停工。 */
+  private staleQueueStop: string | null = null;
 
   constructor(private host: QuestChainHost) {}
 
@@ -157,6 +179,7 @@ export class QuestChainModule implements BehaviorModule {
       phase: this.phase,
       text: this.text,
       stopReason: this.stopReason,
+      resumable: this.phase === 'STOPPED' && isResumable(this.stopReason),
       completedQuestTitles: this.completed.map(q => q.title),
       config: {
         ...this.config,
@@ -176,6 +199,9 @@ export class QuestChainModule implements BehaviorModule {
     if (action.kind === 'QUEST_CHAIN_STOP') {
       this.finish('USER', '玩家停止無人任務');
       return { handled: true, error: null };
+    }
+    if (action.kind === 'QUEST_CHAIN_RESUME') {
+      return { handled: true, error: this.resume() };
     }
     return { handled: false, error: null };
   }
@@ -199,7 +225,9 @@ export class QuestChainModule implements BehaviorModule {
       this.navSig = '';
       this.navSigAt = 0;
       if (this.host.navigator.isActive()) this.host.navigator.cancel();
+      this.rescueSince = this.host.now();
     }
+    if (isEventMessage(msg) && msg.event.type === 'LOCATION_CHANGED') this.rescueSince = null;
     if (msg.kind === 'command-result' && msg.commandId === this.openingCommandId) {
       this.openingCommandId = null;
       if (msg.status === 'REJECTED') this.onOpeningRejected(msg.reasonCode, msg.message);
@@ -232,10 +260,12 @@ export class QuestChainModule implements BehaviorModule {
     loopActivity?: ChainLoopActivity;
     returnHpPct?: number;
     loopOnly?: boolean;
+    regionId?: string | null;
   }): void {
     this.config = {
       ...this.config,
       ...(patch.loopOnly !== undefined ? { loopOnly: patch.loopOnly } : {}),
+      ...(patch.regionId !== undefined ? { regionId: patch.regionId || null } : {}),
       ...(patch.newbieLoop !== undefined ? { newbieLoop: patch.newbieLoop } : {}),
       ...(patch.loopActivity !== undefined ? { loopActivity: patch.loopActivity } : {}),
       ...(patch.returnHpPct !== undefined ? { returnHpPct: Math.max(1, Math.min(90, patch.returnHpPct)) } : {}),
@@ -277,6 +307,7 @@ export class QuestChainModule implements BehaviorModule {
     this.loopStartedAt = null;
     this.loopLogged = false;
     this.sealWarned = false;
+    this.travel = null;
     this.startedAt = this.host.now();
     this.baseline = buildCheckpointFromState(st, this.startedAt);
     this.savedStrategy = this.host.battler.getStrategy();
@@ -288,6 +319,131 @@ export class QuestChainModule implements BehaviorModule {
     this.host.onChange();
     this.tick();
     return null;
+  }
+
+  /**
+   * F7：從可續跑的停工接著做。已完成的任務、回來摘要的起點與設定（含區域）保留；
+   * 時間上限與死亡次數從續跑這一刻重新算，略過清單清空（剛處理過的問題值得再試一次）。
+   */
+  private resume(): string | null {
+    if (this.phase !== 'STOPPED' || !isResumable(this.stopReason)) return '目前沒有可以續跑的停工';
+    if (this.host.status() !== 'RUNNING') return '遊戲未執行';
+    const st = this.host.state();
+    if (!st.snapshot) return '尚未收到任務快照';
+    const was = this.stopReason;
+    this.finished = false;
+    this.stopReason = null;
+    this.drivingId = null;
+    this.stuck = null;
+    this.deaths = 0;
+    this.countedBattle = null;
+    this.seenStage = null;
+    this.openingCommandId = null;
+    this.openingLatch = null;
+    this.openingReportRejected = null;
+    this.openingBusy = 0;
+    this.navKey = null;
+    this.forgetWalk();
+    this.navSig = '';
+    this.navSigAt = 0;
+    this.resupply = false;
+    this.healSent = false;
+    this.sellSkip.clear();
+    this.depositSkip.clear();
+    this.wantDeposit = false;
+    this.skipped.clear();
+    this.travel = null;
+    const q = this.host.getQueue().getStatus();
+    this.staleQueueStop = q.phase === 'STOPPED' ? q.stopReason : null;
+    this.startedAt = this.host.now();
+    this.savedStrategy = this.host.battler.getStrategy();
+    this.remember(st.snapshot);
+    const stage = st.snapshot.openingStage;
+    this.phase = stage && stage !== 'DONE' ? 'OPENING' : 'QUESTS';
+    this.text = '無人任務：續跑';
+    this.host.log(`無人任務續跑（上次停工原因：${was}），已完成的任務保留`);
+    this.host.onChange();
+    this.tick();
+    return null;
+  }
+
+  private regions(): StaticRegion[] {
+    return this.host.state().staticData?.regions ?? [];
+  }
+
+  /**
+   * F7：沿傳送點圖跨區到目標區域的村莊地圖。途中遇敵時照血量打或逃，導航器自己暫停、戰鬥後從目前位置接續；
+   * 落敗換圖時（onMessage 會取消導航）下一拍從新位置重新規劃。走不通以 NAV_FAILED 停下，可續跑。
+   */
+  private travelToRegion(region: StaticRegion, label: string): void {
+    const st = this.host.state();
+    const key = `region:${region.regionId}`;
+    if (!this.travel || this.travel.regionId !== region.regionId) {
+      this.travel = { regionId: region.regionId, attempts: 0, battleLogged: false };
+    }
+    if (st.battle || st.battleResult) {
+      this.applyBattle(false, true);
+      this.text = `${label}：跨區途中遇敵，戰鬥結束後接續前往 ${region.name}`;
+      if (!this.travel.battleLogged) {
+        this.travel.battleLogged = true;
+        this.host.log(`跨區前往 ${region.name} 途中遇敵，戰鬥結束後從目前位置接續`, 'warn');
+      }
+      return;
+    }
+    this.travel.battleLogged = false;
+    this.applyBattle(false, true);
+    if (this.rescueSince !== null && this.host.now() - this.rescueSince < RESCUE_WAIT_MS) {
+      this.text = `${label}：落敗，等送回後重新跨區前往 ${region.name}`;
+      return;
+    }
+    this.rescueSince = null;
+    const nav = this.host.navigator.getStatus();
+    if (this.navKey === key && nav.phase === 'FAILED' && !navBlockedByWindow(nav.text)) {
+      this.finish('NAV_FAILED', `無法跨區前往 ${region.name}：${nav.text}`);
+      return;
+    }
+    if (this.host.navigator.isActive()) {
+      if (this.navKey === key) this.text = `${label}：跨區前往 ${region.name}（${nav.text.replace(/^導航：/, '')}）`;
+      return;
+    }
+    if (this.pendingWalk() || Object.keys(st.pending).length > 0) return;
+    if (st.dialog) {
+      this.closeDialog();
+      return;
+    }
+    if (this.navKey === key && nav.phase === 'DONE') {
+      this.travel.attempts += 1;
+      if (this.travel.attempts >= MAX_REGION_TRAVEL_ATTEMPTS) {
+        this.finish('NAV_FAILED', `已走到 ${region.name} 的村莊 ${this.travel.attempts} 次，宿主快照仍不在這個區域`);
+        return;
+      }
+    }
+    this.navKey = key;
+    this.text = `${label}：跨區前往 ${region.name}`;
+    this.host.log(`跨區：沿傳送點圖前往 ${region.name}`);
+    this.host.navigator.go({ kind: 'MAP', mapId: region.villageMapId, name: region.name });
+  }
+
+  private noteArrived(region: StaticRegion): void {
+    if (this.travel?.regionId !== region.regionId) return;
+    this.travel = null;
+    if (this.navKey === `region:${region.regionId}`) this.navKey = null;
+    this.host.log(`已抵達 ${region.name}，接著做這個區域的事`);
+  }
+
+  /** F7：設了區域時，循環只用這個區域的遇敵區與採集點（地圖歸屬由宿主的區域清單決定）。 */
+  private loopHunts(): RememberedHunt[] {
+    const regionId = this.config.regionId;
+    if (!regionId) return this.hunts;
+    const regions = this.regions();
+    return this.hunts.filter(h => regionOfMapId(regions, h.mapId)?.regionId === regionId);
+  }
+
+  private loopGathers(): SnapshotGatherPoint[] {
+    const regionId = this.config.regionId;
+    if (!regionId) return this.gathers;
+    const regions = this.regions();
+    return this.gathers.filter(p => regionOfMapId(regions, p.mapId)?.regionId === regionId);
   }
 
   private step(): void {
@@ -523,7 +679,28 @@ export class QuestChainModule implements BehaviorModule {
         }
       }
     }
-    const next = selectNextQuest(quests.filter(q => !this.skipped.has(q.questId)), level);
+    let pool = quests.filter(q => !this.skipped.has(q.questId));
+    const regionId = this.config.regionId ?? null;
+    if (regionId) {
+      const travel = planRegionTravel(this.regions(), snap.region?.regionId, regionId);
+      if (travel.kind === 'UNKNOWN_REGION') {
+        this.finish('REGION_UNKNOWN', `宿主的區域清單裡沒有設定的區域（${regionId}），請重新選擇區域`);
+        return;
+      }
+      pool = questsInRegion(pool, regionId);
+      const pick = selectNextQuest(pool, level);
+      // 接任務與回報都要找這一區的 NPC：人不在這一區就先跨區到村莊，到了快照才看得到那裡的 NPC。
+      // 進行中的目標（打怪、採集、走到某圖）交給單筆任務模組，目標地圖可能在區域外。
+      if (travel.kind === 'TRAVEL' && pick.kind === 'QUEST' && pick.quest.status !== 'IN_PROGRESS') {
+        if (this.host.quest.isActive()) this.host.quest.stop();
+        this.drivingId = null;
+        this.stuck = null;
+        this.travelToRegion(travel.region, `無人任務（${travel.region.name}）`);
+        return;
+      }
+      if (travel.kind === 'HERE') this.noteArrived(travel.region);
+    }
+    const next = selectNextQuest(pool, level);
     if (next.kind === 'QUEST') {
       this.text = `無人任務：${next.quest.title}`;
       this.applyBattleForQuest(next.quest);
@@ -594,6 +771,21 @@ export class QuestChainModule implements BehaviorModule {
       return;
     }
     this.resupply = false;
+    if (this.config.regionId) {
+      const travel = planRegionTravel(this.regions(), snap.region?.regionId, this.config.regionId);
+      if (travel.kind === 'UNKNOWN_REGION') {
+        this.finish('REGION_UNKNOWN', `宿主的區域清單裡沒有設定的區域（${this.config.regionId}），請重新選擇區域`);
+        return;
+      }
+      const known = this.config.loopActivity === 'GATHER' ? this.loopGathers().length > 0
+        : this.config.loopActivity === 'HUNT' ? this.loopHunts().length > 0 || this.loopGathers().some(p => p.x !== undefined)
+          : true;
+      if (travel.kind === 'TRAVEL' && !known) {
+        this.travelToRegion(travel.region, `新手循環（${travel.region.name}）`);
+        return;
+      }
+      if (travel.kind === 'HERE') this.noteArrived(travel.region);
+    }
     if (this.config.loopActivity === 'GATHER') this.stepGatherLoop();
     else if (this.config.loopActivity === 'CRAFT') this.stepCraftLoop();
     else this.stepHuntLoop();
@@ -605,7 +797,7 @@ export class QuestChainModule implements BehaviorModule {
     if (!snap) return;
     this.applyBattle(false, true);
     if (this.host.navigator.isActive() || this.pendingWalk()) return;
-    const target = this.hunts[0] ?? this.gatherHunt();
+    const target = this.loopHunts()[0] ?? this.gatherHunt();
     if (!target) {
       this.finish('STUCK', '找不到下一步：宿主沒有提供遇敵區或採集點，新手循環無法打怪');
       return;
@@ -637,16 +829,19 @@ export class QuestChainModule implements BehaviorModule {
       this.text = `新手循環：${stat.text}`;
       return;
     }
-    if (stat.phase === 'STOPPED' && stat.stopReason === 'BAG_FULL' && this.bagFull(this.host.state())) {
+    const fresh = !(stat.phase === 'STOPPED' && this.staleQueueStop !== null && stat.stopReason === this.staleQueueStop);
+    if (fresh && stat.phase === 'STOPPED' && stat.stopReason === 'BAG_FULL' && this.bagFull(this.host.state())) {
       this.resupply = true;
       this.stepResupply();
       return;
     }
-    if (stat.phase === 'STOPPED' && stat.stopReason && stat.stopReason !== 'DONE_TARGET' && stat.stopReason !== 'USER_STOPPED') {
-      this.finish('STUCK', `找不到下一步：採集停住（${stat.stopReason}）`);
+    if (fresh && stat.phase === 'STOPPED' && stat.stopReason && stat.stopReason !== 'DONE_TARGET' && stat.stopReason !== 'USER_STOPPED') {
+      const code = chainStopForQueue(stat.stopReason);
+      this.finish(code, `${code === 'STUCK' ? '找不到下一步：' : ''}採集停住（${stat.stopReason}）：${stat.text}`);
       return;
     }
-    const point = this.gathers.find(p => p.skillId !== null) ?? null;
+    this.staleQueueStop = null;
+    const point = this.loopGathers().find(p => p.skillId !== null) ?? null;
     if (!point) {
       this.finish('STUCK', '找不到下一步：宿主採集清單是空的');
       return;
@@ -672,10 +867,13 @@ export class QuestChainModule implements BehaviorModule {
       this.text = `新手循環：${stat.text}`;
       return;
     }
-    if (stat.phase === 'STOPPED' && stat.stopReason && stat.stopReason !== 'DONE_TARGET' && stat.stopReason !== 'USER_STOPPED') {
-      this.finish('STUCK', `找不到下一步：配方做不下去（${stat.stopReason}）`);
+    const fresh = !(stat.phase === 'STOPPED' && this.staleQueueStop !== null && stat.stopReason === this.staleQueueStop);
+    if (fresh && stat.phase === 'STOPPED' && stat.stopReason && stat.stopReason !== 'DONE_TARGET' && stat.stopReason !== 'USER_STOPPED') {
+      const code = chainStopForQueue(stat.stopReason);
+      this.finish(code, `${code === 'STUCK' ? '找不到下一步：' : ''}配方做不下去（${stat.stopReason}）`);
       return;
     }
+    this.staleQueueStop = null;
     const recipes = this.host.state().staticData?.recipes ?? this.host.state().snapshot?.recipes ?? [];
     const recipe = recipes[0];
     if (!recipe) {
@@ -935,7 +1133,7 @@ export class QuestChainModule implements BehaviorModule {
   }
 
   private gatherHunt(): RememberedHunt | null {
-    const point = this.gathers.find(p => p.mapId && p.x !== undefined);
+    const point = this.loopGathers().find(p => p.mapId && p.x !== undefined);
     if (!point?.mapId) return null;
     return { mapId: point.mapId, mapName: point.mapName ?? null, x: point.x, y: point.y };
   }
@@ -1039,7 +1237,7 @@ export class QuestChainModule implements BehaviorModule {
     this.host.log(`任務【${quest.title}】已完成`);
   }
 
-  private finish(code: string, detail: string): void {
+  private finish(code: ChainStopReason, detail: string): void {
     if (this.finished || this.phase === 'IDLE') return;
     this.finished = true;
     this.phase = 'STOPPED';
