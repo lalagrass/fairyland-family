@@ -71,7 +71,8 @@ try {
   await page.waitForSelector('[data-testid="character-stats"]', { timeout: 15000 });
 
   // 把兩位成員塞進快照（回放檔只有一位角色）。
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const { PROTOCOL_VERSION } = await import('/family/src/protocol/index.ts');
     const ctrl = window.__family.controller;
     const cid = ctrl.state.characterId;
     const snap = JSON.parse(JSON.stringify(ctrl.state.snapshot));
@@ -84,7 +85,7 @@ try {
       status: 'AVAILABLE',
       points: [{ id: 'g1', name: '虛構點', mapId: snap.mapId, mapName: snap.mapName, x: 120, y: 100, skillId: 5, skillName: '挖礦', requiredToolItemId: null, materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }] }],
     };
-    ctrl.receive({ v: 5, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: 99001, reason: 'REQUESTED', snapshot: snap });
+    ctrl.receive({ v: PROTOCOL_VERSION, characterId: cid, ts: Date.now(), kind: 'snapshot', seq: 99001, reason: 'REQUESTED', snapshot: snap });
   });
 
   const noOverflow = async (w, label) => {

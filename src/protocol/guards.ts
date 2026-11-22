@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 65162468bc9a08f2450188e15969d70756c4f715
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ a5a56547c5f1f06d6fa127cb600cc4f09086fec1
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -11,6 +11,7 @@ import {
   GAME_EVENT_TYPES,
   PLUGIN_COMMAND_TYPES,
   PROTOCOL_VERSION,
+  QUEST_PLACEHOLDER_FIELDS,
   REJECT_REASON_CODES,
   type CommandMessage,
   type CommandResultMessage,
@@ -83,6 +84,8 @@ const isTargetMapHint = (h: unknown): boolean =>
   && (h.reason === 'ENCOUNTER_AREA' || h.reason === 'ENCOUNTER_POOL' || h.reason === 'GATHER_POINT')
   && optNum(h.x) && optNum(h.y)
   && (h.pools === undefined || (isArr(h.pools) && h.pools.every(isStr)));
+const isShopGood = (w: unknown): boolean =>
+  isRec(w) && isNum(w.itemId) && strOrNull(w.name) && isNum(w.price) && optBool(w.pricePlaceholder);
 const isQuestEntry = (q: unknown): boolean =>
   isRec(q) && isNum(q.questId) && isStr(q.title) && isStr(q.npcId) && isStr(q.npcName) && isNum(q.minLevel)
   && ['AVAILABLE', 'IN_PROGRESS', 'READY', 'COMPLETED'].includes(q.status as string)
@@ -95,7 +98,9 @@ const isQuestEntry = (q: unknown): boolean =>
     && (o.targetMapId === undefined || isNonEmptyStr(o.targetMapId))
     && optNum(o.itemId)
     && (o.itemName === undefined || isNonEmptyStr(o.itemName)))
-  && isNum(q.rewardExp) && isNum(q.rewardCoins);
+  && isNum(q.rewardExp) && isNum(q.rewardCoins)
+  && (q.placeholderFields === undefined || (isArr(q.placeholderFields)
+    && q.placeholderFields.every(f => typeof f === 'string' && (QUEST_PLACEHOLDER_FIELDS as readonly string[]).includes(f))));
 
 /** 指令內容（不含信封）。 */
 export function isPluginCommand(x: unknown): x is PluginCommand {
@@ -146,7 +151,7 @@ export function isGameEvent(x: unknown): x is GameEvent {
     case 'DIALOG_CLOSED': return isStr(x.npcId);
     case 'SHOP_OPENED':
       return isStr(x.npcId) && isStr(x.npcName) && isArr(x.goods)
-        && x.goods.every(w => isRec(w) && isNum(w.itemId) && strOrNull(w.name) && isNum(w.price));
+        && x.goods.every(isShopGood);
     case 'SHOP_CLOSED': return isStr(x.npcId);
     case 'BATTLE_STARTED':
       return isNum(x.battleId) && isNonEmptyStr(x.mapId) && isArr(x.enemies)
@@ -216,7 +221,7 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   if (x.nearbyGatherPoints !== undefined && (!isArr(x.nearbyGatherPoints) || !x.nearbyGatherPoints.every(isGatherPoint))) return false;
   if (x.recipes !== undefined && (!isArr(x.recipes) || !x.recipes.every(isWorkRecipe))) return false;
   if (!isArr(x.shops) || !x.shops.every(s => isRec(s) && isStr(s.npcId) && isStr(s.npcName) && AVAIL.includes(s.goodsStatus as string)
-    && isArr(s.goods) && s.goods.every(w => isRec(w) && isNum(w.itemId) && strOrNull(w.name) && isNum(w.price)))) return false;
+    && isArr(s.goods) && s.goods.every(isShopGood))) return false;
   const n = x.nav;
   if (!isRec(n) || !AVAIL.includes(n.status as string) || !isArr(n.reachableMaps)
     || !n.reachableMaps.every(m => isRec(m) && isNonEmptyStr(m.mapId) && strOrNull(m.name) && isNum(m.hops))

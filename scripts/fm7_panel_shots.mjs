@@ -75,12 +75,13 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="character-stats"]', { timeout: 15000 });
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const { PROTOCOL_VERSION } = await import('/family/src/protocol/index.ts');
     const ctrl = window.__family?.controller;
     if (!ctrl?.receive || !ctrl.state?.characterId) return;
     ctrl.stop?.();
     const characterId = ctrl.state.characterId;
-    const baseMsg = { v: 5, characterId, ts: Date.now() };
+    const baseMsg = { v: PROTOCOL_VERSION, characterId, ts: Date.now() };
     ctrl.receive({
       ...baseMsg,
       kind: 'event',

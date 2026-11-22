@@ -7,7 +7,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { SceneSnapshot, SnapshotQuestEntry } from '../src/protocol/index';
+import {
+  PROTOCOL_VERSION, isPluginMessage, type GameEvent, type PluginMessage,
+  type SceneSnapshot, type SnapshotQuestEntry, type SnapshotShopGood,
+} from '../src/protocol/index';
+import { applyMessage, initialState } from '../src/state';
 import {
   QUEST_CARDS_NARROW_BELOW,
   UNKNOWN_TEXT,
@@ -42,6 +46,7 @@ Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 const { QuestCards } = await import('../src/panels/QuestCards');
+const { ShopBuyList } = await import('../src/panels/ShopBuyList');
 
 const snap = {
   mapId: 'm-town',
@@ -156,6 +161,80 @@ suite('F9: 寬版多欄、窄版單欄');
   assert(questCardsLayout(750).columns === 3, '750px：三欄');
   assert(questCardsLayout(360).narrow && questCardsLayout(360).columns === 1, '360px：窄版單欄');
   assert(questCardsLayout(0).narrow && questCardsLayout(Number.NaN).columns === 1, '量不到寬度時當窄版');
+}
+
+suite('FX18: 窄版任務卡只隱藏宿主標示的佔位欄位');
+{
+  const objectives = [{ type: 'TALK', description: '說話', current: 0, required: 1, met: false }];
+  const hidden = quest({
+    questId: 91, minLevel: 9, rewardExp: 0, rewardCoins: 30, objectives,
+    placeholderFields: ['minLevel', 'rewardExp'],
+  });
+  const zero = quest({
+    questId: 92, minLevel: 0, rewardExp: 0, rewardCoins: 0, objectives,
+    placeholderFields: ['rewardCoins'],
+  });
+  const known = quest({ questId: 93, minLevel: 0, rewardExp: 0, rewardCoins: 0, objectives });
+  const snapshot: PluginMessage = {
+    v: PROTOCOL_VERSION, kind: 'snapshot', characterId: 'char_1', ts: 100, seq: 1, reason: 'STARTED',
+    snapshot: { ...createWorld({questCount: 0}).snapshotFor('char_1'), quests: [hidden, zero, known] },
+  };
+  assert(isPluginMessage(snapshot), '具旗標的 v6 任務快照通過共同協定');
+  const state = applyMessage(initialState(), snapshot, 100);
+  const models = questCardModels(state.snapshot?.quests ?? [], ctx());
+  assert(byId(models, 91).hasUnknown && byId(models, 91).minLevel === UNKNOWN_TEXT
+    && byId(models, 91).rewardExp === UNKNOWN_TEXT && byId(models, 91).rewardCoins === '30 金',
+    '有旗標的非零門檻與零經驗都為未知，未標記金錢仍顯示');
+  assert(byId(models, 92).minLevel === 'Lv.0' && byId(models, 92).rewardExp === '0 EXP'
+    && byId(models, 92).rewardCoins === UNKNOWN_TEXT && !byId(models, 93).hasUnknown,
+    '三欄旗標各自獨立；無旗標的三種 0 均保留');
+  assert(state.snapshot?.quests?.[0]?.minLevel === 9 && state.snapshot?.quests?.[0]?.rewardExp === 0,
+    '顯示模型不改自動化讀取的原始數字');
+  const html = renderToStaticMarkup(
+    <QuestCards cards={models} members={[]} viewCharacterId="char_1" running activeQuestId={null}
+      initialWidth={360} onGo={() => {}} onAuto={() => {}} onAutoStop={() => {}} onAssign={() => {}} />,
+  );
+  assert(html.includes('data-layout="narrow"') && html.includes('需求 未知')
+    && html.includes('未知／30 金') && html.includes('0 EXP／0 金'), '360px 任務卡保留旗標／實際數字差異');
+}
+
+suite('FX18: 商店快照與重開事件保留價格旗標，沒有污染實際 0');
+{
+  const npcId = 'npc-fx18-test';
+  const npcName = '虛構商人';
+  const goods: SnapshotShopGood[] = [
+    { itemId: 1901, name: '虛構甲', price: 250, pricePlaceholder: true },
+    { itemId: 1902, name: '虛構乙', price: 0, pricePlaceholder: true },
+    { itemId: 1903, name: '虛構丙', price: 0, pricePlaceholder: false },
+    { itemId: 1904, name: '虛構丁', price: 15 },
+  ];
+  const scene = createWorld({questCount: 0}).snapshotFor('char_1');
+  const base = { v: PROTOCOL_VERSION, characterId: 'char_1', ts: 100 };
+  const m: PluginMessage = {
+    ...base, kind: 'snapshot', seq: 1, reason: 'STARTED',
+    snapshot: {
+      ...scene,
+      shops: [{ npcId, npcName, goodsStatus: 'AVAILABLE', goods }],
+      activity: { ...scene.activity, shop: { npcId, npcName } },
+    },
+  };
+  assert(isPluginMessage(m), '共同協定接受含價格旗標的商店快照');
+  let state = applyMessage(initialState(), m, 100);
+  const shopHtml = () => state.shop && renderToStaticMarkup(
+    <ShopBuyList goods={state.shop.goods} running onBuy={() => {}} />,
+  );
+  const correctPrices = (html: string | null) => !!html
+    && (html.match(/<small>未知<\/small>/g) ?? []).length === 2
+    && html.includes('<small>0 金</small>') && html.includes('<small>15 金</small>')
+    && !html.includes('<small>250 金</small>');
+  assert(correctPrices(shopHtml()), '先讀開店快照：旗標為真顯示未知，false 的零及缺旗標的數字照常顯示');
+  const event = (seq: number, payload: GameEvent): PluginMessage => ({ ...base, kind: 'event', seq, event: payload });
+  state = applyMessage(state, event(2, { type: 'SHOP_CLOSED', npcId }), 101);
+  assert(shopHtml() === null, '關店清空列表');
+  const reopen = event(3, { type: 'SHOP_OPENED', npcId, npcName, goods });
+  assert(isPluginMessage(reopen), '共同協定接受含價格旗標的開店事件');
+  state = applyMessage(state, reopen, 102);
+  assert(correctPrices(shopHtml()) && state.shop?.goods[0].price === 250, '從開店事件重開後顯示一致，原始價格未被改寫');
 }
 
 const failDir = path.resolve('test-results/f9');

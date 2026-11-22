@@ -48,6 +48,7 @@ import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
 import { WorldMapPanel } from './panels/WorldMapPanel';
 import { QuestCards } from './panels/QuestCards';
+import { ShopBuyList } from './panels/ShopBuyList';
 import { questCardModels } from './panels/questCardModel';
 import type { DispatchRecap, DispatchRecord } from './dispatch';
 import { worldMapCharacters } from './render/worldMap';
@@ -1413,29 +1414,13 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 <h2>{`商店：${state.shop.npcName}`}</h2>
                 <div className="row">
                   <span className="k">購買</span>
-                  <div className="items">
-                    {state.shop.goods.slice(0, 60).map(g => (
-                      <button
-                        key={g.itemId}
-                        type="button"
-                        className="item"
-                        data-testid="shop-buy"
-                        data-item-id={String(g.itemId)}
-                        disabled={!running}
-                        onClick={() =>
-                          handleAction(
-                            cmdAction(
-                              { type: 'BUY_ITEM', itemId: g.itemId, count: 1 },
-                              `買 ${g.name ?? g.itemId} ×1`,
-                            ),
-                          )
-                        }
-                      >
-                        {`買 ${g.name ?? `#${g.itemId}`}`}
-                        <small>{`${g.price} 金`}</small>
-                      </button>
+                  <ShopBuyList
+                    goods={state.shop.goods}
+                    running={running}
+                    onBuy={g => handleAction(cmdAction(
+                      { type: 'BUY_ITEM', itemId: g.itemId, count: 1 }, `買 ${g.name ?? g.itemId} ×1`,
                     ))}
-                  </div>
+                  />
                 </div>
                 <div className="row">
                   <span className="k">賣出</span>
