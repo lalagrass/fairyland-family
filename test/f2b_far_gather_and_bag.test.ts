@@ -37,6 +37,26 @@ suite('F2b 遠距採集：背景角色離採集點太遠 → 切視角走近 →
   assert(w.ctrl.dispatches().find(r => r.characterId === 'char_2')?.phase === 'RUNNING', 'A 仍在採集（沒有停工）');
 }
 
+suite('F7：背景採集借視角尚未確認就停工，不再派新工作，前景任務能恢復');
+{
+  const w = createWorld({ startOffsetA: 700, bagCapA: 70, questCount: 200, questStepMs: 1000, gatherMs: 8000 });
+  w.boot();
+  w.ctrl.dispatcher.assign('char_1', chainSpec);
+  w.advance(3000);
+  const before = w.quests.filter(q => q.status === 'COMPLETED').length;
+  w.ctrl.dispatcher.assign('char_2', gatherSpec);
+  w.advance(1, 1);
+  assert(w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_2')
+    && w.ctrl.state.characterId === 'char_1', '已送出借視角切換，但還未收到新角色的快照');
+  w.ctrl.dispatcher.stop('char_2');
+  const sentAtStop = w.sent.length;
+  w.advance(45_000);
+  assert(!w.sent.slice(sentAtStop).some(c => c.characterId === 'char_2'
+    && ['WORK_ONCE', 'WALK_TO', 'BUY_ITEM'].includes(c.command.type)), '遲來快照不再讓已停工的角色走路、購買或採集');
+  assert(w.ctrl.state.characterId === 'char_1' && w.quests.filter(q => q.status === 'COMPLETED').length > before,
+    '視角已歸還，前景任務繼續完成');
+}
+
 suite('F2b 遠距採集：宿主說太遠（TOO_FAR）時，視角中的角色走到採集點旁再採');
 {
   const w = createWorld({ startOffsetA: 250, bagCapA: 70, questCount: 0, gatherMs: 5000, viewed: 'char_2' });
@@ -130,7 +150,7 @@ suite('F7 採集找路：區分快照缺資料、尚未能確認、宿主明示�
 
 suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不送任何指令');
 {
-  const testQueue = (points: SnapshotGatherPoint[]) => {
+  const testQueue = (points: SnapshotGatherPoint[], local: SnapshotGatherPoint[] = []) => {
     const makeSnap = (mapId: string, nearby: SnapshotGatherPoint[], local: SnapshotGatherPoint[] = []): SceneSnapshot => ({
       ...(examples.snapshot.snapshot as SceneSnapshot),
       ...f7Snap(nearby, local), mapId, mapName: mapId,
@@ -138,7 +158,7 @@ suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不�
       inventory: [],
       nav: { ...f7Snap([]).nav, portalGraph: f7Graph },
     });
-    const start = makeSnap('f7-start', points);
+    const start = makeSnap('f7-start', points, local);
     const state = { ...initialState(), phase: 'PLAYING' as const, characterId: 'f7-character',
       location: { mapId: start.mapId, mapName: start.mapName }, snapshot: start, character: start.character };
     const sent: Array<{ id: string; command: PluginCommand }> = [];
@@ -167,9 +187,17 @@ suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不�
     queue.enqueue({ kind: 'GATHER', ...f7Job, skillName: '測試技能', targetName: '測試材料', targetCount: 1 });
     drain();
     return {
-      sent, queue, drain,
+      sent, queue, navigator, drain,
       complete(id: string, code: 'MAP_CHANGED' | 'DONE') {
         inbound({ ...messageBase, kind: 'event', event: { type: 'COMMAND_COMPLETED', commandId: id, outcome: 'DONE', code } });
+        drain();
+      },
+      reject(id: string) {
+        inbound({ ...messageBase, kind: 'event', event: { type: 'COMMAND_REJECTED', commandId: id, reasonCode: 'WRONG_CHARACTER' } });
+        drain();
+      },
+      snapshot() {
+        inbound({ ...messageBase, kind: 'snapshot', reason: 'REQUESTED', snapshot: state.snapshot });
         drain();
       },
       enter(point: SnapshotGatherPoint) {
@@ -194,6 +222,35 @@ suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不�
   assert(run.queue.getStatus().phase === 'DONE' && run.queue.getStatus().jobs[0]?.doneCount === 1, '宿主完成事件結算一單位');
   const blocked = testQueue([remote.blocked]);
   assert(blocked.sent.length === 0 && blocked.queue.getStatus().stopReason === 'NAV_FAILED', '只有斷點：不派指令，明確停工原因');
+
+  suite('F7 停止採集：只取消這條佇列啟動的導航');
+  const manualGoal = { kind: 'MAP', mapId: 'f7-near', name: '手動目的地' } as const;
+  const local = testQueue([], [f7Point('local-resource', 'f7-start')]);
+  local.navigator.go(manualGoal);
+  const manualCount = local.sent.length;
+  local.queue.stop();
+  assert(local.navigator.isActive() && local.sent.length === manualCount, '停止同圖工作，不取消正在走的手動路線或額外送原地停止');
+
+  const own = testQueue([remote.near]);
+  own.queue.stop();
+  assert(own.navigator.getStatus().phase === 'CANCELLED' && own.sent.length === 2, '停止跨圖工作仍取消自己的移動');
+
+  const replaced = testQueue([remote.near]);
+  replaced.navigator.go(manualGoal);
+  const replaceCount = replaced.sent.length;
+  replaced.snapshot();
+  assert(replaced.sent.length === replaceCount, '收到新快照時，舊佇列仍等手動路線，不覆蓋它');
+  replaced.queue.stop();
+  assert(replaced.navigator.isActive() && replaced.sent.length === replaceCount, '手動接管到同一地圖時，舊佇列的停止不取消新路線');
+
+  const ownFailure = testQueue([remote.near]);
+  ownFailure.reject(ownFailure.sent[0].id);
+  assert(ownFailure.queue.getStatus().stopReason === 'NAV_FAILED', '宿主拒絕佇列自己的路線時仍回報 NAV_FAILED');
+
+  const foreignFailure = testQueue([remote.near]);
+  foreignFailure.navigator.go(manualGoal);
+  foreignFailure.reject(foreignFailure.sent[1].id);
+  assert(foreignFailure.queue.isActive() && foreignFailure.sent.length === 3, '手動路線失敗不算採集停工；結束後重新規劃採集');
 }
 
 done();

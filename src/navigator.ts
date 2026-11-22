@@ -59,6 +59,7 @@ const goalText = (g: NavGoal) => (g.kind === 'NPC' ? `${g.talk ? '對話' : '前
  */
 export class AutoNavigator {
   private token = 0;
+  private owner: object | undefined;
   private current: { commandId: string; role: 'LEG' | 'APPROACH' | 'TALK'; fromMap: string; exitId?: string } | null = null;
   /** 這張圖上已經走不通（BLOCKED）的出口；換圖或重新派發就清空。 */
   private blocked = new Set<string>();
@@ -75,11 +76,13 @@ export class AutoNavigator {
   constructor(private host: NavHost) {}
 
   getStatus(): NavStatus { return this.status; }
+  isOwnedBy(owner: object): boolean { return this.owner === owner; }
   isActive(): boolean { return ['WALKING', 'WAIT_MAP', 'PAUSED_BATTLE', 'TALKING'].includes(this.status.phase); }
 
-  /** 開始導航；回傳錯誤文字（無法開始）或 null。 */
-  go(goal: NavGoal): string | null {
+  /** 開始導航；選填的擁有者僅能取消自己啟動的這一趟。 */
+  go(goal: NavGoal, owner?: object): string | null {
     this.cancelInternal(false);
+    this.owner = owner;
     this.awaitFrom = null;
     this.blocked.clear();
     this.blockedOnce.clear();
@@ -91,9 +94,11 @@ export class AutoNavigator {
     return null;
   }
 
-  /** 取消：使舊處理失效；若正在走路，送一個「走到目前位置」讓宿主停下。 */
-  cancel(): void {
-    if (!this.isActive()) return;
+  /** 指定擁有者時，只取消其自己的導航。手動取消不指定，仍可停止當前導航。 */
+  cancel(owner?: object): void {
+    if (!this.isActive() || (owner !== undefined && !this.isOwnedBy(owner))) return;
+    this.owner = undefined;
+    // 使舊處理失效；若正在走路，讓宿主原地停下。
     this.cancelInternal(true);
     this.set({ ...this.status, phase: 'CANCELLED', text: '導航：已取消' });
   }

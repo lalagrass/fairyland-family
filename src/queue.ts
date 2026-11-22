@@ -312,7 +312,7 @@ export class WorkQueue {
     this.navStartedKey = null;
     const st = this.host.state();
     const isViewed = !this.host.characterId || this.host.characterId === st.characterId;
-    if (isViewed && this.host.navigator.isActive()) this.host.navigator.cancel();
+    if (isViewed) this.host.navigator.cancel(this);
     this.phase = reason === 'DONE_TARGET' ? 'DONE' : 'STOPPED';
     this.stopReason = reason;
     this.text = detail ?? `工作佇列停止：${stopReasonLabel(reason)}`;
@@ -594,11 +594,11 @@ export class WorkQueue {
       return;
     }
     if (tgt.isViewed && this.navStartedKey) {
-      if (this.host.navigator.getStatus().phase === 'FAILED') {
-        this.stop('NAV_FAILED', this.host.navigator.getStatus().text);
-        return;
-      }
-      if (this.host.navigator.isActive()) {
+      const nav = this.host.navigator;
+      // 等原路線或較新的手動路線結束；只把自己的失敗算成採集停工。
+      if (nav.isActive()) return;
+      if (nav.isOwnedBy(this) && nav.getStatus().phase === 'FAILED') {
+        this.stop('NAV_FAILED', nav.getStatus().text);
         return;
       }
       this.navStartedKey = null;
@@ -722,7 +722,7 @@ export class WorkQueue {
         this.text = `跨圖前往採集點地圖：${pt.mapName ?? ptMap}`;
         this.persist();
         this.host.onChange();
-        const err = this.host.navigator.go({ kind: 'MAP', mapId: ptMap, name: pt.mapName ?? ptMap });
+        const err = this.host.navigator.go({ kind: 'MAP', mapId: ptMap, name: pt.mapName ?? ptMap }, this);
         if (err) this.stop('NAV_FAILED', err);
       }
       return;
@@ -831,7 +831,7 @@ export class WorkQueue {
         const key = `buy:${npc.id}`;
         if (!this.host.navigator.isActive() || this.navStartedKey !== key) {
           this.navStartedKey = key;
-          const err = this.host.navigator.go({ kind: 'NPC', query: npc.name, talk: true });
+          const err = this.host.navigator.go({ kind: 'NPC', query: npc.name, talk: true }, this);
           if (err) this.stop('MISSING_TOOL', `無法前往商店購買 ${toolName}：${err}`);
         }
         return;
@@ -843,7 +843,7 @@ export class WorkQueue {
       const key = 'buy:10001';
       if (!this.host.navigator.isActive() || this.navStartedKey !== key) {
         this.navStartedKey = key;
-        const err = this.host.navigator.go({ kind: 'NPC', query: '收破爛阿利', talk: true });
+        const err = this.host.navigator.go({ kind: 'NPC', query: '收破爛阿利', talk: true }, this);
         if (!err) return;
       } else {
         return;
