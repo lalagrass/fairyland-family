@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { SceneSnapshot, SnapshotQuestEntry } from '../src/protocol/index';
+import { PROTOCOL_VERSION, type CommandMessage, type SceneSnapshot, type SnapshotQuestEntry } from '../src/protocol/index';
 import {
   QUEST_CARDS_NARROW_BELOW,
   UNKNOWN_TEXT,
@@ -272,6 +272,69 @@ suite('F9: 派給視角中的角色＝直接自動推進；找不到的角色回
   assert(w.sent.slice(before).every(c => c.command.type !== 'SWITCH_VIEW_CHARACTER'), '不用切換視角');
   const bad = w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7001, characterId: 'char_nobody', label: '派任務給 不存在' });
   assert(typeof bad === 'string' && bad.length > 0, '不存在的角色回錯誤文字');
+}
+
+suite('F7/F9：背景採集借視角時，派任務只等自己的切換確認與新快照');
+{
+  for (const outcome of ['accepted', 'rejected', 'superseded', 'timeout'] as const) {
+    const w = createWorld({ startOffsetA: 700, questCount: 3, questStepMs: 500 });
+    w.boot();
+    w.ctrl.dispatcher.assign('char_2', {
+      kind: 'GATHER',
+      gather: { skillId: 5, skillName: '挖礦', targetItemId: 90001, targetName: '虛構礦石', count: 'UNTIL_FULL' },
+      stop: { maxMinutes: null, stopOnBagFull: false, minSatiety: null },
+    });
+    w.advance(1, 1);
+    assert(w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_2')
+      && w.ctrl.state.characterId === 'char_1', '借視角已發送、尚未收到畫面');
+    const send = w.transport.send.bind(w.transport);
+    const held: CommandMessage[] = [];
+    w.transport.send = m => {
+      if (m.command.type === 'SWITCH_VIEW_CHARACTER' && m.command.characterId === 'char_2') held.push(m);
+      else send(m);
+    };
+    assert(w.ctrl.perform({ kind: 'QUEST_ASSIGN', questId: 7000, characterId: 'char_2', label: '派任務給小石' }) === null
+      && held.length === 1, '另外送一次由玩家發起的派任務切換');
+    const fg = new Set(['TALK_TO_NPC', 'CHOOSE_DIALOG_OPTION', 'ACCEPT_QUEST']);
+    const questSent = () => w.sent.some(c => fg.has(c.command.type));
+    const restored = () => w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER' && c.command.characterId === 'char_1');
+    w.push({ v: PROTOCOL_VERSION, kind: 'command-result', characterId: 'char_2', ts: w.t,
+      commandId: 'unrelated', status: 'ACCEPTED' });
+    w.advance(6000);
+    assert(w.ctrl.state.characterId === 'char_2' && !questSent() && w.ctrl.activeQuest() === null,
+      `${outcome}：借用快照及無關確認都不會提前開始任務`);
+    assert(!restored(), `${outcome}：玩家切換未確認前不會自動歸還視角`);
+    const manual = held[0];
+    w.transport.send = send;
+    if (outcome === 'accepted') {
+      send(manual);
+      w.advance(1, 1);
+      assert(!questSent() && w.ctrl.activeQuest() === null, '收到確認後仍等一份新的宿主快照');
+      w.advance(12_000);
+      assert(w.viewed === 'char_2' && !restored() && w.ctrl.activeQuest() === 7000,
+        '宿主接受及新快照後保持玩家選擇，開始指定任務');
+    } else if (outcome === 'superseded') {
+      w.ctrl.perform({ kind: 'COMMAND', command: { type: 'SWITCH_VIEW_CHARACTER', characterId: 'char_1' }, label: '玩家改看愛麗絲' });
+      w.advance(1000);
+      assert(w.viewed === 'char_1' && w.ctrl.pendingQuestAssign() === null, '選了別的角色，丟棄舊的任務意圖');
+      send(manual);
+      w.advance(1000);
+      assert(!questSent() && w.ctrl.activeQuest() === null, '舊切換即使稍後收到確認與快照，也不開始舊任務');
+    } else if (outcome === 'timeout') {
+      w.advance(15_000);
+      assert(w.viewed === 'char_1' && restored() && w.ctrl.pendingQuestAssign() === null,
+        '逾時後丟棄任務意圖，借用回到原視角');
+      send(manual);
+      w.advance(1000);
+      assert(!questSent() && w.ctrl.activeQuest() === null, '逾時後送達的確認與新快照也不會啟動任務');
+    } else {
+      w.push({ v: PROTOCOL_VERSION, kind: 'command-result', characterId: manual.characterId, ts: w.t,
+        commandId: manual.commandId, status: 'REJECTED', reasonCode: 'GAME_BUSY' });
+      w.advance(12_000);
+      assert(w.viewed === 'char_1' && restored() && !questSent() && w.ctrl.pendingQuestAssign() === null,
+        '派任務切換遭拒，不會開任務，原借用仍正常歸還');
+    }
+  }
 }
 
 done();
