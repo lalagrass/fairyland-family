@@ -497,6 +497,7 @@ export class FamilyController {
       if (lane?.ownsSnapshotRequest(raw.inReplyTo)) {
         this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
         lane.onMessage(raw);
+        if (lane.active()) this.getOrCreateQueue(raw.characterId).onMessage(raw);
         this.emit();
         return;
       }
@@ -788,6 +789,14 @@ export class FamilyController {
     if (action.kind === 'DISPATCH_STOP') {
       this.dispatcher.stop(action.characterId);
       return null;
+    }
+    const viewedLane = this.activeLaneFor(this.state.characterId);
+    if (viewedLane && action.kind === 'QUEST_CHAIN_STOP') {
+      this.dispatcher.stop(viewedLane.characterId);
+      return null;
+    }
+    if (viewedLane && action.kind === 'QUEST_CHAIN_CONFIG') {
+      return viewedLane.chain.handleAction(action).error;
     }
     if (action.kind === 'QUEST_CHAIN_START' || action.kind === 'QUEST_CHAIN_RESUME') {
       this.chainOwner = this.state.characterId;

@@ -60,6 +60,10 @@ suite('F8 並行派工：兩位角色同時跑任務鏈，各自完成任務，�
   // 各自的任務清單都是照順序做：同一位不會跳著做而漏掉前面的任務。
   const firstGap = (id: string) => w.questsOf(id).findIndex(q => q.status !== 'COMPLETED');
   assert(firstGap('char_1') >= 0 && firstGap('char_2') >= 0, '兩位都還沒把 40 件做完（測試期間持續有工作）');
+  w.ctrl.perform({kind: 'QUEST_CHAIN_STOP', label: '停止目前角色的任務鏈'});
+  assert(rec(w, 'char_1')?.phase === 'STOPPED', '任務面板的停止鍵會中止目前角色的派工');
+  assert(rec(w, 'char_2')?.phase === 'RUNNING', '其他角色的派工繼續');
+
 }
 
 suite('F8 互斥：同一件任務不同時派給兩人；剩下的那件被占著就等，做完再接');
