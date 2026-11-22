@@ -47,6 +47,7 @@ import { ItemMoveRoot } from './panels/ItemMoveRoot';
 import { PanelMark } from './panels/marks';
 import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
+import type { LaneSummary } from './lanes';
 import { WorldMapPanel } from './panels/WorldMapPanel';
 import { QuestCards } from './panels/QuestCards';
 import { ShopBuyList } from './panels/ShopBuyList';
@@ -77,6 +78,8 @@ export interface UiAux {
   modules?: Array<{ id: string; label: string }>;
   dispatches?: DispatchRecord[];
   dispatchRecaps?: DispatchRecap[];
+  /** F8：每位角色的派工通道摘要（目前任務、進度）。 */
+  lanes?: LaneSummary[];
 }
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
@@ -925,6 +928,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             viewedId={activeMemberId ?? null}
             records={aux.dispatches ?? []}
             recaps={aux.dispatchRecaps ?? []}
+            lanes={aux.lanes ?? []}
             gatherPoints={snap?.gatherPoints?.points}
             running={running}
             error={dispatchErr}
@@ -936,6 +940,9 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 label: `派工 ${name}：${spec.kind === 'GATHER' ? `採集 ${spec.gather?.targetName ?? ''}` : spec.kind === 'QUEST_CHAIN' ? '任務鏈' : spec.kind === 'NOVICE_LOOP' ? '新手循環' : '待機'}`,
               });
               setDispatchErr(err ?? '');
+            }}
+            onView={(characterId, name) => {
+              perform({ kind: 'COMMAND', command: { type: 'SWITCH_VIEW_CHARACTER', characterId }, targetCharacterId: characterId, label: `切換觀看 ${name}` });
             }}
             onStop={(characterId, name) => {
               perform({ kind: 'DISPATCH_STOP', characterId, label: `停止派工 ${name}` });

@@ -291,6 +291,10 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 .dispatch-card { padding: 8px 0; border-top: 1px dashed var(--line); min-width: 0; }
 .dispatch-card:first-of-type { border-top: none; }
 .dispatch-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dispatch-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 2px 10px; margin: 4px 0 0; min-width: 0; }
+.dispatch-overview div { display: flex; gap: 4px; min-width: 0; }
+.dispatch-overview dt { color: var(--dim); flex: none; }
+.dispatch-overview dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .dispatch-status { color: var(--dim); overflow-wrap: anywhere; margin: 2px 0 6px; }
 .dispatch-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; }
 .dispatch-form label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }

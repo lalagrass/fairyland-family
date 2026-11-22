@@ -68,9 +68,9 @@ suite('F2 隔離：A 背景採集、B 前景跑任務，指令各帶自己的 ch
   assert(rec(w, 'char_1')?.phase === 'RUNNING', 'B 仍在進行中');
 }
 
-suite('F2 隔離：切換視角時不送動作給另一個角色，切回來自動恢復');
+suite('F2→F8 隔離：切換視角不會打斷派工的任務鏈（FX17 宿主），也不會送指令給錯的角色');
 {
-  const w = createWorld({ bagCapA: 70, questCount: 200, questStepMs: 3000 });
+  const w = createWorld({ bagCapA: 70, questCount: 200, questStepMs: 3000, fx17: true });
   w.boot();
   w.ctrl.dispatcher.assign('char_2', gatherSpec());
   w.ctrl.dispatcher.assign('char_1', chainSpec());
@@ -81,47 +81,44 @@ suite('F2 隔離：切換視角時不送動作給另一個角色，切回來自�
   for (let i = 0; i < 40 && w.ctrl.state.characterId !== 'char_2'; i++) w.advance(50, 50);
   assert(w.viewed === 'char_2' && w.ctrl.state.characterId === 'char_2', '視角換成 A');
   const markViewed = w.sent.length;
-  w.advance(8_000);
-  const afterSwitch = w.sent.slice(markViewed).filter(c => c.command.type !== 'SWITCH_VIEW_CHARACTER' && c.command.type !== 'REQUEST_SNAPSHOT');
+  const completed = w.questsOf('char_1').filter(q => q.status === 'COMPLETED').length;
+  w.advance(20_000);
+  const afterSwitch = w.sent.slice(markViewed);
   assert(afterSwitch.filter(c => FOREGROUND.has(c.command.type) && c.characterId === 'char_2').length === 0, '視角換過去之後，沒有任何前景指令送給 A');
-  assert(afterSwitch.filter(c => FOREGROUND.has(c.command.type)).length === 0, '任務鏈暫停後不再送前景指令');
-  assert(rec(w, 'char_1')?.phase === 'WAITING_VIEW' && rec(w, 'char_1')?.stopped?.code === 'VIEW_SWITCHED', 'B 顯示「等待視角」並寫明視角已切換');
-  assert(w.ctrl.state.log.some(l => l.characterId === 'char_1' && l.text.includes('視角已切換')), '事件欄有 B 的暫停原因');
+  assert(afterSwitch.filter(c => FOREGROUND.has(c.command.type) && c.characterId === 'char_1').length > 0, 'B 的任務鏈在背景照常送指令給 B');
+  assert(rec(w, 'char_1')?.phase === 'RUNNING', 'B 仍是進行中（不再「等待視角」）');
+  assert(w.questsOf('char_1').filter(q => q.status === 'COMPLETED').length > completed, 'B 在背景繼續完成任務');
   assert(countBy(w, 'char_2', new Set(['WORK_ONCE']), mark) >= 1, 'A 的採集照常');
   assert(!w.ctrl.state.log.some(l => l.text.includes('WRONG_CHARACTER')), '宿主沒有因為指令送錯角色而拒絕');
   assert(rec(w, 'char_2')?.phase === 'RUNNING', 'A 仍在進行中');
-  w.ctrl.perform({ kind: 'COMMAND', command: { type: 'SWITCH_VIEW_CHARACTER', characterId: 'char_1' }, label: '切換視角 愛麗絲' });
-  const completed = w.quests.filter(q => q.status === 'COMPLETED').length;
-  w.advance(20_000);
-  assert(rec(w, 'char_1')?.phase === 'RUNNING', '切回 B 之後任務鏈自動恢復');
-  assert(w.quests.filter(q => q.status === 'COMPLETED').length > completed, '恢復後 B 又完成了任務');
+  assert(w.ctrl.state.characterId === 'char_2' && w.ctrl.state.snapshot?.character.name === '小石', '視角角色的畫面狀態沒有被 B 的背景快照蓋掉');
 }
 
-suite('F2 派工：新增前景工作時，另一位已在跑任務鏈就拒絕，不互相搶視角');
+suite('F2→F8 派工：兩位角色可以同時跑任務鏈，視角不被搶走');
 {
-  const w = createWorld({ questCount: 200, questStepMs: 3000 });
+  const w = createWorld({ questCount: 200, questStepMs: 3000, fx17: true });
   w.boot();
   w.ctrl.dispatcher.assign('char_1', chainSpec());
   w.advance(5_000);
   const err = w.ctrl.dispatcher.assign('char_2', chainSpec());
-  assert(typeof err === 'string' && err.includes('愛麗絲'), `拒絕並說明誰在跑：${err}`);
+  assert(err === null, `第二位也接受：${err}`);
+  w.advance(10_000);
   assert(w.viewed === 'char_1', '視角沒有被搶走');
-  assert(rec(w, 'char_2')?.phase !== 'RUNNING', 'A 沒有被標成進行中');
-  const e2 = w.ctrl.dispatcher.assign('char_2', gatherSpec());
-  assert(e2 === null, '採集仍可同時派給 A');
+  assert(rec(w, 'char_1')?.phase === 'RUNNING' && rec(w, 'char_2')?.phase === 'RUNNING', '兩位都是進行中');
+  assert(!w.sent.some(c => c.command.type === 'SWITCH_VIEW_CHARACTER'), '沒有送任何切換視角');
 }
 
-suite('F2 派工：任務鏈派給不在視角的角色，會先切換視角再開始');
+suite('F2→F8 派工：任務鏈派給不在視角的角色，直接在背景開始，不切視角');
 {
-  const w = createWorld({ questCount: 200, questStepMs: 3000 });
+  const w = createWorld({ questCount: 200, questStepMs: 3000, fx17: true });
   w.boot();
   assert(w.viewed === 'char_1', '一開始 B=愛麗絲 在視角');
   const err = w.ctrl.dispatcher.assign('char_2', chainSpec());
   assert(err === null, '接受派工');
-  assert(rec(w, 'char_2')?.phase === 'WAITING_VIEW', '先等待視角');
+  assert(rec(w, 'char_2')?.phase === 'PAUSED', '先等這位角色自己的快照');
   w.advance(10_000);
-  assert(w.viewed === 'char_2', '宿主視角切到被派工的角色');
-  assert(rec(w, 'char_2')?.phase === 'RUNNING', '之後開始跑');
+  assert(w.viewed === 'char_1', '宿主視角沒有動');
+  assert(rec(w, 'char_2')?.phase === 'RUNNING', '快照到了就開始跑');
   assert(w.sent.filter(c => FOREGROUND.has(c.command.type)).every(c => c.characterId === 'char_2'), '前景指令只送給被派工的角色');
 }
 
@@ -199,7 +196,7 @@ suite('F2 恢復：關掉 family 分頁再打開，各角色的派工從存檔�
   w.hostOnly(30_000);
   const reopened = w.reopen();
   assert(reopened.dispatches().length === 2, '重開後讀回兩位的派工紀錄');
-  assert(reopened.dispatches().find(r => r.characterId === 'char_1')?.phase === 'WAITING_VIEW', '前景任務鏈先回到等待視角');
+  assert(reopened.dispatches().find(r => r.characterId === 'char_1')?.phase === 'PAUSED', '任務鏈先暫停（佇列保留），等宿主與快照');
   w.advance(25_000);
   assert(reopened.dispatches().find(r => r.characterId === 'char_1')?.phase === 'RUNNING', 'B 的任務鏈恢復');
   assert(w.quests.filter(q => q.status === 'COMPLETED').length > questsBefore, 'B 繼續做任務');

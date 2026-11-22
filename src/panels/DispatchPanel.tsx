@@ -9,6 +9,7 @@ import {
   type DispatchSpec,
   type GatherSpec,
 } from '../dispatch';
+import type { LaneSummary } from '../lanes';
 
 export interface GatherOption {
   key: string;
@@ -46,6 +47,38 @@ export function gatherOptionsFromPoints(points: SnapshotGatherPoint[] | undefine
 
 const KINDS: DispatchKind[] = ['IDLE', 'GATHER', 'QUEST_CHAIN', 'NOVICE_LOOP'];
 
+/** 宿主沒給、family 也不自己推算的欄位。 */
+export const OVERVIEW_UNKNOWN = '未知';
+
+export interface DispatchOverview {
+  quest: string;
+  progress: string;
+  eta: string;
+}
+
+/**
+ * F8 家族總覽：每人目前任務、進度、預計完成時間。只讀派工紀錄與通道快照；
+ * 宿主不提供完成時間的預估，所以只有設了時間上限時寫「時限 HH:MM」，其他寫「未知」。
+ */
+export function dispatchOverview(record: DispatchRecord | undefined, lane: LaneSummary | undefined, fmtTime: (ms: number) => string = defaultTime): DispatchOverview {
+  const live = record && (record.phase === 'RUNNING' || record.phase === 'PAUSED');
+  const chain = record && (record.kind === 'QUEST_CHAIN' || record.kind === 'NOVICE_LOOP');
+  const quest = !live
+    ? '—'
+    : record.kind === 'GATHER'
+      ? `採集 ${record.gather?.targetName || OVERVIEW_UNKNOWN}`
+      : chain && lane?.questId != null
+        ? lane.questTitle || OVERVIEW_UNKNOWN
+        : chain ? '（還沒接到任務）' : '—';
+  const progress = !live ? '—' : chain && lane?.questId != null ? lane.progress ?? OVERVIEW_UNKNOWN : record.kind === 'GATHER' ? record.text || OVERVIEW_UNKNOWN : '—';
+  const eta = !live ? '—' : record.deadlineAt !== null ? `時限 ${fmtTime(record.deadlineAt)}` : OVERVIEW_UNKNOWN;
+  return { quest, progress, eta };
+}
+
+function defaultTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
 function numOrNull(raw: string): number | null {
   const n = Number(raw);
   return raw.trim() && Number.isFinite(n) && n > 0 ? n : null;
@@ -56,10 +89,12 @@ function DispatchRow(props: {
   viewed: boolean;
   record?: DispatchRecord;
   recap?: DispatchRecap;
+  lane?: LaneSummary;
   gatherOptions: GatherOption[];
   running: boolean;
   onAssign: (spec: DispatchSpec) => void;
   onStop: () => void;
+  onView: () => void;
 }) {
   const { member: m, record, recap } = props;
   const [kind, setKind] = useState<DispatchKind>('GATHER');
@@ -70,7 +105,8 @@ function DispatchRow(props: {
   const [satiety, setSatiety] = useState('');
   const name = m.name ?? m.characterId;
   const opt = props.gatherOptions.find(o => o.key === gatherKey) ?? props.gatherOptions[0];
-  const busy = record?.phase === 'RUNNING' || record?.phase === 'WAITING_VIEW';
+  const busy = record?.phase === 'RUNNING' || record?.phase === 'PAUSED' || record?.phase === 'WAITING_VIEW';
+  const overview = dispatchOverview(record, props.lane);
   const needsTarget = kind === 'GATHER';
   const canAssign = props.running && (!needsTarget || Boolean(opt));
   const phase = record?.phase ?? 'IDLE';
@@ -97,7 +133,21 @@ function DispatchRow(props: {
           {record && record.kind !== 'IDLE' ? `${DISPATCH_KIND_LABEL[record.kind]}・${DISPATCH_PHASE_LABEL[phase]}` : '待機'}
         </span>
         {props.viewed && <span className="muted">視角中</span>}
+        <button
+          type="button"
+          className="item"
+          data-testid="dispatch-view"
+          disabled={props.viewed || !props.running}
+          onClick={props.onView}
+        >
+          切換觀看
+        </button>
       </div>
+      <dl className="dispatch-overview" data-testid="dispatch-overview">
+        <div><dt>目前</dt><dd data-testid="dispatch-overview-quest">{overview.quest}</dd></div>
+        <div><dt>進度</dt><dd data-testid="dispatch-overview-progress">{overview.progress}</dd></div>
+        <div><dt>預計完成</dt><dd data-testid="dispatch-overview-eta">{overview.eta}</dd></div>
+      </dl>
       <div className="dispatch-status" data-testid="dispatch-status" data-stop-code={record?.stopped?.code ?? ''}>
         {recap ? recap.line : '尚未派工'}
       </div>
@@ -202,16 +252,18 @@ export function DispatchPanel(props: {
   viewedId: string | null;
   records: DispatchRecord[];
   recaps: DispatchRecap[];
+  lanes?: LaneSummary[];
   gatherPoints?: SnapshotGatherPoint[];
   running: boolean;
   error: string;
   onAssign: (characterId: string, spec: DispatchSpec, name: string) => void;
   onStop: (characterId: string, name: string) => void;
+  onView?: (characterId: string, name: string) => void;
 }) {
   const options = gatherOptionsFromPoints(props.gatherPoints);
   return (
     <section data-testid="dispatch-panel" className="dispatch-panel">
-      <h2>派工（採集在背景跑；任務鏈同時只能一位，需在視角中）</h2>
+      <h2>派工與家族總覽（採集、任務鏈都可同時派給多位，在背景跑；同一件任務不重複派）</h2>
       {props.members.length === 0 ? (
         <div className="muted">（尚未收到家族成員資料）</div>
       ) : (
@@ -222,10 +274,12 @@ export function DispatchPanel(props: {
             viewed={m.characterId === props.viewedId}
             record={props.records.find(r => r.characterId === m.characterId)}
             recap={props.recaps.find(r => r.characterId === m.characterId)}
+            lane={props.lanes?.find(l => l.characterId === m.characterId)}
             gatherOptions={options}
             running={props.running}
             onAssign={spec => props.onAssign(m.characterId, spec, m.name ?? m.characterId)}
             onStop={() => props.onStop(m.characterId, m.name ?? m.characterId)}
+            onView={() => props.onView?.(m.characterId, m.name ?? m.characterId)}
           />
         ))
       )}

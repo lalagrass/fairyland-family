@@ -40,6 +40,7 @@ const controller = new FamilyController(transport, {
     coordinatorMode: controller.coordinatorMode(),
     dispatches: controller.dispatches(),
     dispatchRecaps: controller.dispatchRecaps(),
+    lanes: controller.laneSummaries(),
     modules: controller.automation.list().map(m => ({ id: m.id, label: m.label })),
   }),
 });

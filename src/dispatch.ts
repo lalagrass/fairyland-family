@@ -3,16 +3,17 @@ import { stopReasonLabel } from './queue';
 import type { QuestChainStatus } from './automation/modules/questChainModule';
 
 /**
- * F2 派工：每個角色各自一份工作指派（採集／任務鏈／新手循環／待機）、停止條件與停工原因。
+ * F2／F8 派工：每個角色各自一份工作指派（採集／任務鏈／新手循環／待機）、停止條件與停工原因。
  *
- * 宿主限制（fairyland command_router）：只有採集（WORK_ONCE）可以替背景角色執行；
- * 走路、對話、買賣、任務、戰鬥都要該角色在「視角中」。所以：
- * - 採集可以同時分給多個角色，各走自己的 WorkQueue。
- * - 任務鏈／新手循環是前景工作，同一時間只能有一個角色在跑；它的擁有者離開視角就暫停（不送任何指令）。
+ * F8（FX17 之後）：宿主的背景角色也能走路、對話、接交任務與戰鬥，所以
+ * - 採集與任務鏈都可以同時分給多個角色；任務鏈各跑自己的派工通道（`lanes.ts`），指令直接送給該角色，視角不動。
+ * - 同一件任務不同時派給兩人：任務鏈挑任務時跳過別人正在做的那件。
+ * - 宿主停止或角色不在名冊（離線）時，任務鏈暫停（`PAUSED`），派工紀錄保留；恢復後用剩下的時限接著跑。
  */
 
 export type DispatchKind = 'IDLE' | 'GATHER' | 'QUEST_CHAIN' | 'NOVICE_LOOP';
-export type DispatchPhase = 'IDLE' | 'RUNNING' | 'WAITING_VIEW' | 'STOPPED' | 'DONE';
+/** `WAITING_VIEW` 只出現在 F8 之前的存檔；讀進來會改成 `PAUSED`。 */
+export type DispatchPhase = 'IDLE' | 'RUNNING' | 'PAUSED' | 'WAITING_VIEW' | 'STOPPED' | 'DONE';
 
 export const DISPATCH_KIND_LABEL: Record<DispatchKind, string> = {
   IDLE: '待機',
@@ -24,6 +25,7 @@ export const DISPATCH_KIND_LABEL: Record<DispatchKind, string> = {
 export const DISPATCH_PHASE_LABEL: Record<DispatchPhase, string> = {
   IDLE: '待機',
   RUNNING: '進行中',
+  PAUSED: '暫停（佇列保留）',
   WAITING_VIEW: '等待視角',
   STOPPED: '已停工',
   DONE: '已完成',
@@ -128,15 +130,17 @@ export class DispatchStore {
       for (const [id, r] of Object.entries(parsed)) {
         if (!id || !r || typeof r !== 'object' || r.characterId !== id) continue;
         if (!(r.kind in DISPATCH_KIND_LABEL) || !(r.phase in DISPATCH_PHASE_LABEL)) continue;
-        // 重開後前景工作沒有任何執行中的程式狀態，先回到「等待視角」，等視角與快照到位再接著跑。
+        // 重開後任務鏈沒有任何執行中的程式狀態，先暫停，等宿主與這位角色的快照到位再接著跑。
+        // F8 之前的「等待視角」存檔也一樣改成暫停（不再需要切視角）。
         const foreground = r.kind === 'QUEST_CHAIN' || r.kind === 'NOVICE_LOOP';
-        const phase: DispatchPhase = foreground && r.phase === 'RUNNING' ? 'WAITING_VIEW' : r.phase;
+        const resume = foreground && (r.phase === 'RUNNING' || r.phase === 'WAITING_VIEW' || r.phase === 'PAUSED');
+        const phase: DispatchPhase = resume ? 'PAUSED' : r.phase === 'WAITING_VIEW' ? 'PAUSED' : r.phase;
         this.map.set(id, {
           ...r,
           phase,
           stop: { ...defaultStop(), ...(r.stop ?? {}) },
           stopped: r.stopped ?? null,
-          text: foreground && r.phase === 'RUNNING' ? '重開後恢復中：等待視角與快照' : (r.text ?? ''),
+          text: resume ? '重開後恢復中：等待宿主與角色快照' : (r.text ?? ''),
         });
       }
     } catch {
@@ -183,9 +187,8 @@ export function queueStopToDispatch(
 export interface DispatchHost {
   now(): number;
   running(): boolean;
-  viewedId(): string | null;
-  /** 視角角色的快照是否真的屬於該角色（切換視角後、新快照到達前為 false）。 */
-  snapshotReady(id: string): boolean;
+  /** 這位角色的派工通道是否已有自己的快照（背景角色要等通道要到快照）；給 since 時要是這個時間之後收到的。 */
+  snapshotReady(id: string, since?: number): boolean;
   nameOf(id: string): string;
   knownCharacterIds(): string[];
 
@@ -194,25 +197,30 @@ export interface DispatchHost {
   startGather(id: string, g: GatherSpec, stop: DispatchStop): void;
   stopQueue(id: string, reason: QueueStopReason, text: string): void;
 
-  chainActive(): boolean;
-  chainOwner(): string | null;
-  chainStatus(): QuestChainStatus;
-  /** 以 id 為擁有者啟動任務鏈；回傳錯誤文字或 null。 */
+  /** 這位角色有沒有任務鏈在跑（派工通道，或玩家手動開的視角任務鏈）。 */
+  chainActive(id: string): boolean;
+  chainStatus(id: string): QuestChainStatus;
+  /** 在這位角色的派工通道啟動任務鏈；回傳錯誤文字或 null。 */
   startChain(id: string, loopOnly: boolean, stop: DispatchStop, remainingMs: number | null): string | null;
-  stopChain(text: string): void;
+  stopChain(id: string, text: string): void;
+  /** 玩家手動開的視角任務鏈屬於誰（沒有就是 null）；只有它需要留在視角中。 */
+  viewChainOwner(): string | null;
+  viewedId(): string | null;
 
-  switchView(id: string): void;
-  requestSnapshot(): void;
+  requestSnapshot(id: string): void;
   log(text: string, level: 'info' | 'warn' | 'error', characterId: string): void;
   onChange(): void;
 }
 
+/** 這些停工碼代表「暫停、之後自動接著跑」，不是真的結束。 */
+const PAUSE_CODES = new Set(['HOST_STOPPED', 'CHARACTER_OFFLINE', 'VIEW_SWITCHED']);
+
 /**
- * 派工邏輯：指派、停止、逐拍檢查（時限、佇列／任務鏈結束原因、視角擁有權、重開後恢復）。
- * 每個動作都帶 characterId；不會碰別的角色的佇列。
+ * 派工邏輯：指派、停止、逐拍檢查（時限、佇列／任務鏈結束原因、宿主停止與角色離線時暫停、恢復）。
+ * 每個動作都帶 characterId；不會碰別的角色的佇列或任務鏈。
  */
 export class CharacterDispatcher {
-  private lastSnapshotRequestAt = 0;
+  private lastSnapshotRequestAt = new Map<string, number>();
 
   constructor(
     private host: DispatchHost,
@@ -239,11 +247,6 @@ export class CharacterDispatcher {
       return null;
     }
     if (spec.kind === 'GATHER' && !spec.gather) return '採集派工需要指定採集目標';
-    const foreground = spec.kind === 'QUEST_CHAIN' || spec.kind === 'NOVICE_LOOP';
-    if (foreground && this.host.chainActive() && this.host.chainOwner() !== id) {
-      const owner = this.host.chainOwner();
-      return `【${owner ? this.host.nameOf(owner) : '另一位角色'}】正在跑任務鏈（前景工作），一次只能有一位；請先停止它`;
-    }
 
     // 取代舊派工：只收掉這個角色自己的東西。
     this.releaseJob(id, '被新的派工取代');
@@ -265,7 +268,7 @@ export class CharacterDispatcher {
       this.store.set(rec);
       this.host.startGather(id, spec.gather!, stop);
       this.host.log(`【${name}】派工：採集 ${spec.gather!.targetName}`, 'info', id);
-    } else if (this.host.viewedId() === id && this.host.snapshotReady(id)) {
+    } else if (this.host.running() && this.host.snapshotReady(id)) {
       this.store.set(rec);
       const err = this.startForeground(rec);
       if (err) {
@@ -276,9 +279,10 @@ export class CharacterDispatcher {
       }
       this.host.log(`【${name}】派工：${DISPATCH_KIND_LABEL[spec.kind]}`, 'info', id);
     } else {
-      this.store.set({ ...rec, phase: 'WAITING_VIEW', text: '等待視角：切換到此角色後開始' });
-      this.host.log(`【${name}】派工：${DISPATCH_KIND_LABEL[spec.kind]}（等待視角）`, 'info', id);
-      if (this.host.running() && this.host.viewedId() !== id) this.host.switchView(id);
+      // 背景角色的快照還沒到（或宿主還沒連上）：先暫停，要到快照後自動開始，不切視角。
+      this.store.set({ ...rec, phase: 'PAUSED', text: '等待角色快照：到了就開始' });
+      this.host.log(`【${name}】派工：${DISPATCH_KIND_LABEL[spec.kind]}（等待角色快照）`, 'info', id);
+      if (this.host.running()) this.requestSnapshot(id);
     }
     this.host.onChange();
     return null;
@@ -295,31 +299,41 @@ export class CharacterDispatcher {
     this.finish(rec, 'STOPPED', code, text);
   }
 
-  /** 前景擁有權檢查：任務鏈擁有者離開視角就立刻暫停，不再送任何指令。要在處理訊息之前呼叫。 */
+  /**
+   * 玩家手動開的視角任務鏈（舊的「無人任務」按鈕）仍走視角角色的模組：擁有者離開視角就暫停，不再送指令。
+   * 派工通道的任務鏈不受視角影響。要在處理訊息之前呼叫。
+   */
   enforceView(): void {
-    if (!this.host.chainActive()) return;
-    const owner = this.host.chainOwner();
+    const owner = this.host.viewChainOwner();
     if (!owner || owner === this.host.viewedId()) return;
-    this.host.stopChain('視角已切換，任務鏈暫停');
+    this.host.stopChain(owner, '視角已切換，任務鏈暫停');
     const rec = this.store.get(owner);
-    if (rec && rec.phase === 'RUNNING') this.pauseForView(rec, '視角已切換，任務鏈暫停');
+    if (rec && rec.phase === 'RUNNING') this.pause(rec, 'VIEW_SWITCHED', '視角已切換，任務鏈暫停，之後在背景接著跑');
   }
 
   tick(): void {
     this.enforceView();
     this.adoptUntracked();
     const now = this.host.now();
+    const running = this.host.running();
+    const known = new Set(this.host.knownCharacterIds());
     for (const rec of this.store.all()) {
-      if (rec.phase === 'RUNNING' || rec.phase === 'WAITING_VIEW') {
+      if (rec.phase === 'RUNNING' || rec.phase === 'PAUSED') {
         if (rec.deadlineAt !== null && now >= rec.deadlineAt) {
           this.releaseJob(rec.characterId, '時間到');
           this.finish(rec, 'STOPPED', 'TIME_UP', `停止條件觸發：時間到（已跑滿 ${rec.stop.maxMinutes} 分鐘）`);
           continue;
         }
       }
-      if (rec.kind === 'GATHER' && rec.phase === 'RUNNING') this.watchGather(rec);
-      else if ((rec.kind === 'QUEST_CHAIN' || rec.kind === 'NOVICE_LOOP') && rec.phase === 'RUNNING') this.watchChain(rec);
-      else if (rec.phase === 'WAITING_VIEW') this.tryResume(rec);
+      const foreground = rec.kind === 'QUEST_CHAIN' || rec.kind === 'NOVICE_LOOP';
+      if (foreground && rec.phase === 'RUNNING') {
+        // 宿主停止或角色離線：暫停，派工紀錄與剩下的時限保留。
+        if (!running) { this.pause(rec, 'HOST_STOPPED', '宿主停止，佇列保留，恢復連線後接著跑'); continue; }
+        if (known.size > 0 && !known.has(rec.characterId)) { this.pause(rec, 'CHARACTER_OFFLINE', '角色離線，佇列保留，回來後接著跑'); continue; }
+      }
+      if (rec.kind === 'GATHER' && rec.phase === 'RUNNING') this.watchGather(rec, running, known);
+      else if (foreground && rec.phase === 'RUNNING') this.watchChain(rec);
+      else if (foreground && rec.phase === 'PAUSED') this.tryResume(rec);
     }
   }
 
@@ -353,10 +367,10 @@ export class CharacterDispatcher {
     return this.host.startChain(rec.characterId, rec.kind === 'NOVICE_LOOP', rec.stop, remaining);
   }
 
-  /** 這個角色自己的工作全部收掉（佇列、前景任務鏈），不碰別人。 */
+  /** 這個角色自己的工作全部收掉（佇列、任務鏈），不碰別人。 */
   private releaseJob(id: string, text: string): void {
     if (this.host.queueActive(id)) this.host.stopQueue(id, 'USER_STOPPED', text);
-    if (this.host.chainActive() && this.host.chainOwner() === id) this.host.stopChain(text);
+    if (this.host.chainActive(id)) this.host.stopChain(id, text);
   }
 
   private finish(rec: DispatchRecord, phase: 'STOPPED' | 'DONE', code: string, text: string): void {
@@ -366,54 +380,62 @@ export class CharacterDispatcher {
     this.host.onChange();
   }
 
-  private pauseForView(rec: DispatchRecord, text: string): void {
+  private pause(rec: DispatchRecord, code: string, text: string): void {
+    if (this.host.chainActive(rec.characterId)) this.host.stopChain(rec.characterId, text);
     const now = this.host.now();
-    this.store.set({ ...rec, phase: 'WAITING_VIEW', stopped: { code: 'VIEW_SWITCHED', text, at: now }, text: `等待視角：${text}` });
+    this.store.set({ ...rec, phase: 'PAUSED', stopped: { code, text, at: now }, text: `暫停：${text}` });
     this.host.log(`【${this.host.nameOf(rec.characterId)}】${DISPATCH_KIND_LABEL[rec.kind]}暫停：${text}`, 'warn', rec.characterId);
     this.host.onChange();
   }
 
-  private watchGather(rec: DispatchRecord): void {
+  private watchGather(rec: DispatchRecord, running: boolean, known: Set<string>): void {
     const q = this.host.queueStatus(rec.characterId);
     if (q.phase === 'STOPPED' || q.phase === 'DONE') {
       const r = queueStopToDispatch(q);
       this.finish(rec, r.phase, String(r.code), r.text);
       return;
     }
-    if (q.text && q.text !== rec.text) this.store.set({ ...rec, text: q.text });
+    // 採集佇列自己存檔、自己等宿主；這裡只把狀態寫清楚。
+    const text = !running ? '宿主停止，採集佇列保留' : known.size > 0 && !known.has(rec.characterId) ? '角色離線，採集佇列保留' : q.text;
+    if (text && text !== rec.text) this.store.set({ ...rec, text });
   }
 
   private watchChain(rec: DispatchRecord): void {
-    if (this.host.chainActive() && this.host.chainOwner() === rec.characterId) {
-      const t = this.host.chainStatus().text;
+    if (this.host.chainActive(rec.characterId)) {
+      const t = this.host.chainStatus(rec.characterId).text;
       if (t !== rec.text) this.store.set({ ...rec, text: t });
       return;
     }
     // 任務鏈不在跑了（結束或被別的操作停掉）。
-    const r = chainStopToDispatch(this.host.chainStatus());
+    const r = chainStopToDispatch(this.host.chainStatus(rec.characterId));
     this.finish(rec, r.phase, r.code, r.text);
+  }
+
+  private requestSnapshot(id: string): void {
+    const now = this.host.now();
+    if (now - (this.lastSnapshotRequestAt.get(id) ?? -Infinity) <= 2000) return;
+    this.lastSnapshotRequestAt.set(id, now);
+    this.host.requestSnapshot(id);
   }
 
   private tryResume(rec: DispatchRecord): void {
     const id = rec.characterId;
-    if (rec.kind === 'GATHER' || rec.kind === 'IDLE') return;
     if (!this.host.running()) return;
-    if (this.host.chainActive() && this.host.chainOwner() !== id) return;
-    if (this.host.viewedId() !== id) return;
-    if (!this.host.snapshotReady(id)) {
-      const now = this.host.now();
-      if (now - this.lastSnapshotRequestAt > 2000) {
-        this.lastSnapshotRequestAt = now;
-        this.host.requestSnapshot();
-      }
+    if (!this.host.knownCharacterIds().includes(id)) return;
+    if (this.host.chainActive(id)) return;
+    // 宿主停過或角色離線過：要等恢復之後的新快照，不用停之前的舊狀態開工。
+    const since = rec.stopped && (rec.stopped.code === 'HOST_STOPPED' || rec.stopped.code === 'CHARACTER_OFFLINE') ? rec.stopped.at : undefined;
+    if (!this.host.snapshotReady(id, since)) {
+      this.requestSnapshot(id);
       return;
     }
     const err = this.startForeground(rec);
     if (err) {
-      if (rec.text !== `等待視角：${err}`) this.store.set({ ...rec, text: `等待視角：${err}` });
+      if (rec.text !== `暫停：${err}`) this.store.set({ ...rec, text: `暫停：${err}` });
       return;
     }
-    this.store.set({ ...rec, phase: 'RUNNING', text: `${DISPATCH_KIND_LABEL[rec.kind]}：已恢復` });
+    const resumed = rec.stopped && PAUSE_CODES.has(rec.stopped.code);
+    this.store.set({ ...rec, phase: 'RUNNING', text: `${DISPATCH_KIND_LABEL[rec.kind]}：${resumed || rec.startedAt !== null ? '已恢復' : '開始'}` });
     this.host.log(`【${this.host.nameOf(id)}】${DISPATCH_KIND_LABEL[rec.kind]}恢復`, 'info', id);
     this.host.onChange();
   }
@@ -447,16 +469,17 @@ export class CharacterDispatcher {
           stopped: null,
           text: q.text,
         });
-      } else if (this.host.chainActive() && this.host.chainOwner() === id) {
+      } else if (this.host.chainActive(id)) {
+        const status = this.host.chainStatus(id);
         this.store.set({
           characterId: id,
-          kind: this.host.chainStatus().config.loopOnly ? 'NOVICE_LOOP' : 'QUEST_CHAIN',
+          kind: status.config.loopOnly ? 'NOVICE_LOOP' : 'QUEST_CHAIN',
           stop: defaultStop(),
           phase: 'RUNNING',
           startedAt: this.host.now(),
           deadlineAt: null,
           stopped: null,
-          text: this.host.chainStatus().text,
+          text: status.text,
         });
       }
     }

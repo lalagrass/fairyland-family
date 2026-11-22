@@ -60,6 +60,8 @@ export interface QuestChainHost extends AutomationHostContext {
   knownNpcs: () => DirNpc[];
   knownMaps: () => Array<{ mapId: string; name: string }>;
   showRecap: (summary: WelcomeRecapSummary) => void;
+  /** F8：這件任務是不是別的角色正在做；是的話回傳那位角色的名字（同一件任務不同時派給兩人）。 */
+  questHeldElsewhere?: (questId: number) => string | null;
 }
 
 export interface QuestChainStatus {
@@ -172,6 +174,11 @@ export class QuestChainModule implements BehaviorModule {
 
   getSummary(): string {
     return this.text;
+  }
+
+  /** F8：任務鏈現在正在推進的任務（沒有在跑就是 null）。 */
+  getDrivingQuestId(): number | null {
+    return this.isActive() ? this.drivingId : null;
   }
 
   getStatus(): QuestChainStatus {
@@ -680,6 +687,7 @@ export class QuestChainModule implements BehaviorModule {
       }
     }
     let pool = quests.filter(q => !this.skipped.has(q.questId));
+    const heldBy = (questId: number) => (questId === this.drivingId ? null : this.host.questHeldElsewhere?.(questId) ?? null);
     const regionId = this.config.regionId ?? null;
     if (regionId) {
       const travel = planRegionTravel(this.regions(), snap.region?.regionId, regionId);
@@ -688,7 +696,7 @@ export class QuestChainModule implements BehaviorModule {
         return;
       }
       pool = questsInRegion(pool, regionId);
-      const pick = selectNextQuest(pool, level);
+      const pick = selectNextQuest(pool.filter(q => !heldBy(q.questId)), level);
       // 接任務與回報都要找這一區的 NPC：人不在這一區就先跨區到村莊，到了快照才看得到那裡的 NPC。
       // 進行中的目標（打怪、採集、走到某圖）交給單筆任務模組，目標地圖可能在區域外。
       if (travel.kind === 'TRAVEL' && pick.kind === 'QUEST' && pick.quest.status !== 'IN_PROGRESS') {
@@ -700,7 +708,18 @@ export class QuestChainModule implements BehaviorModule {
       }
       if (travel.kind === 'HERE') this.noteArrived(travel.region);
     }
-    const next = selectNextQuest(pool, level);
+    const next = selectNextQuest(pool.filter(q => !heldBy(q.questId)), level);
+    if (next.kind !== 'QUEST') {
+      // F8：剩下能做的任務正由別的角色在做：等它做完，不改跑新手循環、也不算任務做完。
+      const waiting = selectNextQuest(pool, level);
+      const holder = waiting.kind === 'QUEST' ? heldBy(waiting.quest.questId) : null;
+      if (waiting.kind === 'QUEST' && holder) {
+        const text = `無人任務：等待【${holder}】做完【${waiting.quest.title}】`;
+        if (this.text !== text) this.host.log(`【${waiting.quest.title}】由【${holder}】進行中，先等待`);
+        this.text = text;
+        return;
+      }
+    }
     if (next.kind === 'QUEST') {
       this.text = `無人任務：${next.quest.title}`;
       this.applyBattleForQuest(next.quest);
