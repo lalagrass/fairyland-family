@@ -43,6 +43,13 @@ export const MAX_SKIPPED_QUESTS = 3;
 export const MAX_REGION_TRAVEL_ATTEMPTS = 3;
 /** 落敗後最多等宿主送回這麼久，再從目前位置重新跨區。 */
 const RESCUE_WAIT_MS = 10_000;
+/** 回村補給每步互動／重試的最小間隔，避免對話或商店異常時高頻洗 log。 */
+const RESUPPLY_ACTION_COOLDOWN_MS = 500;
+const RESUPPLY_NAV_RETRY_MS = 1_500;
+const HEAL_RETRY_BACKOFF_MS = 30_000;
+const MAX_RESUPPLY_WINDOW_RETRIES = 4;
+const MAX_RESUPPLY_EMPTY_NAVS = 3;
+const MAX_OPEN_SHOP_ATTEMPTS = 3;
 
 /**
  * 導航因為已經有對話框或商店開著而被拒：人其實已經到了，只是視窗還沒關。
@@ -156,8 +163,21 @@ export class QuestChainModule implements BehaviorModule {
   /** F2b：沒有可賣的東西時改存家族倉庫；存過的品項記下來，避免同一項一直重送。 */
   private depositSkip = new Set<number>();
   private wantDeposit = false;
-  /** 這次無人任務略過的任務與原因（例如目標 NPC 不在宿主地圖上）。略過太多就整條停下。 */
+  private healCommandId: string | null = null;
+  private healBlockedUntil = 0;
+  private healBlockedGold: number | null = null;
+  private lastHealCompletedAt: number | null = null;
+  private resupplyActionAt = -Infinity;
+  private resupplyNavCooldownUntil = 0;
+  private resupplyWindowBlocked = 0;
+  private resupplyEmptyNavs = 0;
+  private openShopAttempts = 0;
+  private skippedShops = new Set<string>();
+  private activeShopKey: string | null = null;
+  private unreachableHuntMaps = new Set<string>();
+  /** 這次無人任務略過的任務與原因（例如目標 NPC 不在宿主地圖上）。連續略過太多就停下或轉進新手循環。 */
   private skipped = new Map<number, { title: string; why: string }>();
+  private consecutiveSkipped = 0;
   private loopStartedAt: number | null = null;
   private loopLogged = false;
   private sealWarned = false;
@@ -239,6 +259,17 @@ export class QuestChainModule implements BehaviorModule {
       this.openingCommandId = null;
       if (msg.status === 'REJECTED') this.onOpeningRejected(msg.reasonCode, msg.message);
     }
+    if (this.healCommandId) {
+      if (msg.kind === 'command-result' && msg.commandId === this.healCommandId && msg.status === 'REJECTED') {
+        this.healCommandId = null;
+        this.healBlockedUntil = this.host.now() + HEAL_RETRY_BACKOFF_MS;
+        this.healBlockedGold = this.host.state().character?.gold ?? null;
+        this.host.log(`回村治療無法執行（${msg.message || msg.reasonCode || '被拒'}），暫緩自動回村治療`, 'warn');
+      } else if (isEventMessage(msg) && msg.event.type === 'COMMAND_COMPLETED' && msg.event.commandId === this.healCommandId) {
+        this.healCommandId = null;
+        this.lastHealCompletedAt = this.host.now();
+      }
+    }
     if (isEventMessage(msg) && msg.event.type === 'BATTLE_TIMELINE' && msg.event.events.some(e => e.isCaptured)) {
       this.openingCaptured = true;
     }
@@ -306,11 +337,10 @@ export class QuestChainModule implements BehaviorModule {
     this.forgetWalk();
     this.navSig = '';
     this.navSigAt = 0;
-    this.resupply = false;
-    this.sellSkip.clear();
-    this.depositSkip.clear();
-    this.wantDeposit = false;
+    this.resetResupplyState();
+    this.unreachableHuntMaps.clear();
     this.skipped.clear();
+    this.consecutiveSkipped = 0;
     this.loopStartedAt = null;
     this.loopLogged = false;
     this.sealWarned = false;
@@ -353,12 +383,10 @@ export class QuestChainModule implements BehaviorModule {
     this.forgetWalk();
     this.navSig = '';
     this.navSigAt = 0;
-    this.resupply = false;
-    this.healSent = false;
-    this.sellSkip.clear();
-    this.depositSkip.clear();
-    this.wantDeposit = false;
+    this.resetResupplyState();
+    this.unreachableHuntMaps.clear();
     this.skipped.clear();
+    this.consecutiveSkipped = 0;
     this.travel = null;
     const q = this.host.getQueue().getStatus();
     this.staleQueueStop = q.phase === 'STOPPED' ? q.stopReason : null;
@@ -763,6 +791,8 @@ export class QuestChainModule implements BehaviorModule {
     this.loopStartedAt = this.host.now();
     this.stuck = null;
     this.resupply = false;
+    this.navKey = null;
+    this.unreachableHuntMaps.clear();
     this.text = `新手循環：${this.config.loopActivity === 'HUNT' ? '打怪補給' : this.config.loopActivity === 'GATHER' ? '採集' : '配方'}`;
     if (!this.loopLogged) {
       this.loopLogged = true;
@@ -780,6 +810,25 @@ export class QuestChainModule implements BehaviorModule {
       this.applyBattle(false, hunting);
       return;
     }
+    const now = this.host.now();
+    if (
+      this.lastHealCompletedAt !== null
+      && !this.healCommandId
+      && !st.shop
+      && !st.dialog
+      && Object.keys(st.pending).length === 0
+      && Object.keys(st.inflight).length === 0
+      && now - this.lastHealCompletedAt >= RESUPPLY_ACTION_COOLDOWN_MS
+    ) {
+      this.lastHealCompletedAt = null;
+      const hp = st.character.hp;
+      const max = st.character.maxHp;
+      if (hp != null && max != null && max > 0 && (hp / max) * 100 <= this.config.returnHpPct) {
+        this.healBlockedUntil = now + HEAL_RETRY_BACKOFF_MS;
+        this.healBlockedGold = st.character.gold ?? null;
+        this.host.log(`回村治療後體力仍未高於 ${this.config.returnHpPct}%，暫緩自動回村治療`, 'warn');
+      }
+    }
     if (this.shouldResupply(st)) {
       if (this.config.stop.stopOnBagFull && this.bagFull(st)) {
         this.finish('BAG_FULL', '停止條件觸發：背包已滿');
@@ -789,7 +838,17 @@ export class QuestChainModule implements BehaviorModule {
       this.stepResupply();
       return;
     }
-    this.resupply = false;
+    if (this.resupply) {
+      this.resupply = false;
+      this.healSent = false;
+      this.sellSkip.clear();
+      this.depositSkip.clear();
+      this.skippedShops.clear();
+      this.activeShopKey = null;
+      this.resupplyWindowBlocked = 0;
+      this.resupplyEmptyNavs = 0;
+      this.openShopAttempts = 0;
+    }
     if (st.shop) {
       if (Object.keys(st.pending).length === 0 && Object.keys(st.inflight).length === 0) {
         this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉商店', 'DONE');
@@ -822,7 +881,7 @@ export class QuestChainModule implements BehaviorModule {
     if (!snap) return;
     this.applyBattle(false, true);
     if (this.host.navigator.isActive() || this.pendingWalk()) return;
-    const target = this.loopHunts()[0] ?? this.gatherHunt();
+    const target = this.pickHuntTarget(snap.mapId);
     if (!target) {
       this.finish('STUCK', '找不到下一步：宿主沒有提供遇敵區或採集點，新手循環無法打怪');
       return;
@@ -830,6 +889,16 @@ export class QuestChainModule implements BehaviorModule {
     if (snap.mapId !== target.mapId) {
       const nav = this.host.navigator.getStatus();
       if (this.navKey === target.mapId && nav.phase === 'FAILED' && !navBlockedByWindow(nav.text)) {
+        this.unreachableHuntMaps.add(target.mapId);
+        this.navKey = null;
+        const fallback = this.pickHuntTarget(snap.mapId);
+        if (fallback) {
+          if (fallback.mapId === snap.mapId) {
+            this.text = `新手循環：在 ${fallback.mapName ?? snap.mapName ?? snap.mapId} 巡邏`;
+            this.patrolAround(fallback.x, fallback.y);
+          }
+          return;
+        }
         this.finish('STUCK', `找不到下一步：${nav.text}`);
         return;
       }
@@ -922,46 +991,61 @@ export class QuestChainModule implements BehaviorModule {
     const snap = st.snapshot;
     if (!snap) return;
     this.applyBattle(false, false);
+    if (st.battle || st.battleResult) return;
     if (this.host.navigator.isActive()) return;
     this.text = '新手循環：回村補給';
     // 開商店、賣東西的指令還沒回來時，對話框剛關、商店還沒開，這一拍看起來什麼都沒有。等結果回來再判斷。
     if (Object.keys(st.pending).length > 0 || Object.keys(st.inflight).length > 0) return;
+    const now = this.host.now();
     if (st.shop) {
-      const keep = this.keepNames();
-      const sell = sellableItems(st.inventory, keep).find(it => !this.sellSkip.has(it.itemId));
-      if (sell) {
-        this.host.send({ type: 'SELL_ITEM', itemId: sell.itemId, count: sell.count }, `賣出 ${sell.name ?? '物品'}`, 'DONE');
-        this.sellSkip.add(sell.itemId);
-        return;
-      }
-      if (this.bagFull(st)) {
-        if (!this.depositCandidate(st, keep)) {
-          this.finish('BAG_FULL', '背包已滿，沒有可賣、也沒有可存進家族倉庫的物品');
+      if (!this.wantDeposit) {
+        const keep = this.keepNames();
+        const sell = sellableItems(st.inventory, keep).find(it => !this.sellSkip.has(it.itemId));
+        if (sell) {
+          this.sellSkip.add(sell.itemId);
+          this.resupplyActionAt = now;
+          this.host.send({ type: 'SELL_ITEM', itemId: sell.itemId, count: sell.count }, `賣出 ${sell.name ?? '物品'}`, 'DONE');
           return;
         }
-        // 倉庫指令在商店開著時會被拒（DIALOG_OPEN），先離開商店再存。
-        this.wantDeposit = true;
-        this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '背包還是滿的，離開商店改存家族倉庫', 'DONE');
-        return;
+        if (this.bagFull(st)) {
+          if (!this.depositCandidate(st, keep)) {
+            this.finish('BAG_FULL', '背包已滿，沒有可賣、也沒有可存進家族倉庫的物品');
+            return;
+          }
+          // 倉庫指令在商店開著時會被拒（DIALOG_OPEN），先離開商店再存。
+          this.wantDeposit = true;
+          this.resupplyActionAt = now;
+          this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '背包還是滿的，離開商店改存家族倉庫', 'DONE');
+          return;
+        }
+        const hp = st.character?.hp;
+        const max = st.character?.maxHp;
+        if (!this.healSent && now >= this.healBlockedUntil && hp != null && max && max > 0 && (hp / max) * 100 <= this.config.returnHpPct) {
+          this.healSent = true;
+          this.resupplyActionAt = now;
+          this.healCommandId = this.host.send({ type: 'GAME_COMMAND', command: { type: 'HEAL_PARTY' } }, '回村治療', 'DONE');
+          return;
+        }
       }
-      const hp = st.character?.hp;
-      const max = st.character?.maxHp;
-      if (!this.healSent && hp != null && max && max > 0 && (hp / max) * 100 <= this.config.returnHpPct) {
-        this.healSent = true;
-        this.host.send({ type: 'GAME_COMMAND', command: { type: 'HEAL_PARTY' } }, '回村治療', 'DONE');
-        return;
-      }
+      this.resupplyActionAt = now;
+      this.resupplyNavCooldownUntil = now + RESUPPLY_ACTION_COOLDOWN_MS;
       this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '補給完成，離開商店', 'DONE');
       this.resupply = false;
       this.healSent = false;
-      this.sellSkip.clear();
+      this.openShopAttempts = 0;
+      this.resupplyEmptyNavs = 0;
+      this.resupplyWindowBlocked = 0;
       return;
     }
     if (this.wantDeposit && !st.dialog) {
       if (!this.bagFull(st)) {
         this.wantDeposit = false;
-        this.resupply = false;
         this.depositSkip.clear();
+        if (!this.shouldResupply(st)) {
+          this.resupply = false;
+          this.healSent = false;
+          this.sellSkip.clear();
+        }
         return;
       }
       const dep = this.depositCandidate(st, this.keepNames());
@@ -970,27 +1054,98 @@ export class QuestChainModule implements BehaviorModule {
         return;
       }
       this.depositSkip.add(dep.itemId);
+      this.resupplyActionAt = now;
       this.text = `新手循環：存放 ${dep.name ?? '物品'} 到家族倉庫`;
       this.host.send({ type: 'WAREHOUSE_DEPOSIT', itemId: dep.itemId, count: dep.count }, `存入家族倉庫：${dep.name ?? '物品'} ×${dep.count}`, 'DONE');
       return;
     }
+    if (now - this.resupplyActionAt < RESUPPLY_ACTION_COOLDOWN_MS) return;
     if (st.dialog) {
+      if (this.wantDeposit) {
+        this.resupplyActionAt = now;
+        this.closeDialog();
+        return;
+      }
       const open = st.dialog.options.find(o => o.id === 'OPEN_SHOP');
-      if (open) this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: open.id }, '打開商店', 'DONE');
-      else this.chooseDialog(st.dialog.options.map(o => o.id));
+      if (open && this.openShopAttempts < MAX_OPEN_SHOP_ATTEMPTS) {
+        this.openShopAttempts += 1;
+        this.resupplyActionAt = now;
+        this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: open.id }, '打開商店', 'DONE');
+        return;
+      }
+      const shopKey = this.activeShopKey ?? `${snap.mapId}:${st.dialog.npcName}`;
+      this.skippedShops.add(shopKey);
+      this.navKey = null;
+      this.activeShopKey = null;
+      this.openShopAttempts = 0;
+      this.resupplyActionAt = now;
+      this.resupplyNavCooldownUntil = now + RESUPPLY_NAV_RETRY_MS;
+      this.host.log(
+        open
+          ? `商店【${st.dialog.npcName}】多次無法開啟，改試其他商店`
+          : `對話【${st.dialog.npcName}】沒有開啟商店選項，關閉後改試其他商店`,
+        'warn',
+      );
+      this.closeDialog();
       return;
     }
     const shop = this.pickShop(snap);
     if (!shop) {
-      this.finish('STUCK', '找不到下一步：宿主快照沒有商店，無法回村補給');
+      if (this.skippedShops.size > 0 && !this.bagFull(st)) {
+        this.healBlockedUntil = now + HEAL_RETRY_BACKOFF_MS;
+        this.healBlockedGold = st.character?.gold ?? null;
+        this.resupply = false;
+        this.skippedShops.clear();
+        this.host.log('附近商店對話皆未提供商店功能，暫緩自動回村治療', 'warn');
+        return;
+      }
+      this.finish(
+        'STUCK',
+        this.skippedShops.size > 0
+          ? `找不到下一步：已略過 ${this.skippedShops.size} 個無法開啟的商店，無法回村補給`
+          : '找不到下一步：宿主快照沒有商店，無法回村補給',
+      );
       return;
     }
+    const shopKey = `${shop.mapId}:${shop.npcName}`;
+    if (this.activeShopKey !== shopKey) {
+      this.activeShopKey = shopKey;
+      this.resupplyWindowBlocked = 0;
+      this.resupplyEmptyNavs = 0;
+      this.openShopAttempts = 0;
+    }
+    const navKey = `shop:${shop.npcName}`;
     const nav = this.host.navigator.getStatus();
-    if (this.navKey === `shop:${shop.npcName}` && nav.phase === 'FAILED' && !navBlockedByWindow(nav.text)) {
-      this.finish('STUCK', `找不到下一步：${nav.text}`);
-      return;
+    if (this.navKey === navKey) {
+      if (nav.phase === 'FAILED') {
+        if (!navBlockedByWindow(nav.text)) {
+          this.finish('STUCK', `找不到下一步：${nav.text}`);
+          return;
+        }
+        this.resupplyWindowBlocked += 1;
+        if (this.resupplyWindowBlocked >= MAX_RESUPPLY_WINDOW_RETRIES) {
+          this.finish('STUCK', '找不到下一步：商店對話或殘留視窗未能關閉，無法回村補給');
+          return;
+        }
+        this.resupplyNavCooldownUntil = Math.max(this.resupplyNavCooldownUntil, now + RESUPPLY_NAV_RETRY_MS);
+      } else if (nav.phase === 'DONE' || nav.phase === 'CANCELLED') {
+        this.resupplyEmptyNavs += 1;
+        if (this.resupplyEmptyNavs >= MAX_RESUPPLY_EMPTY_NAVS) {
+          this.skippedShops.add(shopKey);
+          this.navKey = null;
+          this.activeShopKey = null;
+          this.resupplyEmptyNavs = 0;
+          this.resupplyNavCooldownUntil = Math.max(this.resupplyNavCooldownUntil, now + RESUPPLY_NAV_RETRY_MS);
+          this.host.log(`走到【${shop.npcName}】後未開啟商店，改試其他商店`, 'warn');
+          return;
+        }
+        this.resupplyNavCooldownUntil = Math.max(this.resupplyNavCooldownUntil, now + RESUPPLY_NAV_RETRY_MS);
+      }
     }
-    this.navKey = `shop:${shop.npcName}`;
+    if (now < this.resupplyNavCooldownUntil) return;
+    this.resupplyActionAt = now;
+    this.resupplyNavCooldownUntil = now + RESUPPLY_ACTION_COOLDOWN_MS;
+    this.navKey = navKey;
     this.host.navigator.go({ kind: 'NPC', query: shop.npcName, talk: true });
   }
 
@@ -1150,23 +1305,48 @@ export class QuestChainModule implements BehaviorModule {
     return true;
   }
 
-  private chooseDialog(optionIds: string[]): void {
-    const preferred = optionIds.find(id => id.startsWith('ACCEPT_QUEST:') || id.startsWith('COMPLETE_QUEST:') || id === 'ENABLE_DEMO_MODE');
-    const close = optionIds.find(id => id === 'CLOSE' || id === 'BYE');
-    const id = preferred ?? close ?? optionIds[0];
-    if (!id) return;
-    this.host.send({ type: 'CHOOSE_DIALOG_OPTION', optionId: id }, '推進對話', 'DONE');
+  private resetResupplyState(): void {
+    this.resupply = false;
+    this.healSent = false;
+    this.healCommandId = null;
+    this.healBlockedUntil = 0;
+    this.healBlockedGold = null;
+    this.lastHealCompletedAt = null;
+    this.resupplyActionAt = -Infinity;
+    this.resupplyNavCooldownUntil = 0;
+    this.resupplyWindowBlocked = 0;
+    this.resupplyEmptyNavs = 0;
+    this.openShopAttempts = 0;
+    this.skippedShops.clear();
+    this.activeShopKey = null;
+    this.sellSkip.clear();
+    this.depositSkip.clear();
+    this.wantDeposit = false;
   }
 
   private pickShop(snap: SceneSnapshot): RememberedShop | null {
-    const here = snap.shops[0];
-    if (here) return { npcName: here.npcName, mapId: snap.mapId };
-    const home = this.shops.find(s => s.mapId === this.homeMapId);
-    return home ?? this.shops[0] ?? null;
+    const allowed = (s: { mapId: string; npcName: string }) => !this.skippedShops.has(`${s.mapId}:${s.npcName}`);
+    const hereAvail = snap.shops.find(s => s.goodsStatus !== 'UNAVAILABLE' && allowed({ mapId: snap.mapId, npcName: s.npcName }));
+    if (hereAvail) return { npcName: hereAvail.npcName, mapId: snap.mapId };
+    const hereAny = snap.shops.find(s => allowed({ mapId: snap.mapId, npcName: s.npcName }));
+    if (hereAny) return { npcName: hereAny.npcName, mapId: snap.mapId };
+    const home = this.shops.find(s => s.mapId === this.homeMapId && allowed(s));
+    return home ?? this.shops.find(allowed) ?? null;
   }
 
-  private gatherHunt(): RememberedHunt | null {
-    const point = this.loopGathers().find(p => p.mapId && p.x !== undefined);
+  private pickHuntTarget(mapId: string): RememberedHunt | null {
+    const hunts = this.loopHunts().filter(h => !this.unreachableHuntMaps.has(h.mapId));
+    const gatherHere = this.gatherHunt(mapId);
+    const gatherAny = gatherHere ?? this.gatherHunt();
+    if (!this.config.regionId) {
+      return hunts.find(h => h.mapId === mapId) ?? gatherHere ?? hunts[0] ?? gatherAny;
+    }
+    return hunts.find(h => h.mapId === mapId) ?? hunts[0] ?? gatherHere ?? gatherAny;
+  }
+
+  private gatherHunt(preferMapId?: string): RememberedHunt | null {
+    const points = this.loopGathers().filter(p => p.mapId && p.x !== undefined && !this.unreachableHuntMaps.has(p.mapId));
+    const point = (preferMapId ? points.find(p => p.mapId === preferMapId) : undefined) ?? points[0];
     if (!point?.mapId) return null;
     return { mapId: point.mapId, mapName: point.mapName ?? null, x: point.x, y: point.y };
   }
@@ -1175,7 +1355,18 @@ export class QuestChainModule implements BehaviorModule {
     if (this.bagFull(st)) return true;
     const hp = st.character?.hp;
     const max = st.character?.maxHp;
-    return hp != null && max != null && max > 0 && (hp / max) * 100 <= this.config.returnHpPct;
+    const hpLow = hp != null && max != null && max > 0 && (hp / max) * 100 <= this.config.returnHpPct;
+    if (!hpLow) {
+      this.healBlockedUntil = 0;
+      this.healBlockedGold = null;
+      return false;
+    }
+    const gold = st.character?.gold ?? 0;
+    if (this.healBlockedUntil > 0 && this.healBlockedGold !== null && gold > this.healBlockedGold && gold >= 200) {
+      this.healBlockedUntil = 0;
+      this.healBlockedGold = null;
+    }
+    return this.host.now() >= this.healBlockedUntil;
   }
 
   /** 可以存進倉庫的物品：不是任務／工具要用的，也不是封印石；每項只試一次。 */
@@ -1257,15 +1448,20 @@ export class QuestChainModule implements BehaviorModule {
     if (this.host.navigator.isActive()) this.host.navigator.cancel();
     this.drivingId = null;
     this.stuck = null;
+    this.consecutiveSkipped += 1;
     this.skipped.set(questId, { title, why });
     this.host.log(`略過任務【${title}】：${why}`, 'warn');
-    if (this.skipped.size >= MAX_SKIPPED_QUESTS) {
-      this.finish('STUCK', `找不到下一步：已略過 ${this.skipped.size} 件任務，最後一件【${title}】${why}`);
+    if (this.consecutiveSkipped < MAX_SKIPPED_QUESTS) return;
+    if (this.completed.length > 0 && this.config.newbieLoop) {
+      this.enterLoop(`已略過 ${this.skipped.size} 件無法推進的任務（最後一件【${title}】：${why}）`);
+      return;
     }
+    this.finish('STUCK', `找不到下一步：已略過 ${this.skipped.size} 件任務，最後一件【${title}】${why}`);
   }
 
   private noteCompleted(quest: ChainQuest): void {
     if (this.completed.some(q => q.questId === quest.questId)) return;
+    this.consecutiveSkipped = 0;
     this.completed.push(quest);
     this.host.log(`任務【${quest.title}】已完成`);
   }
