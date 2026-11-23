@@ -838,4 +838,285 @@ suite('FM8: 導航找 NPC 時完全同名優先（「斯坦」不能被這張圖
   assert(sent.some(c => c.type === 'TALK_TO_NPC' || c.type === 'WALK_TO'), '目錄完全不知道另一個斯坦時，仍可退回模糊比對');
 }
 
+suite('FM8 #65: 上一件任務的工作佇列 NAV_FAILED 不應誤殺後續新任務');
+{
+  const B = { v: PROTOCOL_VERSION, characterId: 'c1' };
+  let now = 50_000;
+  let seq = 1;
+  const sent: Array<{ commandId: string; command: any }> = [];
+  let push: (r: unknown) => void = () => {};
+  const tr: Transport = {
+    name: 'fake',
+    start: cb => { push = cb; },
+    send: msg => {
+      if ((msg as any)?.kind === 'command') sent.push(msg as any);
+    },
+    stop: () => {},
+  };
+  const c = new FamilyController(tr, { now: () => now, after: () => {} });
+  c.start();
+
+  const baseNpc = ex.snapshot.snapshot.npcs[0];
+  const makeSnap = (quests: unknown[]) => {
+    const snap = JSON.parse(JSON.stringify(ex.snapshot.snapshot));
+    snap.mapId = '99001';
+    snap.mapName = '測試村莊';
+    snap.openingStage = 'DONE';
+    snap.character.x = 100;
+    snap.character.y = 100;
+    snap.exits = [];
+    snap.npcs = [{ ...baseNpc, id: 'npc-9902', name: '測試村長', talkable: true, x: 110, y: 110, role: 'VILLAGER', isAnimal: false, isShop: false }];
+    snap.gatherPoints = { status: 'AVAILABLE', points: [] };
+    snap.nearbyGatherPoints = [];
+    snap.quests = quests;
+    return snap;
+  };
+  const q1FailGather = {
+    questId: 901, title: '舊採集委託', npcId: 'npc-9902', npcName: '測試村長', minLevel: 1, status: 'IN_PROGRESS',
+    objectives: [{ type: 'GATHER_COUNT', description: '去別圖採虛構草', itemName: '虛構草', current: 0, required: 1, met: false, targetMapId: '99999' }],
+    rewardExp: 0, rewardCoins: 0,
+  };
+  const q2Talk = {
+    questId: 902, title: '後續對話委託', npcId: 'npc-9902', npcName: '測試村長', minLevel: 1, status: 'IN_PROGRESS',
+    objectives: [{ type: 'TALK_TO_NPC', description: '與測試村長對話', current: 0, required: 1, met: false, targetMapId: '99001' }],
+    rewardExp: 0, rewardCoins: 0,
+  };
+
+  push({ ...B, ts: now, kind: 'heartbeat', sessionId: 's65a', seq: seq++, mapId: '99001', phase: 'PLAYING', inBattle: false });
+  push({ ...B, ts: now, kind: 'snapshot', seq: seq++, reason: 'STARTED', snapshot: makeSnap([q1FailGather, q2Talk]) });
+
+  // 預先讓佇列進入「上一件採集因找不到路而 STOPPED / NAV_FAILED」的殘留狀態
+  const oldJobId = c.queue.enqueue({ kind: 'GATHER', skillId: 2, skillName: '採集', targetItemId: 99001, targetName: '虛構草', targetCount: 1 });
+  assert(Boolean(oldJobId), '已放入舊工作');
+  c.queue.stop('NAV_FAILED', '模擬上一件任務的工作佇列導航失敗');
+  assert(c.queueStatus().phase === 'STOPPED' && c.queueStatus().stopReason === 'NAV_FAILED', '佇列處於 STOPPED/NAV_FAILED');
+
+  sent.length = 0;
+  const err = c.perform({ kind: 'QUEST_AUTO', questId: 902, label: '開始後續委託' });
+  assert(err === null && c.activeQuest() === 902, '後續任務能順利開始，不被上一件的 NAV_FAILED 立刻中止');
+  now += 500;
+  c.tick();
+  assert(c.activeQuest() === 902, 'tick 之後任務模組仍然保持執行中');
+  assert(sent.some(m => m.command.type === 'TALK_TO_NPC' && m.command.npcId === 'npc-9902'), '繼續推進後續任務的對話目標');
+}
+
+suite('FM8 #65: 已完成任務後再遇到卡關任務，應穩定轉入新手循環而非整條 STUCK');
+{
+  const B = { v: PROTOCOL_VERSION, characterId: 'c1' };
+  let now = 60_000;
+  let seq = 1;
+  const outbox: Array<() => void> = [];
+  let push: (r: unknown) => void = () => {};
+  const tr: Transport = {
+    name: 'fake',
+    start: cb => { push = cb; },
+    send: msg => {
+      if ((msg as any)?.kind !== 'command') return;
+      const m = msg as { commandId: string; command: any };
+      if (m.command.type === 'TALK_TO_NPC') {
+        outbox.push(() => {
+          push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+          push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'DIALOG_OPENED', npcId: 'npc-9902', npcName: '測試村長', role: 'VILLAGER', lines: ['hi'], options: [{ id: 'COMPLETE_QUEST:900', label: '回報' }, { id: 'CLOSE', label: '離開' }], optionsAvailable: true } });
+          push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DIALOG_OPENED' } });
+        });
+      }
+    },
+    stop: () => {},
+  };
+  const drain = () => { while (outbox.length) outbox.shift()!(); };
+  const c = new FamilyController(tr, { now: () => now, after: () => {} });
+  c.start();
+
+  const mkUnplannable = (questId: number, title: string) => ({
+    questId, title, npcId: 'npc-test', npcName: '測試旅人', minLevel: 1, status: 'IN_PROGRESS',
+    objectives: [{ type: 'KILL_MONSTERS', description: `討伐${title}的影子`, current: 0, required: 1, met: false }],
+    rewardExp: 0, rewardCoins: 0,
+  });
+  const doneFirst = {
+    questId: 900, title: '已完成的第一件', npcId: 'npc-9902', npcName: '測試村長', minLevel: 1, status: 'READY',
+    objectives: [{ type: 'TALK_TO_NPC', description: '已談完', current: 1, required: 1, met: true }],
+    rewardExp: 10, rewardCoins: 10,
+  };
+  const baseNpc2 = ex.snapshot.snapshot.npcs[0];
+  const snap = JSON.parse(JSON.stringify(ex.snapshot.snapshot));
+  snap.mapId = '99001';
+  snap.mapName = '測試村莊';
+  snap.openingStage = 'DONE';
+  snap.character.x = 100;
+  snap.character.y = 100;
+  snap.inventory = [];
+  snap.npcs = [{ ...baseNpc2, id: 'npc-9902', name: '測試村長', talkable: true, x: 110, y: 110, role: 'VILLAGER', isAnimal: false, isShop: false }];
+  snap.quests = [doneFirst, mkUnplannable(911, '甲'), mkUnplannable(912, '乙'), mkUnplannable(913, '丙')];
+
+  push({ ...B, ts: now, kind: 'heartbeat', sessionId: 's65b', seq: seq++, mapId: '99001', phase: 'PLAYING', inBattle: false });
+  push({ ...B, ts: now, kind: 'snapshot', seq: seq++, reason: 'STARTED', snapshot: snap });
+  assert(c.perform({ kind: 'QUEST_CHAIN_START', label: '開始無人任務' }) === null, '可以開始無人任務');
+  drain();
+
+  // 模擬第一件任務在宿主端完成，接著後面三件都無法推進
+  const snap2 = JSON.parse(JSON.stringify(snap));
+  snap2.quests = [{ ...doneFirst, status: 'COMPLETED' }, mkUnplannable(911, '甲'), mkUnplannable(912, '乙'), mkUnplannable(913, '丙')];
+  now += 500;
+  push({ ...B, ts: now, kind: 'snapshot', seq: seq++, reason: 'REQUESTED', snapshot: snap2 });
+  for (let i = 0; i < 8 && c.chainStatus().phase === 'QUESTS'; i += 1) {
+    now += 500;
+    c.tick();
+    drain();
+  }
+  const st = c.chainStatus();
+  assert(st.phase === 'LOOP' && st.stopReason === null, `完成可用任務後應轉入新手循環而非 STUCK（實際：${st.phase}/${st.stopReason}）`);
+}
+
+suite('FM8 #65: stepResupply 治療被拒與商店沒有開啟選項時有冷卻保護，不會高頻洗指令');
+{
+  // 1) HEAL_PARTY 被拒（可因不足）後應關店並暫緩重試，不再無限重進補給
+  const B = { v: PROTOCOL_VERSION, characterId: 'c1' };
+  let now = 80_000;
+  let seq = 1;
+  const sent: Array<{ commandId: string; command: any }> = [];
+  const outbox1: Array<() => void> = [];
+  let push: (r: unknown) => void = () => {};
+  const tr: Transport = {
+    name: 'fake',
+    start: cb => { push = cb; },
+    send: msg => {
+      if ((msg as any)?.kind === 'command') {
+        const m = msg as { commandId: string; command: any };
+        sent.push(m);
+        const cmd = m.command;
+        if (cmd.type === 'REQUEST_SNAPSHOT') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+        } else if (cmd.type === 'TALK_TO_NPC') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'DIALOG_OPENED', npcId: 'npc-shop', npcName: '測試商店', role: 'SHOP', lines: ['hi'], options: [{ id: 'OPEN_SHOP', label: '開商店' }, { id: 'CLOSE', label: '離開' }], optionsAvailable: true } });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DIALOG_OPENED' } });
+          });
+        } else if (cmd.type === 'CHOOSE_DIALOG_OPTION' && cmd.optionId === 'OPEN_SHOP') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'DIALOG_CLOSED', npcId: 'npc-shop' } });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'SHOP_OPENED', npcId: 'npc-shop', npcName: '測試商店', goods: [] } });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+        } else if (cmd.type === 'GAME_COMMAND' && cmd.command?.type === 'HEAL_PARTY') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'REJECTED', reasonCode: 'INSUFFICIENT_COINS', message: '可因不足' });
+          });
+        } else if (cmd.type === 'CHOOSE_DIALOG_OPTION' && cmd.optionId === 'CLOSE_SHOP') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'SHOP_CLOSED', npcId: 'npc-shop' } });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+        } else if (cmd.type === 'WALK_TO') {
+          outbox1.push(() => {
+            push({ ...B, ts: now, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push({ ...B, ts: now, kind: 'event', seq: seq++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'ARRIVED' } });
+          });
+        }
+      }
+    },
+    stop: () => {},
+  };
+  const drain1 = () => { while (outbox1.length) outbox1.shift()!(); };
+  const c = new FamilyController(tr, { now: () => now, after: () => {} });
+  c.start();
+  const baseNpc3 = ex.snapshot.snapshot.npcs[0];
+  const baseShop3 = ex.snapshot.snapshot.shops[0];
+  const snap = JSON.parse(JSON.stringify(ex.snapshot.snapshot));
+  snap.mapId = '99001';
+  snap.mapName = '測試村莊';
+  snap.openingStage = 'DONE';
+  snap.character.hp = 10;
+  snap.character.maxHp = 100;
+  snap.character.gold = 0;
+  snap.character.x = 100;
+  snap.character.y = 100;
+  snap.inventory = [];
+  snap.npcs = [{ ...baseNpc3, id: 'npc-shop', name: '測試商店', talkable: true, isShop: true, isAnimal: false, x: 110, y: 110, role: 'SHOP' }];
+  snap.shops = [{ ...baseShop3, npcId: 'npc-shop', npcName: '測試商店', goodsStatus: 'AVAILABLE', goods: [] }];
+  snap.gatherPoints = { status: 'UNAVAILABLE', points: [] };
+  snap.quests = [];
+  c.perform({ kind: 'QUEST_CHAIN_CONFIG', label: '設定', patch: { loopOnly: true, newbieLoop: true, loopActivity: 'HUNT', returnHpPct: 30 } });
+  push({ ...B, ts: now, kind: 'heartbeat', sessionId: 's65c', seq: seq++, mapId: '99001', phase: 'PLAYING', inBattle: false });
+  drain1();
+  push({ ...B, ts: now, kind: 'snapshot', seq: seq++, reason: 'STARTED', snapshot: snap });
+  assert(c.perform({ kind: 'QUEST_CHAIN_START', label: '開始補給保護測試' }) === null, '啟動循環');
+  drain1();
+  for (let i = 0; i < 20; i += 1) {
+    now += 500;
+    c.tick();
+    drain1();
+  }
+  const healCalls = sent.filter(m => m.command.type === 'GAME_COMMAND' && m.command.command?.type === 'HEAL_PARTY').length;
+  const shopOpens = sent.filter(m => m.command.type === 'CHOOSE_DIALOG_OPTION' && m.command.optionId === 'OPEN_SHOP').length;
+  assert(healCalls === 1, `HEAL_PARTY 被拒後冷卻 30 秒，10 秒內只嘗試 1 次（實際=${healCalls}）`);
+  assert(shopOpens === 1, `關店後不再高頻重開商店（實際=${shopOpens}）`);
+
+  // 2) 對話框沒有 OPEN_SHOP 時，關閉對話並略過該商店，不對同一 NPC 無限重複對話
+  let now2 = 90_000;
+  let seq2 = 1;
+  const sent2: Array<{ commandId: string; command: any }> = [];
+  const outbox2: Array<() => void> = [];
+  let push2: (r: unknown) => void = () => {};
+  const tr2: Transport = {
+    name: 'fake',
+    start: cb => { push2 = cb; },
+    send: msg => {
+      if ((msg as any)?.kind === 'command') {
+        const m = msg as { commandId: string; command: any };
+        sent2.push(m);
+        const cmd = m.command;
+        if (cmd.type === 'REQUEST_SNAPSHOT') {
+          outbox2.push(() => {
+            push2({ ...B, ts: now2, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+        } else if (cmd.type === 'TALK_TO_NPC') {
+          outbox2.push(() => {
+            push2({ ...B, ts: now2, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'DIALOG_OPENED', npcId: 'npc-noshop', npcName: '無店鋪NPC', role: 'VILLAGER', lines: ['hi'], options: [{ id: 'CLOSE', label: '離開' }], optionsAvailable: true } });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DIALOG_OPENED' } });
+          });
+        } else if (cmd.type === 'CHOOSE_DIALOG_OPTION' && cmd.optionId === 'CLOSE') {
+          outbox2.push(() => {
+            push2({ ...B, ts: now2, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'DIALOG_CLOSED', npcId: 'npc-noshop' } });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'DONE' } });
+          });
+        } else if (cmd.type === 'WALK_TO') {
+          outbox2.push(() => {
+            push2({ ...B, ts: now2, kind: 'command-result', commandId: m.commandId, status: 'ACCEPTED' });
+            push2({ ...B, ts: now2, kind: 'event', seq: seq2++, event: { type: 'COMMAND_COMPLETED', commandId: m.commandId, outcome: 'DONE', code: 'ARRIVED' } });
+          });
+        }
+      }
+    },
+    stop: () => {},
+  };
+  const drain2 = () => { while (outbox2.length) outbox2.shift()!(); };
+  const c2 = new FamilyController(tr2, { now: () => now2, after: () => {} });
+  c2.start();
+  const snapBadShop = JSON.parse(JSON.stringify(snap));
+  snapBadShop.npcs = [{ ...baseNpc3, id: 'npc-noshop', name: '無店鋪NPC', talkable: true, isShop: true, isAnimal: false, x: 110, y: 110, role: 'VILLAGER' }];
+  snapBadShop.shops = [{ ...baseShop3, npcId: 'npc-noshop', npcName: '無店鋪NPC', goodsStatus: 'UNAVAILABLE', goods: [] }];
+  c2.perform({ kind: 'QUEST_CHAIN_CONFIG', label: '設定', patch: { loopOnly: true, newbieLoop: true, loopActivity: 'HUNT', returnHpPct: 30 } });
+  push2({ ...B, ts: now2, kind: 'heartbeat', sessionId: 's65d', seq: seq2++, mapId: '99001', phase: 'PLAYING', inBattle: false });
+  drain2();
+  push2({ ...B, ts: now2, kind: 'snapshot', seq: seq2++, reason: 'STARTED', snapshot: snapBadShop });
+  assert(c2.perform({ kind: 'QUEST_CHAIN_START', label: '開始無選項保護測試' }) === null, '啟動循環');
+  drain2();
+  for (let i = 0; i < 20; i += 1) {
+    now2 += 600;
+    c2.tick();
+    drain2();
+  }
+  const talkCalls = sent2.filter(m => m.command.type === 'TALK_TO_NPC').length;
+  assert(talkCalls === 1, `沒有 OPEN_SHOP 時關閉並略過該 NPC，不再無限重覆對話（實際=${talkCalls}）`);
+}
+
 done();

@@ -37,6 +37,8 @@ export class QuestBehaviorModule implements BehaviorModule {
   private advancingQuest = false;
   private lastStopReason: string | null = null;
   private issuedNav = false;
+  /** 這次單筆任務自己送進 WorkQueue 的 jobId；避免上一件失敗任務殘留的 STOPPED 狀態誤殺下一件任務。 */
+  private ownQueueJobId: string | null = null;
   /** 這次採集對應的目標進度。快照更新後若數量沒增加，就停下，避免改採到別的材料還一直重排。 */
   private gatherWatch: { questId: number; description: string; current: number; awaitingSnapshot: boolean; sawSnapshot: boolean } | null = null;
 
@@ -76,6 +78,7 @@ export class QuestBehaviorModule implements BehaviorModule {
     this.activeQuestId = null;
     this.questPatrolCommandId = null;
     this.questSnapshotPending = false;
+    this.ownQueueJobId = null;
     this.gatherWatch = null;
     if (reasonLog) {
       this.host.log(reasonLog);
@@ -142,6 +145,7 @@ export class QuestBehaviorModule implements BehaviorModule {
     this.lastQuestStatus = null;
     this.lastStopReason = null;
     this.issuedNav = false;
+    this.ownQueueJobId = null;
     this.gatherWatch = null;
     this.host.log(`任務自動推進開始：【${quest.title}】`);
     const err = this.advance();
@@ -173,6 +177,7 @@ export class QuestBehaviorModule implements BehaviorModule {
     if (quest.status === 'COMPLETED') {
       this.activeQuestId = null;
       this.questPatrolCommandId = null;
+      this.ownQueueJobId = null;
       this.host.log(`任務【${quest.title}】已完成`);
       this.host.onChange();
       return null;
@@ -217,20 +222,24 @@ export class QuestBehaviorModule implements BehaviorModule {
     if (['RUNNING', 'PAUSED_BATTLE', 'WAITING_TOOL_BUY', 'WALKING_TO_POINT'].includes(qStat.phase)) {
       return null;
     }
+    const ownsJob = this.ownQueueJobId !== null && qStat.jobs.some(j => j.id === this.ownQueueJobId);
     if (
+      ownsJob &&
       quest.status === 'IN_PROGRESS' &&
       qStat.phase === 'STOPPED' &&
       qStat.stopReason &&
       qStat.stopReason !== 'USER_STOPPED' &&
       qStat.stopReason !== 'DONE_TARGET'
     ) {
+      this.ownQueueJobId = null;
       this.stop(`任務【${quest.title}】自動推進中止：工作停止（${qStat.stopReason}）`);
       return null;
     }
-    if (this.gatherWatch && this.gatherWatch.questId === questId && (qStat.phase === 'DONE' || qStat.phase === 'STOPPED')) {
+    if (ownsJob && this.gatherWatch && this.gatherWatch.questId === questId && (qStat.phase === 'DONE' || qStat.phase === 'STOPPED')) {
       const watched = quest.objectives.find(o => o.description === this.gatherWatch?.description);
       if (!watched || watched.met || watched.current > this.gatherWatch.current) {
         this.gatherWatch = null;
+        this.ownQueueJobId = null;
       } else if (!this.gatherWatch.awaitingSnapshot) {
         this.gatherWatch = { ...this.gatherWatch, awaitingSnapshot: true, sawSnapshot: false };
         this.questSnapshotPending = true;
@@ -239,6 +248,7 @@ export class QuestBehaviorModule implements BehaviorModule {
       } else if (!this.gatherWatch.sawSnapshot) {
         return null;
       } else {
+        this.ownQueueJobId = null;
         const why = `任務【${quest.title}】找不到下一步：採集沒有讓「${watched.description}」增加（${watched.current}/${watched.required}）`;
         this.stop(why);
         return why;
@@ -369,7 +379,7 @@ export class QuestBehaviorModule implements BehaviorModule {
     }
     if (plan.kind === 'CRAFT') {
       const needed = Math.max(1, nextObj.required - nextObj.current);
-      activeQ.enqueue({
+      this.ownQueueJobId = activeQ.enqueue({
         kind: 'CRAFT',
         recipeId: plan.recipeId,
         recipeName: plan.recipeName,
@@ -409,7 +419,7 @@ export class QuestBehaviorModule implements BehaviorModule {
         awaitingSnapshot: false,
         sawSnapshot: false,
       };
-      activeQ.enqueue({
+      this.ownQueueJobId = activeQ.enqueue({
         kind: 'GATHER',
         skillId: matchPoint.skillId,
         skillName: matchPoint.skillName ?? '採集',
