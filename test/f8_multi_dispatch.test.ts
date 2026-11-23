@@ -4,6 +4,7 @@ import protocolExamples from '../src/protocol/examples.json';
 import type { Transport } from '../src/transport/types';
 import { createWorld, type World } from './f2_world';
 import type { DispatchSpec } from '../src/dispatch';
+import { QuestChainModule } from '../src/automation/modules/questChainModule';
 import { dispatchOverview } from '../src/panels/DispatchPanel';
 import { assert, done, suite } from './helpers';
 
@@ -159,6 +160,98 @@ suite('F8 續跑：關掉 family 分頁再打開，兩位的任務鏈都從存�
   assert(reopened.dispatches().every(r => r.phase === 'RUNNING'), '兩位都恢復');
   assert(doneOf(w, 'char_1') > before.a && doneOf(w, 'char_2') > before.b, '兩位都繼續完成任務');
   assert(!w.sent.slice(mark).some(c => c.command.type === 'SWITCH_VIEW_CHARACTER'), '恢復時沒有切換視角');
+}
+
+suite('F8 #64：明確派工與手動接管的區域在宿主停止、重開與恢復後仍送到各自通道');
+{
+  const storage = new Map<string, string>();
+  const w = createWorld({ fx17: true, storage });
+  const storageKey = 'fairyland_family:dispatch:v1';
+  const regions = new Map([
+    ['char_1', 'fictional-manual-region'],
+    ['char_2', 'fictional-dispatch-region'],
+  ]);
+  w.boot();
+  // Keep synthetic regions in the fake host's view snapshot map so the chain won't finish as REGION_UNKNOWN.
+  const injectRegions = () => {
+    w.ctrl.state.staticData = {
+      ...w.ctrl.state.staticData!,
+      regions: [...regions.values()].map(regionId => ({
+        regionId, name: regionId, mapIds: ['99001'], villageMapId: '99001',
+      })),
+    };
+  };
+  injectRegions();
+  w.ctrl.perform({ kind: 'QUEST_CHAIN_CONFIG', label: '設定手動任務鏈區域', patch: { regionId: regions.get('char_1')! } });
+  w.ctrl.perform({ kind: 'QUEST_CHAIN_START', label: '手動開啟任務鏈' });
+  w.ctrl.perform({
+    kind: 'DISPATCH_ASSIGN', label: '指定背景角色派工', characterId: 'char_2',
+    spec: { ...chainSpec(), regionId: regions.get('char_2')! },
+  });
+  w.advance(1000);
+  for (const [id, regionId] of regions) {
+    assert(rec(w, id)?.regionId === regionId, `派工紀錄記下 ${id} 的原始區域`);
+    assert(JSON.parse(storage.get(storageKey) ?? '{}')[id]?.regionId === regionId, `區域寫入 ${id} 的存檔`);
+  }
+  w.stopHost();
+  w.advance(5000);
+  for (const id of regions.keys()) {
+    assert(rec(w, id)?.phase === 'PAUSED' && rec(w, id)?.stopped?.code === 'HOST_STOPPED', `${id} 的任務鏈隨宿主暫停`);
+  }
+  w.closeFamilyTab();
+  const reopened = w.reopen();
+  injectRegions();
+  const configured: Array<{ module: QuestChainModule; regionId: string | null | undefined }> = [];
+  const original = QuestChainModule.prototype.handleAction;
+  QuestChainModule.prototype.handleAction = function (action) {
+    if (action.kind === 'QUEST_CHAIN_CONFIG') configured.push({ module: this, regionId: action.patch.regionId });
+    return original.call(this, action);
+  };
+  try {
+    w.startHost();
+    w.advance(1000);
+    const lanes = (reopened as unknown as { lanes: Map<string, { chain: QuestChainModule }> }).lanes;
+    for (const [id, regionId] of regions) {
+      const chain = lanes.get(id)?.chain;
+      assert(configured.some(call => call.module === chain && call.regionId === regionId), `恢復時把正確區域送給 ${id} 的通道`);
+    }
+  } finally {
+    QuestChainModule.prototype.handleAction = original;
+  }
+}
+
+suite('F8 #64：省略或明確取消區域時，不沿用同一通道之前的區域');
+{
+  const w = createWorld({ fx17: true });
+  w.boot();
+  const id = 'char_1';
+  const laneFor = () => (w.ctrl as unknown as { lanes: Map<string, { chain: QuestChainModule }> }).lanes.get(id)?.chain;
+  for (const spec of [chainSpec(), { ...chainSpec(), regionId: null }]) {
+    w.ctrl.dispatcher.assign(id, { ...chainSpec(), regionId: 'fictional-stale-region' });
+    assert(laneFor()?.getStatus().config.regionId === 'fictional-stale-region', '設定先前的區域');
+    w.ctrl.dispatcher.assign(id, spec);
+    assert(laneFor()?.getStatus().config.regionId === null, '無指定區域時，舊區域確實清除');
+    assert(rec(w, id)?.regionId === spec.regionId, '保留省略或明確 null 的原始選擇');
+  }
+}
+
+suite('F8 #64：舊存檔未記區域，重開時仍可按不限區域續跑');
+{
+  const storage = new Map<string, string>();
+  const w = createWorld({ fx17: true, storage });
+  w.boot();
+  const id = 'char_1';
+  w.ctrl.dispatcher.assign(id, chainSpec());
+  w.stopHost();
+  w.advance(5000);
+  const saved = JSON.parse(storage.get('fairyland_family:dispatch:v1') ?? '{}')[id];
+  assert(saved?.stopped?.code === 'HOST_STOPPED' && !('regionId' in saved), '舊格式任務鏈存檔沒有 regionId');
+  w.closeFamilyTab();
+  const reopened = w.reopen();
+  w.startHost();
+  w.advance(1000);
+  const lane = (reopened as unknown as { lanes: Map<string, { chain: QuestChainModule }> }).lanes.get(id);
+  assert(rec(w, id)?.phase === 'RUNNING' && lane?.chain.getStatus().config.regionId === null, '舊存檔按不限區域續跑');
 }
 
 suite('F8 手動接手：玩家對一位角色手動操作，只停那位的派工');

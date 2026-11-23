@@ -933,6 +933,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             recaps={aux.dispatchRecaps ?? []}
             lanes={aux.lanes ?? []}
             gatherPoints={snap?.gatherPoints?.points}
+            regions={state.staticData?.regions}
             running={running}
             error={dispatchErr}
             onAssign={(characterId, spec, name) => {

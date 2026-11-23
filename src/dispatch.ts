@@ -54,6 +54,8 @@ export interface DispatchStop {
 export interface DispatchSpec {
   kind: DispatchKind;
   gather?: GatherSpec;
+  /** 任務鏈／新手循環的宿主區域；null 或舊存檔未指定＝不限。 */
+  regionId?: string | null;
   stop: DispatchStop;
 }
 
@@ -201,7 +203,7 @@ export interface DispatchHost {
   chainActive(id: string): boolean;
   chainStatus(id: string): QuestChainStatus;
   /** 在這位角色的派工通道啟動任務鏈；回傳錯誤文字或 null。 */
-  startChain(id: string, loopOnly: boolean, stop: DispatchStop, remainingMs: number | null): string | null;
+  startChain(id: string, loopOnly: boolean, stop: DispatchStop, remainingMs: number | null, regionId: string | null): string | null;
   stopChain(id: string, text: string): void;
   /** F9c：停止該角色在背景通道待啟動或進行中的單筆任務。 */
   stopSingleQuest?(id: string, text: string): void;
@@ -258,6 +260,8 @@ export class CharacterDispatcher {
       characterId: id,
       kind: spec.kind,
       ...(spec.gather ? { gather: { ...spec.gather } } : {}),
+      ...((spec.kind === 'QUEST_CHAIN' || spec.kind === 'NOVICE_LOOP') && spec.regionId !== undefined
+        ? { regionId: spec.regionId } : {}),
       stop,
       phase: 'RUNNING',
       startedAt: now,
@@ -366,7 +370,7 @@ export class CharacterDispatcher {
 
   private startForeground(rec: DispatchRecord): string | null {
     const remaining = rec.deadlineAt !== null ? Math.max(1000, rec.deadlineAt - this.host.now()) : null;
-    return this.host.startChain(rec.characterId, rec.kind === 'NOVICE_LOOP', rec.stop, remaining);
+    return this.host.startChain(rec.characterId, rec.kind === 'NOVICE_LOOP', rec.stop, remaining, rec.regionId ?? null);
   }
 
   /** 這個角色自己的工作全部收掉（佇列、任務鏈、背景單筆任務），不碰別人。 */
@@ -477,6 +481,7 @@ export class CharacterDispatcher {
         this.store.set({
           characterId: id,
           kind: status.config.loopOnly ? 'NOVICE_LOOP' : 'QUEST_CHAIN',
+          ...(status.config.regionId !== undefined ? { regionId: status.config.regionId } : {}),
           stop: defaultStop(),
           phase: 'RUNNING',
           startedAt: this.host.now(),

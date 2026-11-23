@@ -204,7 +204,7 @@ export class FamilyController {
         const lane = this.lanes.get(id);
         return viewChainOn(id) || !lane ? this.questChain.getStatus() : lane.chainStatus();
       },
-      startChain: (id, loopOnly, stop, remainingMs) => {
+      startChain: (id, loopOnly, stop, remainingMs, regionId) => {
         // 視角角色若正被玩家手動的導航／任務占著，先收掉，避免兩邊同時送指令給同一位。
         if (viewChainOn(id)) this.questChain.stop('改由派工接手');
         if (this.state.characterId === id) {
@@ -224,6 +224,7 @@ export class FamilyController {
             },
             newbieLoop: true,
             loopOnly,
+            regionId,
           },
         });
         return lane.chain.handleAction({ kind: 'QUEST_CHAIN_START', label: '派工開始任務鏈' }).error;

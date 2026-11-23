@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { SnapshotFamilyMember, SnapshotGatherPoint } from '../protocol/index';
+import type { SnapshotFamilyMember, SnapshotGatherPoint, StaticRegion } from '../protocol/index';
 import {
   DISPATCH_KIND_LABEL,
   DISPATCH_PHASE_LABEL,
@@ -91,6 +91,7 @@ function DispatchRow(props: {
   recap?: DispatchRecap;
   lane?: LaneSummary;
   gatherOptions: GatherOption[];
+  regions?: readonly StaticRegion[];
   running: boolean;
   onAssign: (spec: DispatchSpec) => void;
   onStop: () => void;
@@ -99,6 +100,9 @@ function DispatchRow(props: {
   const { member: m, record, recap } = props;
   const [kind, setKind] = useState<DispatchKind>('GATHER');
   const [gatherKey, setGatherKey] = useState('');
+  const [regionChoice, setRegionId] = useState<string>();
+  const savedRegion = record?.kind === 'QUEST_CHAIN' || record?.kind === 'NOVICE_LOOP' ? record.regionId : null;
+  const regionId = regionChoice ?? savedRegion ?? '';
   const [count, setCount] = useState('');
   const [minutes, setMinutes] = useState('');
   const [bagFull, setBagFull] = useState(true);
@@ -108,6 +112,7 @@ function DispatchRow(props: {
   const busy = record?.phase === 'RUNNING' || record?.phase === 'PAUSED' || record?.phase === 'WAITING_VIEW';
   const overview = dispatchOverview(record, props.lane);
   const needsTarget = kind === 'GATHER';
+  const isChain = kind === 'QUEST_CHAIN' || kind === 'NOVICE_LOOP';
   const canAssign = props.running && (!needsTarget || Boolean(opt));
   const phase = record?.phase ?? 'IDLE';
 
@@ -120,6 +125,9 @@ function DispatchRow(props: {
     if (kind === 'GATHER' && opt) {
       const n = numOrNull(count);
       props.onAssign({ kind, gather: { ...opt.spec, count: n === null ? 'UNTIL_FULL' : Math.round(n) }, stop });
+    } else if (isChain) {
+      props.onAssign({ kind, regionId: regionId || null, stop });
+      setRegionId(undefined);
     } else {
       props.onAssign({ kind, stop });
     }
@@ -196,6 +204,25 @@ function DispatchRow(props: {
             </label>
           </>
         )}
+        {isChain && (
+          <label>
+            區域
+            <select
+              aria-label={`${name} 任務鏈區域`}
+              data-testid="dispatch-region"
+              value={regionId}
+              onChange={e => setRegionId(e.currentTarget.value)}
+            >
+              <option value="">不限區域</option>
+              {props.regions?.map(region => (
+                <option key={region.regionId} value={region.regionId}>{region.name}</option>
+              ))}
+              {regionId && !props.regions?.some(region => region.regionId === regionId) && (
+                <option value={regionId}>{`（宿主沒有這個區域：${regionId}）`}</option>
+              )}
+            </select>
+          </label>
+        )}
         {kind !== 'IDLE' && (
           <>
             <label>
@@ -254,6 +281,7 @@ export function DispatchPanel(props: {
   recaps: DispatchRecap[];
   lanes?: LaneSummary[];
   gatherPoints?: SnapshotGatherPoint[];
+  regions?: readonly StaticRegion[];
   running: boolean;
   error: string;
   onAssign: (characterId: string, spec: DispatchSpec, name: string) => void;
@@ -276,6 +304,7 @@ export function DispatchPanel(props: {
             recap={props.recaps.find(r => r.characterId === m.characterId)}
             lane={props.lanes?.find(l => l.characterId === m.characterId)}
             gatherOptions={options}
+            regions={props.regions}
             running={props.running}
             onAssign={spec => props.onAssign(m.characterId, spec, m.name ?? m.characterId)}
             onStop={() => props.onStop(m.characterId, m.name ?? m.characterId)}
