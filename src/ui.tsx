@@ -49,6 +49,8 @@ import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
 import type { LaneSummary } from './lanes';
 import { WorldMapPanel } from './panels/WorldMapPanel';
+import { WineTrainingPanel } from './panels/WineTrainingPanel';
+import { WineBridgeClient } from './wine/wineBridgeClient';
 import { QuestCards } from './panels/QuestCards';
 import { ShopBuyList } from './panels/ShopBuyList';
 import { questCardModels } from './panels/questCardModel';
@@ -81,6 +83,8 @@ export interface UiAux {
   dispatchRecaps?: DispatchRecap[];
   /** F8：每位角色的派工通道摘要（目前任務、進度）。 */
   lanes?: LaneSummary[];
+  /** W-FamilyUI：供測試注入或外層共享的本機 Wine 橋接客戶端。 */
+  wineClient?: WineBridgeClient;
 }
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
@@ -413,6 +417,9 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [inputValue, setInputValue] = useState('');
   const [inputErr, setInputErr] = useState('');
   const [mobileTab, setMobileTab] = useState<MobileTab>('active');
+  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine'>('overview');
+  const defaultWineClient = useMemo(() => new WineBridgeClient(), []);
+  const wineClient = aux.wineClient ?? defaultWineClient;
   const [watchCharacterId, setWatchCharacterId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -728,6 +735,17 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
+          <button
+            type="button"
+            className={`item ${workbenchTab === 'wine' ? 'tab-active' : ''}`}
+            data-testid="header-wine-btn"
+            onClick={() => {
+              setWorkbenchTab('wine');
+              setMobileTab('active');
+            }}
+          >
+            視窗練功
+          </button>
           {notifyPerm !== 'unsupported' && (
             <button
               type="button"
@@ -960,7 +978,8 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           <Tabs.Root
             className="character-workbench"
             data-testid="character-workbench"
-            defaultValue="overview"
+            value={workbenchTab}
+            onValueChange={v => setWorkbenchTab(v as typeof workbenchTab)}
           >
             <div className="workbench-heading">
               <h2>目前角色工作台</h2>
@@ -971,6 +990,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               <Tabs.Trigger value="skills" className="item">技能</Tabs.Trigger>
               <Tabs.Trigger value="inventory" className="item">物品欄</Tabs.Trigger>
               <Tabs.Trigger value="settings" className="item">設定</Tabs.Trigger>
+              <Tabs.Trigger value="wine" className="item" data-testid="tab-wine">視窗練功</Tabs.Trigger>
             </Tabs.List>
             {/* 保留篩選與捲動狀態；未選頁面用 CSS 從視覺和鍵盤動線一起移除。 */}
             <Tabs.Content value="overview" forceMount className="workbench-pane">
@@ -1184,6 +1204,9 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                   </section>
                 );
               })()}
+            </Tabs.Content>
+            <Tabs.Content value="wine" forceMount className="workbench-pane">
+              <WineTrainingPanel client={wineClient} />
             </Tabs.Content>
           </Tabs.Root>
 
