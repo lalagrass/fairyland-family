@@ -63,7 +63,7 @@ export class ModernStageController {
       const app = new Application();
       await app.init({ resizeTo: this.hostEl, antialias: true, backgroundAlpha: 1, backgroundColor: 0x0e1520, resolution: Math.min(2, window.devicePixelRatio || 1), autoDensity: true });
       if (this.destroyed) {
-        app.destroy(true);
+        app.destroy({ removeView: true }, { children: true });
         return false;
       }
       this.app = app;
@@ -109,7 +109,7 @@ export class ModernStageController {
   private renderFrame(): void {
     const app = this.app;
     const input = this.latest;
-    if (!app || !input) return;
+    if (this.destroyed || !app || !input) return;
     const nowMs = Date.now();
     const dt = this.lastTick ? nowMs - this.lastTick : 16;
     this.lastTick = nowMs;
@@ -244,7 +244,7 @@ export class ModernStageController {
     this.app = null;
     if (app) {
       app.canvas.removeEventListener('pointerdown', this.onPointer);
-      app.destroy(true, { children: true });
+      app.destroy({ removeView: true }, { children: true });
     }
   }
 }

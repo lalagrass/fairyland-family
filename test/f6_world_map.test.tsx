@@ -2,12 +2,15 @@
  * F6（fairyland-family#46）：世界地圖的自動排版、路線高亮與斷點標示。
  * 全部使用虛構的地圖 id（m-*／n-*），不含任何原版資料或座標。
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SnapshotPortalEdge, SnapshotPortalNode } from '../src/protocol/index';
 import { WorldMapPanel } from '../src/panels/WorldMapPanel';
+import { PixiWorldMapRenderer } from '../src/render/worldMapStage';
 import {
   WORLD_MAP_MIN_DIST,
   WORLD_MAP_NARROW_BELOW,
@@ -288,6 +291,27 @@ suite('F6: 窄欄與無畫布時只有可用清單，選角色須等宿主確認
   resize(360);
   assert(panel.getAttribute('data-narrow') === '1' && !panel.textContent?.includes('環境畫不了圖') && stageOrHit() === null, '再縮回窄欄，保持清單且不報無畫布警訊');
   act(() => root.unmount());
+  await win.close();
+}
+
+suite('F6 (#62): PixiWorldMapRenderer 銷毀安全與不全域釋放共用 Batch 池');
+{
+  const win = new Window();
+  const host = win.document.createElement('div') as unknown as HTMLElement;
+  const renderer = new PixiWorldMapRenderer();
+  renderer.destroy();
+  const mountedAfterDestroy = await renderer.mount(host);
+  assert(mountedAfterDestroy === false, 'destroy 後再呼叫 mount 安全回傳 false');
+  const view = buildWorldMapView({ graph: world, characters: [], route: [] });
+  renderer.setView(view);
+  renderer.destroy();
+  assert(true, '重複 destroy 與 setView 後不拋例外');
+
+  for (const rel of ['src/render/worldMapStage.ts', 'src/render/pixiStage.ts', 'src/render/modernStage.ts']) {
+    const src = fs.readFileSync(path.resolve(process.cwd(), rel), 'utf8');
+    assert(!/app\.destroy\(\s*true\b/.test(src), `${rel} 不可呼叫 app.destroy(true)（會觸發 GlobalResourceRegistry.release() 破壞共用 Batch 池）`);
+    assert(src.includes('removeView: true'), `${rel} 應使用 { removeView: true } 銷毀本實例畫布`);
+  }
   await win.close();
 }
 

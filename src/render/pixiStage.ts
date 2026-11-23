@@ -107,7 +107,7 @@ export class PixiStageController {
         resolution: 1,
       });
       if (this.destroyed) {
-        app.destroy(true);
+        app.destroy({ removeView: true }, { children: true });
         return false;
       }
       this.app = app;
@@ -199,7 +199,7 @@ export class PixiStageController {
   }
 
   private renderFrame(): void {
-    if (!this.initialized || !this.app || !this.latestInput) return;
+    if (!this.initialized || this.destroyed || !this.app || !this.latestInput) return;
     const { state, watchCharacterId, zoomSetting, appearances } = this.latestInput;
     const defaultProvider = this.latestInput.provider ?? originalAppearanceProvider;
     const resolveProviderFor = (charId: string) =>
@@ -687,7 +687,8 @@ export class PixiStageController {
     this.destroyed = true;
     this.initialized = false;
     if (this.app) {
-      this.app.destroy(true);
+      // 不傳 true，避免觸發 GlobalResourceRegistry.release() 影響同頁 WorldMapPanel 的 Batch 池
+      this.app.destroy({ removeView: true }, { children: true });
       this.app = null;
     }
   }
