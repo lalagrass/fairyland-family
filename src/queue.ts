@@ -87,10 +87,13 @@ export interface QueueHost {
   send(command: PluginCommand, label: string, expect?: string): string | null;
   log(text: string, level?: 'info' | 'warn' | 'error'): void;
   after(ms: number, fn: () => void): unknown;
+  now?(): number;
   navigator: AutoNavigator;
   onChange(): void;
-  /** F2b：背景角色離採集點太遠又不能走路時，請求把視角切給它，走近後再還回去。 */
+  /** F2b：舊版宿主不支援背景走路／開商店時，退回暫時借視角。 */
   requestView?(characterId: string): void;
+  /** #63/#65：請求特定角色的獨立快照（FX17+ 背景採集用）。 */
+  requestSnapshot?(characterId: string): void;
 }
 
 const DEFAULT_KEY = 'family.queue.v1';
@@ -101,6 +104,8 @@ const GATHER_RANGE_MARGIN = 30;
 /** 宿主拒絕採集（TOO_FAR）後改成走到採集點旁邊。 */
 const GATHER_CLOSE_DIST = 40;
 const MAX_VIEW_REQUESTS = 3;
+const BG_SNAPSHOT_WAIT_MS = 2000;
+const BG_SNAPSHOT_POLL_MS = 150;
 const RETRY_MS = 450;
 
 function mapRejectToStop(code: string): QueueStopReason | null {
@@ -185,6 +190,9 @@ export class WorkQueue {
   private forceClose = false;
   private tooFarRetries = 0;
   private viewRequests = 0;
+  private bgCommandsUnsupported = false;
+  private bgSnapshotWaitAt: number | null = null;
+  private bgSnapshotRequestedAt = -Infinity;
   private approachTries: { pointId: string; dist: number; tries: number } | null = null;
   /** 這次工作已經確認走不過的採集點。直線距離近不代表走得到。 */
   private skippedPoints = new Set<string>();
@@ -295,6 +303,8 @@ export class WorkQueue {
     this.navStartedKey = null;
     this.approachTries = null;
     this.skippedPoints.clear();
+    this.bgSnapshotWaitAt = null;
+    this.bgSnapshotRequestedAt = -Infinity;
     this.token++;
     this.phase = 'RUNNING';
     this.text = this.describeActive();
@@ -339,6 +349,8 @@ export class WorkQueue {
     if (isEventMessage(m)) {
       const e = m.event;
       if (e.type === 'GAME_STARTED') {
+        this.bgCommandsUnsupported = false;
+        this.bgSnapshotWaitAt = null;
         if (this.isActive()) {
           this.pending = null;
           this.navStartedKey = null;
@@ -422,6 +434,28 @@ export class WorkQueue {
     const cur = this.pending;
     this.pending = null;
     if (!cur) return;
+
+    if (code === 'WRONG_CHARACTER') {
+      const tgt = this.targetMember(this.host.state());
+      if (tgt && !tgt.isViewed) {
+        this.bgCommandsUnsupported = true;
+        if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
+          this.viewRequests += 1;
+          const buying = cur.role === 'BUY_TOOL' || cur.role === 'TALK' || cur.role === 'DIALOG';
+          this.phase = buying ? 'WAITING_TOOL_BUY' : 'WALKING_TO_POINT';
+          this.text = buying
+            ? `【${tgt.name}】宿主不支援背景購置，切換視角買工具`
+            : `【${tgt.name}】宿主不支援背景移動，切換視角走近`;
+          this.persist();
+          this.host.onChange();
+          this.host.requestView(tgt.characterId);
+          this.scheduleStep(1500);
+          return;
+        }
+        this.stop(cur.role === 'BUY_TOOL' ? 'MISSING_TOOL' : 'TOO_FAR', message ?? '背景角色無法執行該操作');
+        return;
+      }
+    }
 
     if (code === 'GAME_BUSY' || code === 'GAME_NOT_READY' || code === 'IN_BATTLE') {
       this.scheduleStep(RETRY_MS);
@@ -522,7 +556,7 @@ export class WorkQueue {
 
     if (cur.role === 'BUY_TOOL' && cur.toolId !== undefined) {
       this.boughtToolAttempted.add(cur.toolId);
-      if (outcome === 'DONE') this.boughtToolAt.set(cur.toolId, Date.now());
+      if (outcome === 'DONE') this.boughtToolAt.set(cur.toolId, this.now());
     }
 
     if (cur.role === 'WALK' && code === 'BLOCKED') {
@@ -649,11 +683,32 @@ export class WorkQueue {
 
     // GATHER job
     const snap = st.snapshot;
+    if (tgt.isViewed) {
+      this.bgSnapshotWaitAt = null;
+    } else if (
+      !this.bgCommandsUnsupported &&
+      snap.mapId !== tgt.mapId &&
+      this.awaitBackgroundSnapshot(tgt.characterId, tgt.name, 'RUNNING', `等待【${tgt.name}】目前地圖快照`)
+    ) {
+      return;
+    }
+
     const toolId = this.resolveToolId(job, snap);
     const hasTool = !toolId || tgt.inventory.some(i => i.itemId === toolId && i.count > 0);
     if (toolId && !hasTool) {
       if (!tgt.isViewed) {
-        // 買工具要走到商店、開對話，背景角色做不到：把視角暫時借給它，買好再還。
+        if (
+          !this.bgCommandsUnsupported &&
+          this.awaitBackgroundSnapshot(
+            tgt.characterId,
+            tgt.name,
+            'WAITING_TOOL_BUY',
+            `【${tgt.name}】缺少工具 #${toolId}，等待背景快照前往購買`,
+          )
+        ) {
+          return;
+        }
+        // 舊版宿主不支援背景開商店／買工具：退回借用視角。
         if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
           this.viewRequests += 1;
           this.phase = 'WAITING_TOOL_BUY';
@@ -673,7 +728,7 @@ export class WorkQueue {
           this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉商店等待背包更新', 'CLOSE_SHOP');
           return;
         }
-        if (Date.now() - boughtAt < 3000) {
+        if (this.now() - boughtAt < 3000) {
           this.scheduleStep(100);
           return;
         }
@@ -684,7 +739,7 @@ export class WorkQueue {
       return;
     }
 
-    // Have tool: ensure shop/dialog are closed before walking/working (foreground only)
+    // Have tool: ensure shop/dialog are closed before walking/working (foreground or lane snapshot)
     if (tgt.isViewed && st.shop) {
       this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE_SHOP' }, '關閉商店繼續工作', 'CLOSE_SHOP');
       return;
@@ -732,8 +787,7 @@ export class WorkQueue {
     const range = this.hostGatherRange ?? GATHER_APPROACH_DIST;
     const maxAllowedDist = this.forceClose ? GATHER_CLOSE_DIST : Math.max(GATHER_CLOSE_DIST, range - GATHER_RANGE_MARGIN);
     if (dist > maxAllowedDist) {
-      if (!tgt.isViewed) {
-        // 背景角色不能走路（宿主只讓視角中的角色走）：把視角暫時切給它，走近後由派工把視角還給前景工作。
+      if (!tgt.isViewed && this.bgCommandsUnsupported) {
         if (this.host.requestView && this.viewRequests < MAX_VIEW_REQUESTS) {
           this.viewRequests += 1;
           this.phase = 'WALKING_TO_POINT';
@@ -763,7 +817,7 @@ export class WorkQueue {
       this.text = `走到採集點：${pt.name}`;
       this.persist();
       this.host.onChange();
-      this.sendPending({ type: 'WALK_TO', mapId: snap.mapId, x: pt.x, y: pt.y }, `走到 ${pt.name}`, 'WALK');
+      this.sendPending({ type: 'WALK_TO', mapId: tgt.mapId, x: pt.x, y: pt.y }, `走到 ${pt.name}`, 'WALK');
       return;
     }
     this.approachTries = null;
@@ -807,11 +861,11 @@ export class WorkQueue {
     if (st.dialog) {
       const openOpt = st.dialog.options.find(o => o.id === 'OPEN_SHOP');
       if (openOpt) {
-        if (Date.now() - this.openShopSentAt < 1000) {
+        if (this.now() - this.openShopSentAt < 1000) {
           this.scheduleStep(100);
           return;
         }
-        this.openShopSentAt = Date.now();
+        this.openShopSentAt = this.now();
         this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'OPEN_SHOP' }, `開啟商店購買 ${toolName}`, 'DIALOG');
       } else {
         this.sendPending({ type: 'CHOOSE_DIALOG_OPTION', optionId: 'CLOSE' }, '關閉無關對話', 'DIALOG');
@@ -863,6 +917,32 @@ export class WorkQueue {
       p => p.skillId === job.skillId && (job.targetItemId === undefined || p.materials?.some(m => m.itemId === job.targetItemId))
     );
     return hit?.requiredToolItemId ?? undefined;
+  }
+
+  private now(): number {
+    return this.host.now?.() ?? Date.now();
+  }
+
+  private awaitBackgroundSnapshot(
+    characterId: string,
+    _name: string,
+    phase: QueuePhase,
+    text: string,
+  ): boolean {
+    if (!this.host.requestSnapshot || !characterId) return false;
+    const now = this.now();
+    if (this.bgSnapshotWaitAt === null) this.bgSnapshotWaitAt = now;
+    if (now - this.bgSnapshotWaitAt >= BG_SNAPSHOT_WAIT_MS) return false;
+    if (now - this.bgSnapshotRequestedAt >= 300) {
+      this.bgSnapshotRequestedAt = now;
+      this.host.requestSnapshot(characterId);
+    }
+    this.phase = phase;
+    this.text = text;
+    this.persist();
+    this.host.onChange();
+    this.scheduleStep(BG_SNAPSHOT_POLL_MS);
+    return true;
   }
 
   private scheduleStep(delayMs: number): void {

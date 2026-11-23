@@ -56,6 +56,8 @@ export interface LaneDeps {
   staticData(): StaticDataPayload | null;
   /** 這件任務是不是別的角色正在做；是的話回傳那位角色的 id。 */
   questHeldElsewhere(questId: number, characterId: string): string | null;
+  /** 該角色目前是否有背景工作佇列（採集／製作）正在執行。 */
+  queueActive?(characterId: string): boolean;
 }
 
 export class CharacterLane {
@@ -160,7 +162,7 @@ export class CharacterLane {
     this.battler.onMessage(m);
     this.chain.onMessage(m);
     this.quest.onMessage(m);
-    if (isEventMessage(m) && this.deps.viewedId() !== this.characterId) {
+    if ((this.active() || this.deps.queueActive?.(this.characterId)) && isEventMessage(m) && this.deps.viewedId() !== this.characterId) {
       const t = m.event.type;
       if (t === 'COMMAND_COMPLETED' || t === 'DIALOG_CLOSED' || t === 'LOCATION_CHANGED' || t === 'BATTLE_ENDED' || t === 'SHOP_CLOSED') {
         this.requestSnapshot('背景角色進度更新');
@@ -169,7 +171,8 @@ export class CharacterLane {
   }
 
   tick(): void {
-    if (!this.active()) return;
+    const queueActive = this.deps.queueActive?.(this.characterId) ?? false;
+    if (!this.active() && !queueActive) return;
     if (this.deps.viewedId() !== this.characterId && this.deps.now() - (this.state.snapshotAt ?? -Infinity) > LANE_SNAPSHOT_REFRESH_MS) {
       this.requestSnapshot('背景角色定時更新');
     }
