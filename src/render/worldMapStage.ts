@@ -19,9 +19,12 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
   private labels = new Map<string, Text>();
   private view: WorldMapView | null = null;
   private destroyed = false;
-  private readonly onResize = (): void => { this.draw(); };
+  private rafId: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private readonly onResize = (): void => { this.draw(false); };
 
   async mount(host: HTMLElement): Promise<boolean> {
+    if (this.destroyed) return false;
     if (typeof window === 'undefined' || typeof document === 'undefined') return false;
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
     if (/HappyDOM|jsdom|Node\.js/i.test(ua)) return false;
@@ -30,6 +33,7 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
       const app = new Application();
       await app.init({
         resizeTo: host,
+        autoStart: false,
         antialias: true,
         backgroundAlpha: 1,
         backgroundColor: 0x0e1520,
@@ -37,7 +41,8 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
         autoDensity: true,
       });
       if (this.destroyed) {
-        app.destroy(true);
+        // 避免傳 true 觸發 PixiJS v8 GlobalResourceRegistry.release() 而破壞同頁其他舞台的 Batch 池
+        app.destroy({ removeView: true }, { children: true });
         return false;
       }
       this.app = app;
@@ -49,8 +54,20 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
       host.appendChild(app.canvas);
       app.stage.addChild(this.gfx);
       app.renderer.on('resize', this.onResize);
-      this.draw();
-      requestAnimationFrame(() => this.draw());
+      if (typeof ResizeObserver === 'function') {
+        const obs = new ResizeObserver(() => {
+          if (!this.destroyed && this.app?.renderer && host.clientWidth > 0 && host.clientHeight > 0) {
+            this.app.resize();
+          }
+        });
+        obs.observe(host);
+        this.resizeObserver = obs;
+      }
+      this.draw(true);
+      this.rafId = requestAnimationFrame(() => {
+        this.rafId = null;
+        this.draw(true);
+      });
       return true;
     } catch {
       return false;
@@ -58,26 +75,35 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
   }
 
   setView(view: WorldMapView): void {
+    if (this.destroyed) return;
     this.view = view;
-    this.draw();
+    this.draw(true);
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.view = null;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     const app = this.app;
     this.app = null;
     if (!app) return;
-    app.renderer.off('resize', this.onResize);
+    app.renderer?.off('resize', this.onResize);
     for (const t of this.labels.values()) t.destroy();
     this.labels.clear();
-    app.destroy(true, { children: true });
+    // 僅移除本實例畫布與子節點，不全域釋放共用池，免得同頁 GameViewport 下幀 batch.textures 為 null
+    app.destroy({ removeView: true }, { children: true });
   }
 
-  private draw(): void {
+  private draw(shouldRender = true): void {
     const app = this.app;
     const view = this.view;
-    if (!app || !view || view.empty) return;
+    if (this.destroyed || !app || !app.renderer || !view || view.empty) return;
     const W = app.screen.width;
     const H = app.screen.height;
     if (W < 2 || H < 2) return;
@@ -169,6 +195,9 @@ export class PixiWorldMapRenderer implements WorldMapRenderer {
     for (const [id, label] of this.labels) {
       if (seen.has(id)) continue;
       label.visible = false;
+    }
+    if (shouldRender && !this.destroyed && app.renderer) {
+      app.render();
     }
   }
 
