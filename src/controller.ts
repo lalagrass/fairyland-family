@@ -187,6 +187,7 @@ export class FamilyController {
       startGather: (id, g: GatherSpec, stop: DispatchStop) => {
         const q = this.getOrCreateQueue(id);
         q.setStopConditions({ stopOnBagFull: stop.stopOnBagFull, minSatiety: stop.minSatiety });
+        if (id !== this.state.characterId) this.laneFor(id).requestSnapshot('背景採集啟動');
         q.enqueue({
           kind: 'GATHER',
           skillId: g.skillId,
@@ -278,6 +279,7 @@ export class FamilyController {
         viewedId: () => this.state.characterId,
         staticData: () => this.state.staticData,
         questHeldElsewhere: (questId, cid) => this.questHolder(questId, cid),
+        queueActive: cid => Boolean(this.queues.get(cid)?.isActive()),
       });
       // 視角角色的畫面狀態就是它自己的快照：直接拿來當起點，不用再等一份。
       if (id === this.state.characterId && this.state.snapshot) lane.state = { ...this.state, pending: {}, inflight: {} };
@@ -397,9 +399,19 @@ export class FamilyController {
     return lane?.active() ? lane : undefined;
   }
 
+  private backgroundQueueLaneFor(charId: string | null | undefined): CharacterLane | undefined {
+    if (!charId || charId === this.state.characterId) return undefined;
+    if (!this.queues.get(charId)?.isActive()) return undefined;
+    const lane = this.lanes.get(charId);
+    return lane?.ready() ? lane : undefined;
+  }
+
   private makeQueueHost(getCharId: () => string | undefined): QueueHost {
     const self = this;
-    const activeLane = () => self.activeLaneFor(getCharId());
+    const activeLane = () => {
+      const id = getCharId();
+      return self.activeLaneFor(id) ?? self.backgroundQueueLaneFor(id);
+    };
     return {
       get characterId() {
         return getCharId();
@@ -418,13 +430,22 @@ export class FamilyController {
         self.emit();
       },
       after: (ms: number, fn: () => void) => self.after(ms, fn),
+      now: () => self.now(),
       get navigator() {
         return activeLane()?.navigator ?? self.navigator;
       },
       onChange: () => self.emit(),
+      requestSnapshot: (id: string) => {
+        if (id === self.state.characterId) {
+          self.send({ type: 'REQUEST_SNAPSHOT' }, '要求快照（背景採集）');
+          return;
+        }
+        self.laneFor(id).requestSnapshot('背景採集');
+      },
       requestView: (id: string) => {
-        // F8：有派工通道在跑的角色，其走路與採集都在背景通道自行完成，不借用也不搶主視角。
-        if (self.activeLaneFor(id)) return;
+        // F8 / #63：有派工通道在跑的角色（含 FX17+ 已取得獨立通道快照的背景採集）不借用也不搶主視角；
+        // 僅在舊版宿主回傳 WRONG_CHARACTER（不支援背景走路／開商店）時才退回借視角。
+        if (self.activeLaneFor(id) || self.backgroundQueueLaneFor(id)) return;
         self.requestViewFor(id);
       },
     };
@@ -513,7 +534,7 @@ export class FamilyController {
       if (lane?.ownsSnapshotRequest(raw.inReplyTo)) {
         this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
         lane.onMessage(raw);
-        if (lane.active()) this.getOrCreateQueue(raw.characterId).onMessage(raw);
+        if (lane.active() || this.queues.get(raw.characterId)?.isActive()) this.getOrCreateQueue(raw.characterId).onMessage(raw);
         this.settlePendingLaneQuests();
         this.emit();
         return;
@@ -569,12 +590,14 @@ export class FamilyController {
     else lane?.onMessage(m);
     if (this.queues.size === 0) {
       const owner = this.primaryCharacterId ?? this.state.characterId;
-      if (m.kind !== 'snapshot' || !this.activeLaneFor(owner) || m.characterId === owner) {
+      const isolated = Boolean(this.activeLaneFor(owner) ?? this.backgroundQueueLaneFor(owner));
+      if (m.kind !== 'snapshot' || !isolated || m.characterId === owner) {
         this.queue.onMessage(m);
       }
     } else if (m.kind === 'snapshot') {
       for (const [id, q] of this.queues) {
-        if (!this.activeLaneFor(id) || m.characterId === id) q.onMessage(m);
+        const isolated = Boolean(this.activeLaneFor(id) ?? this.backgroundQueueLaneFor(id));
+        if (!isolated || m.characterId === id) q.onMessage(m);
       }
     } else if (m.kind === 'heartbeat') {
       for (const q of this.queues.values()) q.onMessage(m);
@@ -695,6 +718,16 @@ export class FamilyController {
     this.settleViewLoan();
     this.settlePendingLaneQuests();
     this.dispatcher.tick();
+    for (const [id, q] of this.queues) {
+      if (id !== this.state.characterId && q.isActive()) {
+        const lane = this.laneFor(id);
+        if (!lane.active() && lane.ready()) {
+          const configured = this.strategyStore.get(id).battleStrategy;
+          const targetStrat = configured === 'MANUAL' ? 'FLEE' : configured;
+          if (lane.battler.getStrategy() !== targetStrat) lane.battler.setStrategy(targetStrat);
+        }
+      }
+    }
     for (const lane of this.lanes.values()) lane.tick();
     if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();

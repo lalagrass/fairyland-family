@@ -292,4 +292,54 @@ suite('F7 採集派工：假宿主確認換圖後才開工，找不到路時不�
   assert(foreignFailure.queue.isActive() && foreignFailure.sent.length === 3, '手動路線失敗不算採集停工；結束後重新規劃採集');
 }
 
+suite('F8 (#63) FX17 背景採集：遠距採集在背景自行走近，不搶主視角也不中斷前景 QUEST_CHAIN_START');
+{
+  const w = createWorld({ fx17: true, startOffsetA: 700, bagCapA: 70, questCount: 200, questStepMs: 2000, gatherMs: 4000 });
+  w.boot();
+  assert(w.ctrl.perform({ kind: 'QUEST_CHAIN_START', label: '前景手動任務鏈' }) === null, '啟動前景手動 QUEST_CHAIN_START');
+  w.advance(4_000);
+  const completedBefore = w.questsOf('char_1').filter(q => q.status === 'COMPLETED').length;
+  assert(w.ctrl.dispatcher.assign('char_2', gatherSpec) === null, '背景派工遠距採集');
+  w.advance(40_000);
+  const switches = w.sent.filter(c => c.command.type === 'SWITCH_VIEW_CHARACTER');
+  const walkBg = w.sent.filter(c => c.characterId === 'char_2' && c.command.type === 'WALK_TO');
+  const workBg = w.sent.filter(c => c.characterId === 'char_2' && c.command.type === 'WORK_ONCE');
+  assert(switches.length === 0, `FX17 背景採集不應送 SWITCH_VIEW_CHARACTER（實際 ${switches.length}）`);
+  assert(walkBg.length >= 1, '背景角色自己在背景送 WALK_TO 走近採集點');
+  assert(workBg.length >= 1 && w.chars.char_2.bag >= 1, '走近後在背景成功採集');
+  assert(w.viewed === 'char_1' && w.ctrl.chainStatus().phase !== 'STOPPED', '主視角維持 char_1，前景任務鏈未中斷');
+  assert(w.questsOf('char_1').filter(q => q.status === 'COMPLETED').length > completedBefore, '前景任務鏈持續推進完成任務');
+}
+
+suite('F8 (#63) FX17 背景採集：視角角色跨圖後，背景採集仍只讀自己的通道快照且遇敵會自動脫身');
+{
+  const w = createWorld({ fx17: true, startOffsetA: 40, bagCapA: 70, questCount: 0, gatherMs: 4000 });
+  w.boot();
+  // 先讓 char_1 送出一張不同地圖（99002）的視角快照，驗證 char_2 背景採集不會誤讀視角地圖的 gatherPoints
+  const foreignSnap = JSON.parse(JSON.stringify(w.snapshotFor('char_1')));
+  foreignSnap.mapId = '99002';
+  foreignSnap.mapName = '遠方地圖';
+  foreignSnap.gatherPoints = { status: 'AVAILABLE', points: [] };
+  foreignSnap.nearbyGatherPoints = [{
+    id: 'gp_99002_only', name: '遠方採集點', mapId: '99002', mapName: '遠方地圖',
+    x: 100, y: 100, skillId: 5, skillName: '挖礦', requiredToolItemId: null,
+    materials: [{ itemId: 90001, name: '虛構礦石', reqLevel: 1 }],
+  }];
+  w.push({ v: PROTOCOL_VERSION, characterId: 'char_1', ts: w.t, kind: 'snapshot', seq: 999, reason: 'REQUESTED', snapshot: foreignSnap });
+  w.advance(250, 250);
+  assert(w.ctrl.dispatcher.assign('char_2', gatherSpec) === null, '視角在遠方地圖時派工背景採集');
+  w.advance(10_000);
+  const d2 = w.ctrl.dispatches().find(r => r.characterId === 'char_2');
+  assert(d2?.phase === 'RUNNING' && d2.stopped === null && w.chars.char_2.bag >= 1, `背景採集等自己快照後正常開採，未誤判遠方地圖 TOO_FAR（${d2?.phase}/${d2?.stopped?.code}）`);
+
+  // 模擬背景採集途中遇敵：即使預設策略是 MANUAL，背景通道也會自動逃跑並繼續採集
+  w.emitEvent('char_2', { type: 'BATTLE_STARTED', battleId: 77, mapId: '99001', enemies: [] });
+  w.emitEvent('char_2', {
+    type: 'BATTLE_TURN_READY', battleId: 77, round: 1, canFlee: true,
+    enemies: [{ slot: 0, id: 'mob_1', name: '虛構史萊姆', hp: 20, maxHp: 20, isDead: false }],
+  });
+  w.advance(1_000);
+  assert(w.sent.some(c => c.characterId === 'char_2' && c.command.type === 'BATTLE_FLEE'), '背景採集遇敵會送 BATTLE_FLEE 脫身');
+}
+
 done();
