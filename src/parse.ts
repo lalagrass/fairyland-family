@@ -28,6 +28,7 @@ export type UiAction =
       targetCharacterId?: string;
     }
   | { kind: 'QUEUE_CRAFT'; recipeId: number; recipeName: string; count: number; label: string; targetCharacterId?: string }
+  | { kind: 'QUEUE_SAVE'; label: string }
   | { kind: 'QUEUE_STOP'; label: string; targetCharacterId?: string }
   | { kind: 'QUEUE_REMOVE'; index: number; label: string; targetCharacterId?: string }
   | { kind: 'QUEUE_REORDER'; fromIndex: number; toIndex: number; label: string; targetCharacterId?: string }

@@ -12,6 +12,7 @@ import {
   createNavigationModule,
   createWorkQueueModule,
 } from './automation/modules/coreModules';
+import { InventoryModule } from './automation/modules/inventoryModule';
 import { ExampleRestMonitorModule } from './automation/modules/exampleRestModule';
 import { QuestChainModule } from './automation/modules/questChainModule';
 import { QuestBehaviorModule } from './automation/modules/questModule';
@@ -125,7 +126,7 @@ export class FamilyController {
         }
       },
     });
-    this.battler = new AutoBattler(host, opts.storage ?? null);
+    this.battler = new AutoBattler(host, opts.storage ?? null, () => this.strategyStore.get(this.state.characterId).skillPolicy);
     const self = this;
     this.queue = new WorkQueue(
       this.makeQueueHost(() => self.primaryCharacterId ?? self.state.characterId ?? undefined),
@@ -161,6 +162,7 @@ export class FamilyController {
     this.automation.register(createWorkQueueModule(cid => (cid ? this.getOrCreateQueue(cid) : this.queue)));
     this.automation.register(this.questModule);
     this.automation.register(this.questChain);
+    this.automation.register(new InventoryModule());
     this.automation.register(new ExampleRestMonitorModule());
     for (const extra of opts.extraModules ?? []) {
       this.automation.register(extra);
@@ -810,6 +812,9 @@ export class FamilyController {
     }
     if (action.kind === 'CHAR_STRATEGY_UPDATE') {
       const updated = this.strategyStore.update(action.characterId, action.patch);
+      if (action.patch.inventoryPolicy && this.status() === 'RUNNING' && action.characterId === this.state.characterId) {
+        this.send({ type: 'REQUEST_SNAPSHOT' }, '套用背包策略');
+      }
       if (action.patch.battleStrategy && action.characterId === (this.state.characterId ?? this.state.activeCharacterId)) {
         this.battler.setStrategy(updated.battleStrategy);
       }

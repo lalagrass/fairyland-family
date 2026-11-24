@@ -72,6 +72,7 @@ export interface QueueStopConditions {
 }
 
 export interface QueueStatus {
+  persistence?: 'memory' | 'ready' | 'saved' | 'error';
   phase: QueuePhase;
   jobs: WorkJob[];
   activeJobIndex: number;
@@ -206,10 +207,18 @@ export class WorkQueue {
     this.load();
   }
 
+  private savedState: QueueStatus['persistence'] = 'ready';
+
+  saveNow(): void {
+    this.persist();
+    this.host.onChange();
+  }
+
   getStatus(): QueueStatus {
     return {
       phase: this.phase,
       jobs: this.jobs.map(j => ({ ...j })),
+      persistence: this.storage ? this.savedState : 'memory',
       activeJobIndex: this.activeJobIndex,
       stopReason: this.stopReason,
       text: this.text,
@@ -990,8 +999,9 @@ export class WorkQueue {
           stopConditions: this.stopConditions,
         })
       );
+      this.savedState = 'saved';
     } catch {
-      /* ignore storage quota */
+      this.savedState = 'error';
     }
   }
 
@@ -1000,6 +1010,7 @@ export class WorkQueue {
       const raw = this.storage?.getItem(this.storageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<QueueStatus>;
+      this.savedState = 'saved';
       if (Array.isArray(parsed.jobs)) this.jobs = parsed.jobs;
       if (typeof parsed.activeJobIndex === 'number') this.activeJobIndex = parsed.activeJobIndex;
       if (typeof parsed.phase === 'string') this.phase = parsed.phase as QueuePhase;

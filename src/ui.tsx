@@ -24,6 +24,8 @@ import { buildMenu, type MenuItem } from './menu';
 import type { NavStatus } from './navigator';
 import {
   getNotificationPermission,
+  notificationsEnabled,
+  setNotificationsEnabled,
   requestNotificationPermission,
   type NotificationPermissionState,
 } from './notify';
@@ -45,6 +47,7 @@ import { CharacterStats } from './panels/CharacterStats';
 import { ItemColumn } from './panels/ItemColumn';
 import { ItemMoveRoot } from './panels/ItemMoveRoot';
 import { PanelMark } from './panels/marks';
+import { InventoryRules, SkillPriorities } from './panels/TrainingPolicies';
 import { SkillPanel } from './panels/SkillPanel';
 import { DispatchPanel } from './panels/DispatchPanel';
 import type { LaneSummary } from './lanes';
@@ -427,8 +430,24 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [paletteIdx, setPaletteIdx] = useState(0);
   const [dragJobIdx, setDragJobIdx] = useState<number | null>(null);
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
-  const [tagFilter, setTagFilter] = useState<LogTag | 'ALL'>('ALL');
-  const [charFilter, setCharFilter] = useState<string | 'ALL'>('ALL');
+  const [tagFilter, changeTagFilter] = useState<LogTag | 'ALL'>(() => {
+    try {
+      const saved = window.localStorage.getItem('family.log.tag') as LogTag;
+      return LOG_TAGS.includes(saved) ? saved : 'ALL';
+    } catch { return 'ALL'; }
+  });
+  const setTagFilter = (value: LogTag | 'ALL') => {
+    changeTagFilter(value);
+    try { window.localStorage.setItem('family.log.tag', value); } catch { /* memory only */ }
+  };
+  const [notifyEnabled, setNotifyEnabled] = useState(notificationsEnabled);
+  const [charFilter, changeCharFilter] = useState(() => {
+    try { return window.localStorage.getItem('family.log.character') ?? 'ALL'; } catch { return 'ALL'; }
+  });
+  const setCharFilter = (value: string) => {
+    changeCharFilter(value);
+    try { window.localStorage.setItem('family.log.character', value); } catch { /* memory only */ }
+  };
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermissionState>(() => getNotificationPermission());
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [dispatchErr, setDispatchErr] = useState('');
@@ -484,6 +503,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const handleRequestNotify = async () => {
     const perm = await requestNotificationPermission();
     setNotifyPerm(perm);
+    if (perm === 'granted') { setNotificationsEnabled(true); setNotifyEnabled(true); }
   };
 
   const renderMenuRow = (label: string, items: MenuItem[], empty: string) => (
@@ -603,6 +623,12 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
     return state.activeCharacterId ?? snap?.family?.activeCharacterId ?? null;
   }, [watchCharacterId, state.members, state.activeCharacterId, snap?.family?.activeCharacterId]);
 
+  const viewedId = state.characterId;
+  const charConfig = (viewedId && aux.charStrategies?.[viewedId]) || DEFAULT_CHARACTER_STRATEGY;
+  const saveCharacterPolicy = (patch: Partial<CharacterStrategyConfig>) => {
+    if (viewedId) handleAction({ kind: 'CHAR_STRATEGY_UPDATE', characterId: viewedId, patch, label: '更新角色自動化設定' });
+  };
+  const viewedDispatch = aux.dispatches?.find(record => record.characterId === viewedId);
   const wh = state.warehouse;
   const staleSnap = Boolean(snap && state.location && snap.mapId !== state.location.mapId);
   const sceneTitle = state.location ? `${state.location.mapName ?? state.location.mapId}` : '（未知）';
@@ -753,12 +779,23 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               data-testid="notify-perm-btn"
               onClick={handleRequestNotify}
             >
-              {notifyPerm === 'granted' ? '背景通知已開啟' : notifyPerm === 'denied' ? '通知已封鎖' : '開啟背景通知'}
+              {notifyPerm === 'granted' && notifyEnabled ? '背景通知已開啟' : notifyPerm === 'denied' ? '通知已封鎖' : '開啟背景通知'}
             </button>
           )}
         </div>
       </header>
 
+      {state.members.length > 0 && <nav className="f10-members" aria-label="切換家族角色">
+        {state.members.map(member => <button type="button" className="item" key={member.characterId}
+          data-testid={`f10-member-${member.characterId}`} aria-pressed={viewedId === member.characterId}
+          disabled={!running}
+          onClick={() => {
+            setWatchCharacterId(null);
+            if (member.characterId !== viewedId) handleAction(cmdAction(
+              { type: 'SWITCH_VIEW_CHARACTER', characterId: member.characterId }, `切換視角 ${member.name ?? member.characterId}`,
+            ));
+          }}>{member.name ?? member.characterId}</button>)}
+      </nav>}
       <Tabs.Root value={mobileTab} onValueChange={v => setMobileTab(v as MobileTab)}>
         <Tabs.List className="mobile-tabs" data-testid="mobile-tabs" aria-label="手機版分頁切換">
           <Tabs.Trigger
@@ -1009,6 +1046,8 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                         <span>{`MP ${c.mp ?? '?'}/${c.maxMp ?? '?'}`}</span>
                         <span data-testid="gold">{`金錢 ${c.gold}`}</span>
                         <span data-testid="region" data-region-id={snap?.region?.regionId ?? ''}>{`區域 ${regionLabel(snap?.region)}`}</span>
+                        <span data-testid="f10-map">地圖 {sceneTitle}</span>
+                        <span data-testid="f10-dispatch">派工 {viewedDispatch?.text || '閒置'}</span>
                         <span data-testid="pos">{`位置 (${c.x}, ${c.y})`}</span>
                         <span data-testid="satiety">{`飽食 ${c.satiety ?? 100}/${c.maxSatiety ?? 100}`}</span>
                         <span data-testid="bag-cap">{`背包 ${invUsed}/${c.inventoryCap ?? 40}`}</span>
@@ -1049,7 +1088,10 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               </section>
             </Tabs.Content>
             <Tabs.Content value="skills" forceMount className="workbench-pane">
-              <SkillPanel skills={state.staticData?.skills ?? []} />
+              {viewedId && <SkillPriorities skills={state.staticData?.skills ?? []} policy={charConfig.skillPolicy}
+                save={skillPolicy => saveCharacterPolicy({ skillPolicy })} />}
+              <SkillPanel skills={state.staticData?.skills ?? []} workSkills={c?.workSkills}
+                points={snap?.gatherPoints.points} characterName={c?.name ?? viewedId} />
             </Tabs.Content>
             <Tabs.Content value="inventory" forceMount className="workbench-pane">
               <ItemMoveRoot onCommand={(command, label) => handleAction(cmdAction(command, label))}>
@@ -1120,8 +1162,38 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                   </section>
                 </div>
               </ItemMoveRoot>
+              {viewedId && <InventoryRules items={state.inventory} policy={charConfig.inventoryPolicy}
+                save={inventoryPolicy => saveCharacterPolicy({ inventoryPolicy })} />}
             </Tabs.Content>
             <Tabs.Content value="settings" forceMount className="workbench-pane">
+              <section data-testid="f10-system"><h2>系統設定</h2>
+                <div className="f10-controls">
+                  <label>角色檢視模式<select data-testid="f10-view-mode" disabled={!viewedId}
+                    value={(viewedId && aux.viewModes?.[viewedId]) || 'original'}
+                    onChange={e => viewedId && handleAction({ kind: 'CHAR_VIEWMODE_UPDATE', characterId: viewedId,
+                      viewMode: e.target.value as ViewMode, label: '變更角色檢視模式' })}>
+                    <option value="original">原版</option><option value="modern">現代</option>
+                  </select></label>
+                  <label>事件日誌<select data-testid="f10-log-tag" value={tagFilter}
+                    onChange={e => setTagFilter(e.target.value as LogTag | 'ALL')}>
+                    <option value="ALL">全部標籤</option>
+                    {LOG_TAGS.map(tag => <option key={tag}>{tag}</option>)}
+                  </select></label>
+                  <label>背景通知<select data-testid="f10-notify" value={notifyEnabled && notifyPerm === 'granted' ? 'on' : 'off'}
+                    disabled={notifyPerm === 'unsupported' || notifyPerm === 'denied'} onChange={e => {
+                      if (e.currentTarget.value === 'on') void handleRequestNotify();
+                      else { setNotificationsEnabled(false); setNotifyEnabled(false); }
+                    }}>
+                    <option value="off">{notifyPerm === 'unsupported' ? '瀏覽器不支援' : notifyPerm === 'denied' ? '瀏覽器已封鎖' : '關閉'}</option>
+                    <option value="on">開啟</option>
+                  </select></label>
+                </div>
+                <div className="f10-queue"><span data-testid="f10-queue-state">角色佇列 · {activeQueue.jobs.length} 件工作 · {
+                  activeQueue.persistence === 'saved' ? '已儲存' : activeQueue.persistence === 'error' ? '儲存失敗'
+                  : activeQueue.persistence === 'ready' ? '等待儲存' : '記憶體模式'
+                }</span><button type="button" className="item" disabled={!viewedId || activeQueue.persistence === 'memory'}
+                    onClick={() => handleAction({ kind: 'QUEUE_SAVE', label: '儲存角色佇列' })}>立即儲存</button></div>
+              </section>
               {(() => {
                 const targetCid = state.characterId;
                 if (!targetCid || !c) {

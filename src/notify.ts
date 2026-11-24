@@ -9,6 +9,16 @@ export interface NotificationAdapter {
   send(title: string, body: string): void;
 }
 
+let enabledInMemory = true;
+export function notificationsEnabled(): boolean {
+  try { return (window.localStorage.getItem('family.notifications') ?? String(enabledInMemory)) !== 'false'; }
+  catch { return enabledInMemory; }
+}
+export function setNotificationsEnabled(enabled: boolean) {
+  enabledInMemory = enabled;
+  try { window.localStorage.setItem('family.notifications', String(enabled)); } catch { /* memory only */ }
+}
+
 function browserAdapter(): NotificationAdapter {
   return {
     isHidden: () => (typeof document !== 'undefined' ? Boolean(document.hidden) : false),
@@ -17,7 +27,7 @@ function browserAdapter(): NotificationAdapter {
       return Notification.permission;
     },
     send: (title, body) => {
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      if (notificationsEnabled() && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         new Notification(title, { body });
       }
     },

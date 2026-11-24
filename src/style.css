@@ -483,3 +483,13 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   .quest-card-actions { flex-direction: column; }
   .quest-card-actions .item { width: 100%; min-height: 40px; }
 }
+
+.f10-members { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; }
+.f10-members button { max-width: 100%; overflow-wrap: anywhere; }
+.f10-members [aria-pressed='true'] { border-color: var(--accent); font-weight: 700; }
+.f10-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); gap: 8px; }
+.f10-controls label, .f10-rule { display: grid; gap: 4px; min-width: 0; }
+.f10-controls select, .f10-controls input { width: 100%; min-width: 0; box-sizing: border-box; }
+.f10-policy-row, .f10-queue { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.f10-policy-row span { margin-right: auto; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .f10-controls { grid-template-columns: minmax(0, 1fr); } }

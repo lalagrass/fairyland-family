@@ -8,7 +8,7 @@ import {
   useLegacyTable,
 } from '@tanstack/react-table/legacy';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { StaticSkillSummary } from '../protocol/types';
+import type { SnapshotGatherPoint, StaticSkillSummary } from '../protocol/types';
 import { PanelMark } from './marks';
 
 const helper = legacyCreateColumnHelper<StaticSkillSummary>();
@@ -19,7 +19,7 @@ const columns = [
   helper.accessor('reqLevel', { header: '需求等級' }),
 ];
 
-export function SkillPanel(props: { skills: StaticSkillSummary[] }) {
+export function SkillPanel(props: { skills: StaticSkillSummary[]; workSkills?: Record<number, number>; points?: SnapshotGatherPoint[]; characterName?: string | null }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [filter, setFilter] = useState('');
   const parentRef = React.useRef<HTMLDivElement>(null);
@@ -47,6 +47,12 @@ export function SkillPanel(props: { skills: StaticSkillSummary[] }) {
 
   return (
     <section data-testid="skill-panel">
+      {props.characterName && <div data-testid="f10-character-skills">
+        <h2><PanelMark kind="skill" />{props.characterName}的工作技能</h2>
+        {Object.entries(props.workSkills ?? {}).map(([id, level]) =>
+          <span key={id} className="pill">{props.points?.find(p => p.skillId === Number(id))?.skillName ?? `#${id}`} Lv.{level}</span>)}
+        {!Object.keys(props.workSkills ?? {}).length && <span className="muted">尚無技能資料</span>}
+      </div>}
       <h2><PanelMark kind="skill" />宿主技能表</h2>
       <p className="muted">此為遊戲技能目錄，不代表目前角色已習得。</p>
       <div className="fm7-toolbar">

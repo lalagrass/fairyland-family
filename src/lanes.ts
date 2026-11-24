@@ -102,7 +102,7 @@ export class CharacterLane {
       },
     });
     // 通道的戰鬥策略不存檔（存檔的是視角角色的策略）；任務鏈開始時會依任務設定攻擊或捕捉。
-    this.battler = new AutoBattler(base, null);
+    this.battler = new AutoBattler(base, null, () => deps.strategyFor(id).skillPolicy);
     this.quest = new QuestBehaviorModule({
       ...ctx,
       navigator: this.navigator,

@@ -2,7 +2,47 @@ import type { BattleStrategy } from '../battler';
 
 export type BagFullPolicy = 'STOP' | 'NOTIFY' | 'SELL';
 
+export interface InventoryPolicy {
+  keep: number[];
+  deposit: number[];
+  hpItem: number | null;
+  hpThreshold: number;
+  staminaItem: number | null;
+  staminaThreshold: number;
+}
+
+export interface SkillPolicy {
+  attack: string | null;
+  heal: string | null;
+  healThreshold: number;
+}
+
+export const DEFAULT_INVENTORY_POLICY: InventoryPolicy = {
+  keep: [], deposit: [], hpItem: null, hpThreshold: 0, staminaItem: null, staminaThreshold: 0,
+};
+export const DEFAULT_SKILL_POLICY: SkillPolicy = { attack: null, heal: null, healThreshold: 0 };
+
+const pct = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 0;
+const itemId = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+const itemList = (v: unknown): number[] => Array.isArray(v) ? [...new Set(v.filter(id => itemId(id) !== null))] : [];
+
+function inventoryPolicy(raw: Partial<InventoryPolicy>): InventoryPolicy {
+  const keep = itemList(raw.keep);
+  return {
+    keep, deposit: itemList(raw.deposit).filter(id => !keep.includes(id)),
+    hpItem: itemId(raw.hpItem), hpThreshold: pct(raw.hpThreshold),
+    staminaItem: itemId(raw.staminaItem), staminaThreshold: pct(raw.staminaThreshold),
+  };
+}
+
+function skillPolicy(raw: Partial<SkillPolicy>): SkillPolicy {
+  const key = (v: unknown) => typeof v === 'string' && /^(SKILL|SPELL):\d+$/.test(v) ? v : null;
+  return { attack: key(raw.attack), heal: key(raw.heal), healThreshold: pct(raw.healThreshold) };
+}
+
 export interface CharacterStrategyConfig {
+  inventoryPolicy?: InventoryPolicy;
+  skillPolicy?: SkillPolicy;
   battleStrategy: BattleStrategy;
   /** HP 低於此百分比（0..90，0=關閉）時自動傾向撤退／逃跑。 */
   lowHpRetreatPct: number;
@@ -44,7 +84,10 @@ export class CharacterStrategyStore {
       const parsed = JSON.parse(raw) as Record<string, Partial<CharacterStrategyConfig>>;
       for (const [id, cfg] of Object.entries(parsed)) {
         if (!id || !cfg || typeof cfg !== 'object') continue;
-        this.map.set(id, { ...DEFAULT_CHARACTER_STRATEGY, ...cfg });
+        this.map.set(id, {
+          ...DEFAULT_CHARACTER_STRATEGY, ...cfg,
+          inventoryPolicy: inventoryPolicy(cfg.inventoryPolicy ?? {}), skillPolicy: skillPolicy(cfg.skillPolicy ?? {}),
+        });
       }
     } catch {
       // 忽略損毀的舊設定
@@ -74,6 +117,8 @@ export class CharacterStrategyStore {
     const key = characterId || '_default';
     const current = this.get(key);
     const next: CharacterStrategyConfig = {
+      inventoryPolicy: inventoryPolicy(patch.inventoryPolicy ?? current.inventoryPolicy ?? {}),
+      skillPolicy: skillPolicy(patch.skillPolicy ?? current.skillPolicy ?? {}),
       battleStrategy: patch.battleStrategy ?? current.battleStrategy,
       lowHpRetreatPct: Math.max(0, Math.min(90, Math.round(patch.lowHpRetreatPct ?? current.lowHpRetreatPct))),
       bagFullPolicy: patch.bagFullPolicy ?? current.bagFullPolicy,
