@@ -1,6 +1,7 @@
 /** W-FamilyUI (#149): Loopback-only HTTP + WebSocket client for Wine background training bridge. */
 
 export type WineHotkey = 'F7' | 'F8';
+export type WineQuickKey = 'F1' | 'F2' | 'F3' | 'F4' | 'F5' | 'F6' | 'F7' | 'F8';
 export type WinePreferredAction = 'skill' | 'attack';
 export type BridgeConnState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED';
 
@@ -10,12 +11,32 @@ export interface WineBgConfig {
   hotkey: WineHotkey;
   preferred: WinePreferredAction;
   healAtPct: number;
+  healHotkey?: WineQuickKey | null;
+  healUsesPotion?: boolean;
+  mapHealHpPct?: number;
+  mapHealMpPct?: number;
+  mapHealHpKey?: WineQuickKey;
+  mapHealMpKey?: WineQuickKey;
   stopHpPct: number;
   stopMpPct: number;
   maxMinutes: number | null;
   maxRoundTrips: number | null;
   windowTitle: string;
   wid: number | null;
+}
+
+export interface WineBridgeStorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export interface WineBridgeSavedSettings {
+  baseUrl: string;
+  config: WineBgConfig | null;
+  previewEnabled: boolean;
+  previewOverlay: boolean;
+  previewIntervalMs: number;
+  microDistance: number;
 }
 
 export interface WineBridgeEvent {
@@ -30,6 +51,13 @@ export interface WineBridgeEvent {
   [k: string]: unknown;
 }
 
+export interface WineFrameInfo {
+  scene: string | null;
+  hpPct: number | null;
+  mpPct: number | null;
+  position: [number, number] | null;
+}
+
 export interface WineBridgeStatus {
   ok: boolean;
   connected: boolean;
@@ -38,6 +66,7 @@ export interface WineBridgeStatus {
   scene: string;
   hpPct: number | null;
   mpPct: number | null;
+  position?: [number, number] | null;
   roundTrips: number;
   encounters: number;
   turns: number;
@@ -82,6 +111,11 @@ export interface WineBridgeTransport {
 }
 
 export const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:4182';
+export const WINE_SETTINGS_STORAGE_KEY = 'fairyland_family:wine_bridge_settings:v1';
+export const DEFAULT_PREVIEW_INTERVAL_MS = 1000;
+export const DEFAULT_MICRO_DISTANCE = 25;
+export const MICRO_PATROL_START_X = 390;
+export const MAX_MICRO_DISTANCE = 800 - MICRO_PATROL_START_X;
 
 export const DEFAULT_WINE_CONFIG: WineBgConfig = {
   patrolA: [260, 300],
@@ -89,6 +123,12 @@ export const DEFAULT_WINE_CONFIG: WineBgConfig = {
   hotkey: 'F7',
   preferred: 'skill',
   healAtPct: 35,
+  healHotkey: null,
+  healUsesPotion: false,
+  mapHealHpPct: 0,
+  mapHealMpPct: 0,
+  mapHealHpKey: 'F1',
+  mapHealMpKey: 'F2',
   stopHpPct: 15,
   stopMpPct: 0,
   maxMinutes: 30,
@@ -127,6 +167,115 @@ export function bridgeWebSocketUrl(baseHttpUrl: string): string | null {
   return norm.replace(/^http/, 'ws') + '/events';
 }
 
+export function framePreviewUrl(
+  baseHttpUrl: string,
+  overlay: boolean,
+): string | null {
+  const base = normalizeLoopbackBridgeUrl(baseHttpUrl);
+  return base ? `${base}/frame?overlay=${overlay ? '1' : '0'}&w=480` : null;
+}
+
+function sanitizeConfig(raw: Partial<WineBgConfig> | null | undefined): WineBgConfig {
+  const base = { ...DEFAULT_WINE_CONFIG };
+  if (!raw || typeof raw !== 'object') return base;
+  const validPt = (p: unknown): p is [number, number] =>
+    Array.isArray(p) &&
+    p.length === 2 &&
+    typeof p[0] === 'number' &&
+    Number.isFinite(p[0]) &&
+    typeof p[1] === 'number' &&
+    Number.isFinite(p[1]);
+  if (validPt(raw.patrolA)) {
+    base.patrolA = [Math.max(0, Math.min(800, Math.round(raw.patrolA[0]))), Math.max(0, Math.min(600, Math.round(raw.patrolA[1])))];
+  }
+  if (validPt(raw.patrolB)) {
+    base.patrolB = [Math.max(0, Math.min(800, Math.round(raw.patrolB[0]))), Math.max(0, Math.min(600, Math.round(raw.patrolB[1])))];
+  }
+  if (raw.hotkey === 'F7' || raw.hotkey === 'F8') base.hotkey = raw.hotkey;
+  if (raw.preferred === 'skill' || raw.preferred === 'attack') base.preferred = raw.preferred;
+  const clamp = (v: unknown, min: number, max: number, fb: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : fb;
+  base.healAtPct = clamp(raw.healAtPct, 0, 100, base.healAtPct);
+  base.mapHealHpPct = clamp(raw.mapHealHpPct, 0, 100, base.mapHealHpPct ?? 0);
+  base.mapHealMpPct = clamp(raw.mapHealMpPct, 0, 100, base.mapHealMpPct ?? 0);
+  base.stopHpPct = clamp(raw.stopHpPct, 0, 99, base.stopHpPct);
+  base.stopMpPct = clamp(raw.stopMpPct, 0, 99, base.stopMpPct);
+  const validQk = (k: unknown): k is WineQuickKey =>
+    typeof k === 'string' && /^F[1-8]$/.test(k);
+  if (raw.healHotkey === null || validQk(raw.healHotkey)) base.healHotkey = raw.healHotkey;
+  if (typeof raw.healUsesPotion === 'boolean') base.healUsesPotion = raw.healUsesPotion;
+  if (validQk(raw.mapHealHpKey)) base.mapHealHpKey = raw.mapHealHpKey;
+  if (validQk(raw.mapHealMpKey)) base.mapHealMpKey = raw.mapHealMpKey;
+  if (raw.maxMinutes === null || (typeof raw.maxMinutes === 'number' && Number.isFinite(raw.maxMinutes) && raw.maxMinutes > 0)) {
+    base.maxMinutes = raw.maxMinutes;
+  }
+  if (raw.maxRoundTrips === null || (typeof raw.maxRoundTrips === 'number' && Number.isFinite(raw.maxRoundTrips) && raw.maxRoundTrips >= 1)) {
+    base.maxRoundTrips = raw.maxRoundTrips === null ? null : Math.round(raw.maxRoundTrips);
+  }
+  if (typeof raw.windowTitle === 'string') base.windowTitle = raw.windowTitle;
+  // CGWindow identifiers can be reassigned after the game restarts. Restore selection by title.
+  return base;
+}
+
+export function loadSavedWineBridgeSettings(storage?: WineBridgeStorageLike | null): {
+  settings: WineBridgeSavedSettings;
+  hasSaved: boolean;
+} {
+  const defaults: WineBridgeSavedSettings = {
+    baseUrl: DEFAULT_BRIDGE_URL,
+    config: null,
+    previewEnabled: true,
+    previewOverlay: true,
+    previewIntervalMs: DEFAULT_PREVIEW_INTERVAL_MS,
+    microDistance: DEFAULT_MICRO_DISTANCE,
+  };
+  if (!storage) return { settings: defaults, hasSaved: false };
+  try {
+    const raw = storage.getItem(WINE_SETTINGS_STORAGE_KEY);
+    if (!raw) return { settings: defaults, hasSaved: false };
+    const parsed = JSON.parse(raw) as Partial<WineBridgeSavedSettings>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { settings: defaults, hasSaved: false };
+    const normUrl = typeof parsed.baseUrl === 'string' ? normalizeLoopbackBridgeUrl(parsed.baseUrl) : null;
+    const interval =
+      typeof parsed.previewIntervalMs === 'number' && [0, 500, 1000, 2000].includes(parsed.previewIntervalMs)
+        ? parsed.previewIntervalMs
+        : DEFAULT_PREVIEW_INTERVAL_MS;
+    return {
+      hasSaved: true,
+      settings: {
+        baseUrl: normUrl ?? DEFAULT_BRIDGE_URL,
+        config: parsed.config && typeof parsed.config === 'object' && !Array.isArray(parsed.config)
+          ? sanitizeConfig(parsed.config) : null,
+        previewEnabled: typeof parsed.previewEnabled === 'boolean' ? parsed.previewEnabled : true,
+        previewOverlay: typeof parsed.previewOverlay === 'boolean' ? parsed.previewOverlay : true,
+        previewIntervalMs: interval,
+        microDistance: typeof parsed.microDistance === 'number' && Number.isInteger(parsed.microDistance)
+          && parsed.microDistance >= 1 && parsed.microDistance <= MAX_MICRO_DISTANCE
+          ? parsed.microDistance : DEFAULT_MICRO_DISTANCE,
+      },
+    };
+  } catch {
+    return { settings: defaults, hasSaved: false };
+  }
+}
+
+export function saveWineBridgeSettings(
+  storage: WineBridgeStorageLike | null | undefined,
+  settings: WineBridgeSavedSettings,
+): void {
+  if (!storage) return;
+  try {
+    const baseUrl = normalizeLoopbackBridgeUrl(settings.baseUrl);
+    if (!baseUrl) return;
+    const encoded = JSON.stringify({ ...settings, baseUrl, config: settings.config ? sanitizeConfig(settings.config) : null });
+    if (storage.getItem(WINE_SETTINGS_STORAGE_KEY) !== encoded) {
+      storage.setItem(WINE_SETTINGS_STORAGE_KEY, encoded);
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
 export const WINE_STOP_REASON_LABELS: Record<string, string> = {
   manual_stop: '手動停止',
   user_clicked_stop: '手動停止',
@@ -134,6 +283,13 @@ export const WINE_STOP_REASON_LABELS: Record<string, string> = {
   timeout: '已達時間上限',
   hp_low: 'HP 低於停機門檻',
   mp_low: 'MP 低於停機門檻',
+  low_hp_critical: 'HP 低於停機門檻',
+  low_mp_critical: 'MP 低於停機門檻',
+  unexpected_popup: '偵測到未知彈窗安全停機',
+  disconnected: '遊戲連線中斷安全停機',
+  hospital_or_dead: '偵測到角色死亡／醫院安全停機',
+  screen_frozen: '畫面長時間靜止停機',
+  stalled: '巡走卡住停機',
   window_closed: '目標視窗已關閉',
   capture_error: '畫面擷取失敗',
   input_error: '背景輸入送出失敗',
@@ -158,6 +314,9 @@ export function formatWineEventLine(ev: WineBridgeEvent): string {
     }
     if (kind === 'hotkey') {
       return `${ts} 戰鬥施放熱鍵 ${String(ev.action.hotkey ?? '')}（${String(ev.action.role ?? 'main')}）`;
+    }
+    if (kind === 'map_heal') {
+      return `${ts} 待機補${ev.action.stat === 'mp' ? '魔' : '血'}：熱鍵 ${String(ev.action.hotkey ?? '')}`;
     }
     if (kind === 'click') {
       return `${ts} 點擊戰鬥目標 (${String(ev.action.x ?? '?')}, ${String(ev.action.y ?? '?')})`;
@@ -298,6 +457,31 @@ export class WineBridgeClient {
       this.emit({ connState: 'DISCONNECTED', error: `橋接連線中斷（${msg}）` });
       throw err;
     }
+  }
+
+  async fetchFrame(overlay: boolean, signal: AbortSignal): Promise<{ image: Blob; info: WineFrameInfo }> {
+    const url = framePreviewUrl(this.snapshot.baseUrl, overlay);
+    if (!url) throw new Error('橋接位址無效');
+    const response = await this.fetchFn(url, { signal, cache: 'no-store', redirect: 'error' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const image = await response.blob();
+    if (!['image/png', 'image/jpeg'].includes(image.type)) throw new Error('橋接回應缺少預覽圖片');
+    const getPercent = (header: string) => {
+      const raw = response.headers.get(header)?.trim();
+      if (!raw) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
+    };
+    const rawPoint = response.headers.get('X-Frame-Position')?.match(/^(-?\d+),\s*(-?\d+)$/);
+    return {
+      image,
+      info: {
+        scene: response.headers.get('X-Frame-Scene'),
+        hpPct: getPercent('X-Frame-HP-Pct'),
+        mpPct: getPercent('X-Frame-MP-Pct'),
+        position: rawPoint ? [Number(rawPoint[1]), Number(rawPoint[2])] : null,
+      },
+    };
   }
 
   async refreshWindows(): Promise<WineBridgeWindowInfo[]> {
