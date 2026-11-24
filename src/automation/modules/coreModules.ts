@@ -68,6 +68,10 @@ export function createWorkQueueModule(getQueueFor: (charId?: string | null) => W
     },
     getSummary: ctx => getQueueFor(ctx.state().characterId).getStatus().text,
     handleAction(action: UiAction, ctx: AutomationHostContext) {
+      if (action.kind === 'QUEUE_SAVE') {
+        getQueueFor(ctx.state().characterId).saveNow();
+        return { handled: true, error: null };
+      }
       if (action.kind === 'QUEUE_GATHER') {
         const target = getQueueFor(action.targetCharacterId ?? ctx.state().characterId);
         target.enqueue({

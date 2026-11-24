@@ -1,4 +1,5 @@
 import { isCommandResultMessage, isEventMessage, type BattleEnemyState, type PluginCommand, type PluginMessage } from './protocol/index';
+import type { SkillPolicy } from './automation/strategyStore';
 import type { FamilyState } from './state';
 
 /** 自動戰鬥策略：手動＝外掛什麼都不做（預設），由人在面板或文字輸入操作。 */
@@ -18,6 +19,9 @@ export interface BattlerHost {
   after(ms: number, fn: () => void): unknown;
   onChange(): void;
 }
+
+export const skillKey = (s: { kind: string; id: number }) => `${s.kind}:${s.id}`;
+export const isAllySkill = (s: { targetScope: string }) => ['SELF', 'ALLY_SINGLE'].includes(s.targetScope);
 
 const RETRY_MS = 400;
 const MAX_RETRY = 6;
@@ -53,7 +57,11 @@ export class AutoBattler {
   private done = new Set<string>();
   private mine = new Map<string, { kind: 'TURN' | 'RESULT'; key: string; battleId: number; round: number; tries: number; outcome?: 'WIN' | 'LOSE' }>();
 
-  constructor(private host: BattlerHost, private storage: KvStorage | null = null) {
+  constructor(
+    private host: BattlerHost,
+    private storage: KvStorage | null = null,
+    private skillPolicy?: () => SkillPolicy | undefined,
+  ) {
     try {
       const v = storage?.getItem(KEY);
       if (v === 'ATTACK' || v === 'FLEE' || v === 'MANUAL') this.strategy = v;
@@ -131,8 +139,20 @@ export class AutoBattler {
       label = `自動戰鬥：捕捉 ${target.name}（第 ${round} 回合）`;
       expect = 'TURN_SUBMITTED';
     } else {
-      cmd = { type: 'BATTLE_ACTION', battleId, action: { kind: 'ATTACK', ...(target ? { targetSlot: target.slot } : {}) } };
-      label = `自動戰鬥：攻擊${target ? ` ${target.name}` : ''}（第 ${round} 回合）`; expect = 'TURN_SUBMITTED';
+      const state = this.host.state();
+      const policy = this.skillPolicy?.();
+      const skills = state.staticData?.skills ?? [];
+      const heal = policy && self && selfRatio * 100 < policy.healThreshold;
+      const priority = [heal ? policy?.heal : null, policy?.attack];
+      const skill = priority.map((key, index) => skills.find(s => skillKey(s) === key && isAllySkill(s) === (index === 0)))
+        .find(s => s && (s.mpCost === 0 || (self?.mp ?? state.character?.mp ?? -1) >= s.mpCost)
+          && (s.reqLevel == null || (state.character?.level ?? 0) >= s.reqLevel));
+      const action = skill?.kind === 'SKILL' ? { kind: 'SKILL' as const, skillId: skill.id }
+        : skill?.kind === 'SPELL' ? { kind: 'SPELL' as const, spellId: skill.id }
+        : { kind: 'ATTACK' as const };
+      cmd = { type: 'BATTLE_ACTION', battleId, action: { ...action, ...(target && !(skill && isAllySkill(skill)) ? { targetSlot: target.slot } : {}) } };
+      label = `自動戰鬥：${skill?.name ?? '攻擊'}（第 ${round} 回合）`;
+      expect = 'TURN_SUBMITTED';
     }
     const id = this.host.send(cmd, label, expect);
     if (id) this.mine.set(id, { kind: 'TURN', key, battleId, round, tries });

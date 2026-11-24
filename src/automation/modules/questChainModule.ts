@@ -1000,7 +1000,7 @@ export class QuestChainModule implements BehaviorModule {
     if (st.shop) {
       if (!this.wantDeposit) {
         const keep = this.keepNames();
-        const sell = sellableItems(st.inventory, keep).find(it => !this.sellSkip.has(it.itemId));
+        const sell = sellableItems(this.unreservedBag(st), keep).find(it => !this.sellSkip.has(it.itemId));
         if (sell) {
           this.sellSkip.add(sell.itemId);
           this.resupplyActionAt = now;
@@ -1371,7 +1371,14 @@ export class QuestChainModule implements BehaviorModule {
 
   /** 可以存進倉庫的物品：不是任務／工具要用的，也不是封印石；每項只試一次。 */
   private depositCandidate(st: ReturnType<QuestChainHost['state']>, keep: readonly string[]) {
-    return pickDepositItem(st.inventory, keep, this.depositSkip, st.warehouse);
+    return pickDepositItem(this.unreservedBag(st), keep, this.depositSkip, st.warehouse);
+  }
+
+  private unreservedBag(st: ReturnType<QuestChainHost['state']>) {
+    const cfg = this.host.getStrategyConfig(st.characterId).inventoryPolicy;
+    if (!cfg) return st.inventory;
+    const reserved = new Set([...cfg.keep, ...cfg.deposit, cfg.hpItem, cfg.staminaItem]);
+    return st.inventory.filter(it => !reserved.has(it.itemId));
   }
 
   private bagFull(st: ReturnType<QuestChainHost['state']>): boolean {
