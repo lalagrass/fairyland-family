@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ e496d17377f6df5eb41c712c375fcbc14b049fb3
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/types.ts @ 49caebf24d2727cb3bb2f0cd58f7c1b90a5cfc19
 /**
  * FX1：fairyland（純淨宿主）與 fairyland-family（智慧外掛）之間的外掛協定型別。
  *
@@ -20,10 +20,12 @@
  * - 版本 7（F7，fairyland-family#48）：快照新增必填 `region`（目前角色所在區域）、家族成員新增必填 `region`、
  *   任務可帶 `regionId`（接任務 NPC 所在區域）；STATIC_DATA 新增必填 `regions`（區域清單：村莊地圖與所屬地圖）。
  *   區域來自宿主的區域清單（工具產出），清單沒列到的地圖是 null，外掛顯示「未知」、不自己猜。
+ * - 版本 8（F13，fairyland-family#76／fairyland#168）：快照 `nav` 可帶 `terrain`（目前地圖的碰撞格：欄、列、
+ *   阻擋 bitset）。省略表示這張圖沒有碰撞格。舊版外掛不認得這個欄位，所以升版；沒帶 `terrain` 的快照仍然合法。
  */
 
 /** 協定版本。欄位語意不相容地改變時才遞增。 */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** BroadcastChannel 名稱；遊戲與外掛兩個分頁必須同源才收得到。 */
 export const PLUGIN_CHANNEL_NAME = 'fairyland.plugin';
@@ -454,6 +456,16 @@ export interface SnapshotFamilyState {
   };
 }
 
+/**
+ * v8：目前地圖的碰撞格。`blocked` 是 row-major bitset（MSB first）的 base64，1＝不可走。
+ * 格子座標見 `terrain.ts`（與宿主 `worldToCollisionCell` 相同）。沒有碰撞格就省略。
+ */
+export interface SnapshotTerrain {
+  cols: number;
+  rows: number;
+  blocked: string;
+}
+
 export interface SceneSnapshot {
   schema: 'scene-snapshot';
   mapId: string;
@@ -487,6 +499,8 @@ export interface SceneSnapshot {
     pixelHeight: number | null;
     /** v4 起改於 STATIC_DATA 連線時送一次（Snapshot 可省略以瘦身）；測試或舊夾具可選附帶。 */
     portalGraph?: SnapshotPortalNode[];
+    /** v8：目前這張地圖的碰撞格。換圖時隨快照送一次；沒有碰撞格就省略。 */
+    terrain?: SnapshotTerrain;
   };
 }
 

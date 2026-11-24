@@ -1,13 +1,13 @@
 {
  "format": "fairyland-replay/1",
  "description": "吉恩村→市鎮中心的示範序列：走路、阿爾對話、一場戰鬥、金錢道具、換圖、村長對話。快照來自真實地圖資料；事件順序為手排。回放模式只回應 REQUEST_SNAPSHOT，其他指令回 NOT_IMPLEMENTED（不模擬遊戲）。",
- "protocolVersion": 7,
+ "protocolVersion": 8,
  "characterId": "replay-char-1",
  "steps": [
   {
    "at": 0,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -21,7 +21,7 @@
   {
    "at": 30,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "static-data",
@@ -268,7 +268,7 @@
   {
    "at": 60,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -287,7 +287,7 @@
   {
    "at": 120,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -2773,7 +2773,7 @@
   {
    "at": 2000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2806,7 +2806,7 @@
   {
    "at": 2600,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2824,7 +2824,7 @@
   {
    "at": 3200,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2842,7 +2842,7 @@
   {
    "at": 4500,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2871,7 +2871,7 @@
   {
    "at": 7000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2885,7 +2885,7 @@
   {
    "at": 8000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2920,7 +2920,7 @@
   {
    "at": 8100,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2946,7 +2946,7 @@
   {
    "at": 9200,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2971,7 +2971,7 @@
   {
    "at": 10000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -2997,7 +2997,7 @@
   {
    "at": 12000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -3012,7 +3012,7 @@
   {
    "at": 12500,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -3027,7 +3027,7 @@
   {
    "at": 12600,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -3047,7 +3047,7 @@
   {
    "at": 15000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -3066,7 +3066,7 @@
   {
    "at": 15400,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "snapshot",
@@ -3995,7 +3995,7 @@
   {
    "at": 17000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -4012,7 +4012,7 @@
   {
    "at": 18500,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -4029,7 +4029,7 @@
   {
    "at": 20000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",
@@ -4057,7 +4057,7 @@
   {
    "at": 23000,
    "message": {
-    "v": 7,
+    "v": 8,
     "characterId": "replay-char-1",
     "ts": 0,
     "kind": "event",

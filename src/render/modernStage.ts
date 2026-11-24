@@ -1,4 +1,5 @@
-import { Application, Container, Graphics, Text } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { rasterTerrain } from './terrainRaster';
 import type { FamilyState } from '../state';
 import {
   buildModernModel,
@@ -36,8 +37,12 @@ const GRID = 400;
 export class ModernStageController {
   private app: Application | null = null;
   private world = new Container();
+  private ground = new Sprite();
+  private miniGround = new Sprite();
   private gfx = new Graphics();
   private hud = new Graphics();
+  private terrainTex: Texture | null = null;
+  private terrainKey = '';
   private labels = new Map<string, Text>();
   private notice = new Text({ text: '', style: { fill: 0xe8eef6, fontSize: 14, align: 'center', wordWrap: true, wordWrapWidth: 300 } });
   private latest: ModernSyncInput | null = null;
@@ -74,8 +79,10 @@ export class ModernStageController {
       app.canvas.style.touchAction = 'none';
       this.hostEl.appendChild(app.canvas);
       this.notice.anchor.set(0.5);
-      this.world.addChild(this.gfx);
-      app.stage.addChild(this.world, this.hud, this.notice);
+      this.ground.visible = false;
+      this.miniGround.visible = false;
+      this.world.addChild(this.ground, this.gfx);
+      app.stage.addChild(this.world, this.miniGround, this.hud, this.notice);
       app.canvas.addEventListener('pointerdown', this.onPointer);
       app.ticker.add(() => this.renderFrame());
       this.onStatusChange?.({ ready: true, error: null });
@@ -127,6 +134,8 @@ export class ModernStageController {
     // 沒連線／沒快照：顯示明確狀態，不畫過期的地圖當成現況
     if (!ready) {
       for (const t of this.labels.values()) t.visible = false;
+      this.ground.visible = false;
+      this.miniGround.visible = false;
       this.notice.visible = true;
       this.notice.style.wordWrapWidth = Math.max(120, W - 24);
       this.notice.text = model.status.kind === 'NO_SNAPSHOT' ? model.status.text : `現代地圖：${model.status.text}`;
@@ -136,6 +145,7 @@ export class ModernStageController {
     }
     this.notice.visible = false;
 
+    this.syncTerrain(model);
     const zoom = clampZoom(input.zoom);
     const tgt = model.target ?? { x: model.mapW / 2, y: model.mapH / 2 };
     const goal = this.manualPan ?? tgt;
@@ -144,15 +154,17 @@ export class ModernStageController {
     this.world.scale.set(zoom);
     this.world.position.set(W / 2 - c.x * zoom, H / 2 - c.y * zoom);
 
-    // 地圖底色與格線（程式產生，沒有素材）
+    // 有宿主地形就畫那張點陣圖；沒有才退回程式格線。兩種都不載入素材。
     g.rect(0, 0, model.mapW, model.mapH).fill({ color: 0x16212e }).stroke({ width: 4 / zoom, color: 0x35506b });
-    const x0 = Math.max(0, Math.floor((c.x - W / zoom / 2) / GRID) * GRID);
-    const x1 = Math.min(model.mapW, c.x + W / zoom / 2);
-    const y0 = Math.max(0, Math.floor((c.y - H / zoom / 2) / GRID) * GRID);
-    const y1 = Math.min(model.mapH, c.y + H / zoom / 2);
-    for (let x = x0; x <= x1; x += GRID) g.moveTo(x, y0).lineTo(x, y1);
-    for (let y = y0; y <= y1; y += GRID) g.moveTo(x0, y).lineTo(x1, y);
-    g.stroke({ width: 1 / zoom, color: 0x22344a, alpha: 0.8 });
+    if (!this.ground.visible) {
+      const x0 = Math.max(0, Math.floor((c.x - W / zoom / 2) / GRID) * GRID);
+      const x1 = Math.min(model.mapW, c.x + W / zoom / 2);
+      const y0 = Math.max(0, Math.floor((c.y - H / zoom / 2) / GRID) * GRID);
+      const y1 = Math.min(model.mapH, c.y + H / zoom / 2);
+      for (let x = x0; x <= x1; x += GRID) g.moveTo(x, y0).lineTo(x, y1);
+      for (let y = y0; y <= y1; y += GRID) g.moveTo(x0, y).lineTo(x1, y);
+      g.stroke({ width: 1 / zoom, color: 0x22344a, alpha: 0.8 });
+    }
 
     // 路徑線
     if (model.path.length >= 2) {
@@ -220,6 +232,11 @@ export class ModernStageController {
   private drawMinimap(g: Graphics, m: ModernViewModel, lay: ReturnType<typeof modernLayout>, W: number, H: number, cam: { x: number; y: number }, zoom: number): void {
     const ox = W - lay.margin - lay.miniW, oy = H - lay.margin - lay.miniH;
     g.rect(ox, oy, lay.miniW, lay.miniH).fill({ color: 0x0a1018, alpha: 0.82 }).stroke({ width: 1, color: 0x5a7391 });
+    if (this.miniGround.visible) {
+      this.miniGround.position.set(ox, oy);
+      this.miniGround.width = lay.miniW;
+      this.miniGround.height = lay.miniH;
+    }
     const P = (x: number, y: number) => minimapPoint(x, y, m.mapW, m.mapH, lay.miniW, lay.miniH);
     if (m.path.length >= 2) {
       const a = P(m.path[0].x, m.path[0].y);
@@ -238,8 +255,54 @@ export class ModernStageController {
     g.rect(rx, ry, Math.min(vw, lay.miniW), Math.min(vh, lay.miniH)).stroke({ width: 1, color: 0xffffff, alpha: 0.8 });
   }
 
+  /** 地形沒變就沿用同一張貼圖。換地圖或快照沒帶地形時清掉。 */
+  private syncTerrain(model: ModernViewModel): void {
+    const t = model.terrain;
+    const key = t ? `${t.cols}x${t.rows}:${model.mapW}x${model.mapH}:${t.blocked}` : '';
+    if (key === this.terrainKey) {
+      const on = !!this.terrainTex;
+      this.ground.visible = on;
+      this.miniGround.visible = on;
+      return;
+    }
+    this.terrainKey = key;
+    this.ground.texture = Texture.EMPTY;
+    this.miniGround.texture = Texture.EMPTY;
+    this.terrainTex?.destroy(true);
+    this.terrainTex = null;
+    if (!t || typeof document === 'undefined') {
+      this.ground.visible = false;
+      this.miniGround.visible = false;
+      return;
+    }
+    const raster = rasterTerrain(t.cells, t.cols, t.rows, model.mapW, model.mapH);
+    const canvas = document.createElement('canvas');
+    canvas.width = raster.width;
+    canvas.height = raster.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      this.ground.visible = false;
+      this.miniGround.visible = false;
+      return;
+    }
+    const pixels = new Uint8ClampedArray(raster.rgba);
+    ctx.putImageData(new ImageData(pixels, raster.width, raster.height), 0, 0);
+    const tex = Texture.from(canvas);
+    this.terrainTex = tex;
+    this.ground.texture = tex;
+    this.miniGround.texture = tex;
+    this.ground.width = model.mapW;
+    this.ground.height = model.mapH;
+    this.ground.visible = true;
+    this.miniGround.visible = true;
+  }
+
   destroy(): void {
     this.destroyed = true;
+    this.ground.texture = Texture.EMPTY;
+    this.miniGround.texture = Texture.EMPTY;
+    this.terrainTex?.destroy(true);
+    this.terrainTex = null;
     const app = this.app;
     this.app = null;
     if (app) {
