@@ -345,6 +345,8 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 }
 .wine-config-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .wine-config-head h3 { margin-right: auto; }
+.wine-config-head label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.wine-config-head input { width: 5em; }
 .wine-form-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
   gap: 8px; min-width: 0;
@@ -364,6 +366,25 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   max-height: 200px; overflow-y: auto; padding: 6px 8px; border-radius: 6px;
   background: #10141a; border: 1px solid var(--line);
   font: 12px/1.5 ui-monospace, Menlo, monospace; overflow-wrap: anywhere;
+}
+.wine-preview-box {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel-soft);
+}
+.wine-preview-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wine-preview-head h3 { margin: 0 auto 0 0; font-size: 14px; }
+.wine-inline-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); }
+.wine-preview-frame {
+  position: relative; border-radius: 6px; border: 1px solid var(--line);
+  background: #0a0e14; overflow: hidden; min-height: 120px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.wine-preview-frame img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: contain; }
+.wine-preview-empty { padding: 24px 12px; text-align: center; font-size: 12px; }
+.wine-preview-hud {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 4px 8px;
+  font-size: 11px; color: var(--dim); background: rgba(10, 14, 20, 0.9);
+  border-top: 1px solid var(--line);
 }
 
 /* F6 世界地圖：節點圖＋窄螢幕清單。分界與 worldMapFrame（480）相同。 */

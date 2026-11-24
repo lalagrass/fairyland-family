@@ -1,11 +1,15 @@
 import { Window } from 'happy-dom';
-import { flushSync } from 'react-dom';
 import { initialState } from '../src/state';
 import {
+  DEFAULT_WINE_CONFIG,
+  WINE_SETTINGS_STORAGE_KEY,
   WineBridgeClient,
   bridgeWebSocketUrl,
+  framePreviewUrl,
   isLoopbackBridgeUrl,
+  loadSavedWineBridgeSettings,
   normalizeLoopbackBridgeUrl,
+  saveWineBridgeSettings,
   type BridgeWebSocketLike,
   type WineBgConfig,
   type WineBridgeStatus,
@@ -30,6 +34,7 @@ Object.assign(globalThis, {
   localStorage: win.localStorage,
 });
 
+const { flushSync } = await import('react-dom');
 const { mountUi } = await import('../src/ui');
 
 const flushUi = async () => {
@@ -82,6 +87,7 @@ function makeFakeBridge() {
     recentEvents: [],
   };
   const sockets: MockWs[] = [];
+  let frameFailures = 0;
 
   class MockWs implements BridgeWebSocketLike {
     readyState = 1;
@@ -116,6 +122,21 @@ function makeFakeBridge() {
     calls.push({ method, url, body: rawBody });
 
     const u = new URL(url);
+    if (u.pathname === '/frame') {
+      if (frameFailures > 0) {
+        frameFailures--;
+        return new Response(null, { status: 503 });
+      }
+      return new Response(new Uint8Array([1]), {
+        headers: {
+          'Content-Type': 'image/png',
+          'X-Frame-Scene': 'battle',
+          'X-Frame-HP-Pct': '0',
+          'X-Frame-MP-Pct': '75',
+          'X-Frame-Position': '10,22',
+        },
+      });
+    }
     if (u.pathname === '/status') {
       return new Response(JSON.stringify(status), { status: 200 });
     }
@@ -145,6 +166,7 @@ function makeFakeBridge() {
   return {
     calls,
     sockets,
+    failNextFrame: () => { frameFailures++; },
     getStatus: () => status,
     setStatus: (next: WineBridgeStatus) => {
       status = next;
@@ -240,6 +262,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
 
   const panel = root.querySelector('[data-testid="wine-training-panel"]');
   assert(panel !== null, '渲染 WineTrainingPanel');
+  assert(win.localStorage.getItem(WINE_SETTINGS_STORAGE_KEY) === null, '首次開啟面板保留橋接端策略');
   assert(root.querySelector('[data-testid="wine-conn-pill"]')?.textContent === '已斷線', '初始狀態顯示已斷線');
 
   // Verify remote URL warning in input
@@ -254,6 +277,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   setInputValue(urlInput, 'http://127.0.0.1:4189');
   await flushUi();
 
+  assert(loadSavedWineBridgeSettings(win.localStorage).settings.config === null, '只改連線網址不會儲存預設策略');
   const connectBtn = root.querySelector('[data-testid="wine-connect-btn"]') as unknown as HTMLButtonElement;
   assert(!connectBtn.disabled, '合法 loopback URL 可點擊連線');
   connectBtn.click();
@@ -321,6 +345,116 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   await flushUi();
   assert(root.querySelector('[data-testid="wine-conn-pill"]')?.textContent === '已斷線', '橋接斷線時 UI 即時切回已斷線');
   assert(root.querySelector('[data-testid="wine-error"]') !== null, '橋接斷線時 UI 顯示斷線提示');
+}
+
+// 4. W-Live3 (#155): /frame URL, preview toggle, and localStorage persistence across reloads
+{
+  win.localStorage.clear();
+  assert(
+    framePreviewUrl('http://127.0.0.1:4189', true) ===
+      'http://127.0.0.1:4189/frame?overlay=1&w=480',
+    '產生合法本機 /frame 預覽網址',
+  );
+  assert(framePreviewUrl('https://evil.example:4189', true) === null, '拒絕非 loopback 預覽網址');
+
+  saveWineBridgeSettings(win.localStorage, {
+    baseUrl: 'http://127.0.0.1:4190',
+    config: { ...DEFAULT_WINE_CONFIG, hotkey: 'F8', patrolA: [390, 300], patrolB: [415, 300], healAtPct: 55, wid: 77, windowTitle: 'Test' },
+    previewEnabled: true,
+    previewOverlay: false,
+    previewIntervalMs: 500,
+    microDistance: 35,
+  });
+  const loaded = loadSavedWineBridgeSettings(win.localStorage);
+  assert(loaded.hasSaved && loaded.settings.baseUrl === 'http://127.0.0.1:4190', '從 localStorage 還原橋接網址');
+  assert(loaded.settings.config?.hotkey === 'F8' && loaded.settings.config.healAtPct === 55, '從 localStorage 還原熱鍵與補血門檻');
+  assert(loaded.settings.previewOverlay === false && loaded.settings.previewIntervalMs === 500, '從 localStorage 還原預覽選項');
+
+  assert(loaded.settings.config?.wid === null && loaded.settings.config.windowTitle === 'Test', '保留視窗標題且不記憶暫時視窗編號');
+  const stale = JSON.parse(win.localStorage.getItem(WINE_SETTINGS_STORAGE_KEY)!);
+  stale.config.wid = 78;
+  win.localStorage.setItem(WINE_SETTINGS_STORAGE_KEY, JSON.stringify(stale));
+  assert(loadSavedWineBridgeSettings(win.localStorage).settings.config?.wid === null, '讀取舊存檔時移除視窗編號');
+
+  // Corrupt JSON in localStorage safely falls back without throwing
+  win.localStorage.setItem(WINE_SETTINGS_STORAGE_KEY, '{broken_json');
+  assert(!loadSavedWineBridgeSettings(win.localStorage).hasSaved, '損毀 localStorage 資料安全回退預設');
+
+  // Persist real UI edits, then mount fresh root simulating tab reload
+  win.localStorage.clear();
+  const fake = makeFakeBridge();
+  const client1 = new WineBridgeClient({ fetchFn: fake.fetchFn, webSocketCtor: fake.MockWs });
+  const root1 = win.document.createElement('div');
+  win.document.body.appendChild(root1);
+  const ui1 = mountUi(root1 as unknown as HTMLElement, 'TEST', () => null, () => null);
+  ui1.render(initialState(), 'STOPPED', {
+    nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置', skipped: [] },
+    strategy: 'MANUAL',
+    known: [],
+    wineClient: client1,
+  });
+  flushSync(() => (root1.querySelector('[data-testid="header-wine-btn"]') as unknown as HTMLButtonElement).click());
+  await flushUi();
+
+  setInputValue(root1.querySelector('[data-testid="wine-bridge-url"]') as unknown as HTMLInputElement, 'http://127.0.0.1:4195');
+  setInputValue(root1.querySelector('[data-testid="wine-micro-distance"]') as unknown as HTMLInputElement, '32');
+  await flushUi();
+  (root1.querySelector('[data-testid="wine-preset-micro"]') as unknown as HTMLButtonElement).click();
+  const interval = root1.querySelector('select[data-testid="wine-preview-interval"]') as unknown as HTMLSelectElement;
+  interval.value = '500';
+  interval.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event);
+  fake.failNextFrame();
+  await flushUi();
+  (root1.querySelector('[data-testid="wine-connect-btn"]') as unknown as HTMLButtonElement).click();
+  await flushUi();
+
+  assert(root1.querySelector('[data-testid="wine-preview-empty"]')?.textContent?.includes('尚未取得') ?? false, '暫時擷取失敗顯示狀態');
+  await new Promise(resolve => setTimeout(resolve, 550));
+  const img = root1.querySelector('[data-testid="wine-preview-img"]') as unknown as HTMLImageElement | null;
+  assert(img !== null && img.src.startsWith('blob:'), '自動重試成功後顯示本機影格');
+  assert(fake.calls.some(c => c.url === 'http://127.0.0.1:4195/frame?overlay=1&w=480'), '從使用者輸入的橋接取得影格');
+  const hud = root1.querySelector('[data-testid="wine-preview-hud"]')?.textContent ?? '';
+  assert(hud.includes('戰鬥中') && hud.includes('HP 0%') && hud.includes('MP 75%') && hud.includes('(10,22)'), '顯示待機影格的即時辨識結果與座標');
+
+  const toggleBtn = root1.querySelector('[data-testid="wine-preview-toggle"]') as unknown as HTMLButtonElement;
+  toggleBtn.click();
+  await flushUi();
+  assert(root1.querySelector('[data-testid="wine-preview-img"]') === null, '暫停預覽後隱藏圖片');
+  toggleBtn.click();
+  await flushUi();
+  assert(root1.querySelector('[data-testid="wine-preview-img"]') !== null, '重新開啟預覽後恢復圖片');
+
+  (root1.querySelector('[data-testid="wine-disconnect-btn"]') as unknown as HTMLButtonElement).click();
+  await flushUi();
+  assert(root1.querySelector('[data-testid="wine-preview-img"]') === null, '中斷連線時移除預覽');
+
+  // Fresh mount simulates reload
+  const client2 = new WineBridgeClient({ fetchFn: fake.fetchFn, webSocketCtor: fake.MockWs });
+  const root2 = win.document.createElement('div');
+  win.document.body.appendChild(root2);
+  const ui2 = mountUi(root2 as unknown as HTMLElement, 'TEST', () => null, () => null);
+  ui2.render(initialState(), 'STOPPED', {
+    nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置', skipped: [] },
+    strategy: 'MANUAL',
+    known: [],
+    wineClient: client2,
+  });
+  flushSync(() => (root2.querySelector('[data-testid="header-wine-btn"]') as unknown as HTMLButtonElement).click());
+  await flushUi();
+
+  assert(
+    (root2.querySelector('[data-testid="wine-bridge-url"]') as unknown as HTMLInputElement).value === 'http://127.0.0.1:4195',
+    '重開分頁自動還原橋接位址',
+  );
+  assert(
+    (root2.querySelector('[data-testid="wine-patrol-ax"]') as unknown as HTMLInputElement).value === '390',
+    '重開分頁自動還原巡邏點 A X=390',
+  );
+  assert(
+    (root2.querySelector('[data-testid="wine-micro-distance"]') as unknown as HTMLInputElement).value === '32' &&
+      (root2.querySelector('[data-testid="wine-patrol-bx"]') as unknown as HTMLInputElement).value === '422',
+    '重開分頁還原微移距離及套用後的巡邏點 B',
+  );
 }
 
 done();

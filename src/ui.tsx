@@ -1206,7 +1206,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               })()}
             </Tabs.Content>
             <Tabs.Content value="wine" forceMount className="workbench-pane">
-              <WineTrainingPanel client={wineClient} />
+              <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} />
             </Tabs.Content>
           </Tabs.Root>
 

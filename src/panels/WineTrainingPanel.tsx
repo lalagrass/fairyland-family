@@ -5,11 +5,19 @@ import {
   WineBridgeClient,
   formatWineEventLine,
   formatWineStopReason,
+  MAX_MICRO_DISTANCE,
+  MICRO_PATROL_START_X,
   isLoopbackBridgeUrl,
+  loadSavedWineBridgeSettings,
+  saveWineBridgeSettings,
   type WineBgConfig,
   type WineBridgeSnapshot,
+  type WineBridgeSavedSettings,
+  type WineBridgeStorageLike,
+  type WineFrameInfo,
   type WineHotkey,
   type WinePreferredAction,
+  type WineQuickKey,
 } from '../wine/wineBridgeClient';
 
 const SCENE_LABELS: Record<string, string> = {
@@ -26,6 +34,14 @@ const PHASE_LABELS: Record<string, string> = {
   stopping: '停止中',
   stopped: '已停止',
 };
+
+function defaultBrowserStorage(): WineBridgeStorageLike | null {
+  try {
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
 
 function clampInt(raw: string, fallback: number, min: number, max: number): number {
   const n = Number(raw);
@@ -49,13 +65,22 @@ function posFloatOrNull(raw: string): number | null {
   return Number(n.toFixed(2));
 }
 
-export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
+export function WineTrainingPanel({ client, active }: { client: WineBridgeClient; active: boolean }) {
+  const [storage] = useState(defaultBrowserStorage);
+  const [initialLoaded] = useState(() => loadSavedWineBridgeSettings(storage));
   const [snap, setSnap] = useState<WineBridgeSnapshot>(() => client.getSnapshot());
-  const [urlInput, setUrlInput] = useState<string>(() => client.getSnapshot().baseUrl || DEFAULT_BRIDGE_URL);
-  const [draft, setDraft] = useState<WineBgConfig>(() => client.getSnapshot().status?.config ?? DEFAULT_WINE_CONFIG);
-  const [dirty, setDirty] = useState(false);
+  const [urlInput, setUrlInput] = useState<string>(() =>
+    initialLoaded.hasSaved ? initialLoaded.settings.baseUrl : client.getSnapshot().baseUrl || DEFAULT_BRIDGE_URL,
+  );
+  const [settings, setSettings] = useState(initialLoaded.settings);
+  const [dirty, setDirty] = useState(settings.config !== null);
   const [busy, setBusy] = useState(false);
   const [localMsg, setLocalMsg] = useState<string | null>(null);
+  const { previewEnabled, previewOverlay, previewIntervalMs, microDistance } = settings;
+  const draft = (dirty ? settings.config : snap.status?.config) ?? settings.config ?? DEFAULT_WINE_CONFIG;
+  const [refreshId, setRefreshId] = useState(0);
+  const [frame, setFrame] = useState<{ src: string; info: WineFrameInfo } | null>(null);
+  const [previewError, setPreviewError] = useState(false);
 
   useEffect(() => {
     setSnap(client.getSnapshot());
@@ -65,10 +90,12 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
   }, [client]);
 
   useEffect(() => {
-    if (!dirty && snap.status?.config) {
-      setDraft(snap.status.config);
-    }
-  }, [dirty, snap.status?.config]);
+    if (settings !== initialLoaded.settings) saveWineBridgeSettings(storage, settings);
+  }, [storage, settings, initialLoaded]);
+
+  const patchSettings = (patch: Partial<WineBridgeSavedSettings>) => {
+    setSettings(prev => ({ ...prev, ...patch }));
+  };
 
   const connected = snap.connState === 'CONNECTED';
   const connecting = snap.connState === 'CONNECTING';
@@ -76,8 +103,42 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
   const isRunning = Boolean(connected && st?.running);
   const validLoopback = isLoopbackBridgeUrl(urlInput);
 
+  useEffect(() => {
+    setFrame(null);
+    setPreviewError(false);
+    if (!active || !connected || !previewEnabled) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let objectUrl: string | undefined;
+    async function refresh() {
+      try {
+        const { image, info } = await client.fetchFrame(previewOverlay, controller.signal);
+        if (controller.signal.aborted) return;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(image);
+        setFrame({ src: objectUrl, info });
+        setPreviewError(false);
+      } catch {
+        if (!controller.signal.aborted) {
+          setFrame(null);
+          setPreviewError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted && previewIntervalMs > 0) {
+          timer = setTimeout(refresh, previewIntervalMs);
+        }
+      }
+    }
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [client, snap.baseUrl, active, connected, previewEnabled, previewIntervalMs, previewOverlay, refreshId]);
+
   const patchDraft = (patch: Partial<WineBgConfig>) => {
-    setDraft(prev => ({ ...prev, ...patch }));
+    patchSettings({ config: { ...draft, ...patch } });
     setDirty(true);
     setLocalMsg(null);
   };
@@ -87,10 +148,7 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
     setLocalMsg(null);
     setBusy(true);
     try {
-      const ok = await client.connect(urlInput);
-      if (ok) {
-        setDirty(false);
-      }
+      await client.connect(urlInput);
     } finally {
       setBusy(false);
     }
@@ -163,6 +221,10 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
   const sceneLabel = st ? SCENE_LABELS[st.scene] ?? st.scene : '—';
   const stopReasonText = formatWineStopReason(st?.stopReason);
   const eventsNewestFirst = [...snap.events].reverse();
+  const previewActive = connected && previewEnabled;
+  const recognition = frame?.info ?? (connected ? st : null);
+  const previewScene = recognition?.scene;
+  const position = recognition?.position;
 
   return (
     <section className="wine-panel" data-testid="wine-training-panel">
@@ -173,7 +235,7 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
         </span>
       </div>
       <p className="muted wine-note">
-        透過本機 loopback 橋接（僅限 127.0.0.1／localhost）控制 Wine 視窗背景練功，不搶焦點、不移動系統游標。
+        透過本機 loopback 橋接（僅限 127.0.0.1／localhost）控制 Wine 視窗背景練功，不搶焦點、不移動系統游標；策略設定自動儲存在本機瀏覽器。
       </p>
 
       <form className="wine-conn-bar" onSubmit={handleConnect}>
@@ -182,7 +244,11 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
           aria-label="本機橋接位址"
           data-testid="wine-bridge-url"
           value={urlInput}
-          onChange={e => setUrlInput(e.currentTarget.value)}
+          onChange={e => {
+            const value = e.currentTarget.value;
+            setUrlInput(value);
+            if (isLoopbackBridgeUrl(value)) patchSettings({ baseUrl: value });
+          }}
           placeholder={DEFAULT_BRIDGE_URL}
         />
         {!connected ? (
@@ -257,6 +323,72 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
         )}
       </div>
 
+      <div className="wine-preview-box" data-testid="wine-preview-box">
+        <div className="wine-preview-head">
+          <h3>背景即時畫面預覽</h3>
+          <button
+            type="button"
+            className="item"
+            data-testid="wine-preview-toggle"
+            onClick={() => patchSettings({ previewEnabled: !previewEnabled })}
+          >
+            {previewEnabled ? '暫停預覽' : '開啟預覽'}
+          </button>
+          <label className="wine-inline-check">
+            <input
+              type="checkbox"
+              data-testid="wine-preview-overlay"
+              checked={previewOverlay}
+              onChange={e => patchSettings({ previewOverlay: e.currentTarget.checked })}
+            />
+            顯示辨識框
+          </label>
+          <select
+            aria-label="預覽更新頻率"
+            data-testid="wine-preview-interval"
+            value={String(previewIntervalMs)}
+            onChange={e => patchSettings({ previewIntervalMs: Number(e.currentTarget.value) })}
+          >
+            <option value="500">0.5 秒</option>
+            <option value="1000">1 秒</option>
+            <option value="2000">2 秒</option>
+            <option value="0">手動更新</option>
+          </select>
+          <button
+            type="button"
+            className="item"
+            data-testid="wine-preview-refresh"
+            disabled={!connected || !previewEnabled}
+            onClick={() => setRefreshId(id => id + 1)}
+          >
+            更新畫面
+          </button>
+        </div>
+        <div className="wine-preview-frame">
+          {previewActive && frame && !previewError ? (
+            <img
+              src={frame.src}
+              alt="Wine 背景即時畫面預覽"
+              data-testid="wine-preview-img"
+              onError={() => setPreviewError(true)}
+            />
+          ) : (
+            <div className="wine-preview-empty muted" data-testid="wine-preview-empty">
+              {!connected ? '連線本機橋接後即可預覽背景視窗。'
+                : !previewEnabled ? '預覽已暫停'
+                : previewError ? '尚未取得視窗影格，請確認目標視窗與螢幕錄製權限。'
+                : '正在讀取畫面…'}
+            </div>
+          )}
+          <div className="wine-preview-hud" data-testid="wine-preview-hud">
+            <span>場景 {previewScene ? SCENE_LABELS[previewScene] ?? previewScene : '—'}</span>
+            <span>HP {recognition?.hpPct != null ? `${recognition.hpPct}%` : '—'}</span>
+            <span>MP {recognition?.mpPct != null ? `${recognition.mpPct}%` : '—'}</span>
+            <span>座標 {position ? `(${position[0]},${position[1]})` : '—'}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="wine-primary-actions">
         <button
           type="button"
@@ -281,11 +413,19 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
       <div className="wine-config-form" data-testid="wine-config-form">
         <div className="wine-config-head">
           <h3>練功策略設定</h3>
+          <label>
+            原地微移距離
+            <input
+              type="number" min={1} max={MAX_MICRO_DISTANCE}
+              data-testid="wine-micro-distance" value={microDistance}
+              onChange={e => patchSettings({ microDistance: clampInt(e.currentTarget.value, microDistance, 1, MAX_MICRO_DISTANCE) })}
+            />
+          </label>
           <button
             type="button"
             className="item"
             data-testid="wine-preset-micro"
-            onClick={() => patchDraft({ patrolA: [390, 300], patrolB: [415, 300] })}
+            onClick={() => patchDraft({ patrolA: [MICRO_PATROL_START_X, 300], patrolB: [MICRO_PATROL_START_X + microDistance, 300] })}
           >
             原地微移
           </button>
@@ -368,7 +508,7 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
             </select>
           </label>
           <label>
-            自動補血 (%)
+            戰中補血 (%)
             <input
               type="number"
               min={0}
@@ -379,6 +519,29 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
             />
           </label>
           <label>
+            戰後待機補血 (%)
+            <input
+              type="number"
+              min={0}
+              max={100}
+              data-testid="wine-map-heal-hp"
+              value={draft.mapHealHpPct ?? 0}
+              onChange={e => patchDraft({ mapHealHpPct: clampInt(e.currentTarget.value, draft.mapHealHpPct ?? 0, 0, 100) })}
+            />
+          </label>
+          <label>
+            補血熱鍵
+            <select
+              data-testid="wine-map-heal-hp-key"
+              value={draft.mapHealHpKey ?? 'F1'}
+              onChange={e => patchDraft({ mapHealHpKey: e.currentTarget.value as WineQuickKey })}
+            >
+              {(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8'] as WineQuickKey[]).map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </label>
+          <label>
             低血停機 (%)
             <input
               type="number"
@@ -387,6 +550,17 @@ export function WineTrainingPanel({ client }: { client: WineBridgeClient }) {
               data-testid="wine-stop-hp"
               value={draft.stopHpPct}
               onChange={e => patchDraft({ stopHpPct: clampInt(e.currentTarget.value, draft.stopHpPct, 0, 99) })}
+            />
+          </label>
+          <label>
+            低魔停機 (%)
+            <input
+              type="number"
+              min={0}
+              max={99}
+              data-testid="wine-stop-mp"
+              value={draft.stopMpPct}
+              onChange={e => patchDraft({ stopMpPct: clampInt(e.currentTarget.value, draft.stopMpPct, 0, 99) })}
             />
           </label>
           <label>
