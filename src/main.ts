@@ -43,6 +43,8 @@ const controller = new FamilyController(transport, {
     dispatchRecaps: controller.dispatchRecaps(),
     lanes: controller.laneSummaries(),
     modules: controller.automation.list().map(m => ({ id: m.id, label: m.label })),
+    characterStates: controller.characterStates(),
+    setMultiViewWatch: (charIds, focusId) => controller.setMultiViewWatch(charIds, focusId),
   }),
 });
 controller.start();
