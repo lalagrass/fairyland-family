@@ -328,7 +328,36 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 }
 
 /* W-FamilyUI (#149): Wine 視窗背景練功面板 */
-.wine-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.wine-panel {
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 100%;
+  container-type: inline-size; container-name: wine-panel;
+}
+.wine-dashboard {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 8px; min-width: 0;
+}
+.wine-dash-card {
+  min-width: 0; overflow-wrap: anywhere; padding: 8px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel-soft);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.wine-dash-card span { font-size: 12px; color: var(--dim); }
+.wine-dash-card b { font-size: 14px; font-weight: 650; }
+.wine-schedule {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0;
+}
+.wine-schedule label {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  font-size: 12px; color: var(--dim);
+}
+.wine-schedule input {
+  width: 100%; min-width: 0; box-sizing: border-box;
+  background: #10141a; color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; font: inherit;
+}
+@container wine-panel (max-width: 420px) {
+  .wine-dashboard, .wine-schedule { grid-template-columns: minmax(0, 1fr); }
+}
 .wine-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
 .wine-head h2, .wine-config-head h3, .wine-log-box h3 { margin: 0; font-size: 14px; }
 .wine-note { margin: 0; font-size: 12px; line-height: 1.4; }

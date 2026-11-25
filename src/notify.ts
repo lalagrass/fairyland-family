@@ -47,6 +47,12 @@ export function getNotificationPermission(): NotificationPermissionState {
   return browserAdapter().permission();
 }
 
+/** F11：沿用同一個通知開關。分頁在前景、未授權或關掉通知時不送。 */
+export function notifyWhenHidden(title: string, body: string, adapter: NotificationAdapter = browserAdapter()): void {
+  if (!notificationsEnabled() || !adapter.isHidden() || adapter.permission() !== 'granted') return;
+  adapter.send(title, body);
+}
+
 /**
  * DV5：當分頁不在前景（document.hidden === true）且玩家已授權瀏覽器通知時，
  * 於「工作意外中止」、「戰鬥落敗」或「工作目標達成」時各發送一次瀏覽器通知。
