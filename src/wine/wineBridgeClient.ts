@@ -30,6 +30,36 @@ export interface WineBridgeStorageLike {
   setItem(key: string, value: string): void;
 }
 
+/** Family-side stop schedule. It does not change host rules; the panel calls the bridge stop command. */
+export interface WineTrainingSchedule {
+  /** Local 24-hour "HH:MM", or null when the clock stop is off. */
+  stopAt: string | null;
+  /** Stop after this many bridge-reported encounters, or null when off. */
+  maxBattles: number | null;
+  /** When this schedule was armed. A clock time already passed waits until the next day. */
+  armedAtMs: number | null;
+}
+
+export const DEFAULT_WINE_SCHEDULE: WineTrainingSchedule = {
+  stopAt: null,
+  maxBattles: null,
+  armedAtMs: null,
+};
+
+const SCHEDULE_CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+export function sanitizeSchedule(raw: unknown): WineTrainingSchedule {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_WINE_SCHEDULE };
+  const row = raw as Partial<WineTrainingSchedule>;
+  const stopAt = typeof row.stopAt === 'string' && SCHEDULE_CLOCK.test(row.stopAt) ? row.stopAt : null;
+  const maxBattles =
+    typeof row.maxBattles === 'number' && Number.isInteger(row.maxBattles) && row.maxBattles >= 1
+      ? row.maxBattles
+      : null;
+  const armedAtMs = typeof row.armedAtMs === 'number' && Number.isFinite(row.armedAtMs) ? Math.round(row.armedAtMs) : null;
+  return { stopAt, maxBattles, armedAtMs };
+}
+
 export interface WineBridgeSavedSettings {
   baseUrl: string;
   config: WineBgConfig | null;
@@ -37,6 +67,7 @@ export interface WineBridgeSavedSettings {
   previewOverlay: boolean;
   previewIntervalMs: number;
   microDistance: number;
+  schedule?: WineTrainingSchedule;
 }
 
 export interface WineBridgeEvent {
@@ -81,6 +112,10 @@ export interface WineBridgeStatus {
   turns: number;
   ticks: number;
   actionsSent: number;
+  /** Present only when the bridge reports potion uses. Missing means unknown, not zero. */
+  potionUses?: number | null;
+  /** Present only when the bridge reports experience gained this session. */
+  expGained?: number | null;
   lastAction: Record<string, unknown> | null;
   stopReason: string | null;
   config: WineBgConfig;
@@ -238,6 +273,7 @@ export function loadSavedWineBridgeSettings(storage?: WineBridgeStorageLike | nu
     previewOverlay: true,
     previewIntervalMs: DEFAULT_PREVIEW_INTERVAL_MS,
     microDistance: DEFAULT_MICRO_DISTANCE,
+    schedule: { ...DEFAULT_WINE_SCHEDULE },
   };
   if (!storage) return { settings: defaults, hasSaved: false };
   try {
@@ -262,6 +298,7 @@ export function loadSavedWineBridgeSettings(storage?: WineBridgeStorageLike | nu
         microDistance: typeof parsed.microDistance === 'number' && Number.isInteger(parsed.microDistance)
           && parsed.microDistance >= 1 && parsed.microDistance <= MAX_MICRO_DISTANCE
           ? parsed.microDistance : DEFAULT_MICRO_DISTANCE,
+        schedule: sanitizeSchedule(parsed.schedule),
       },
     };
   } catch {
@@ -277,7 +314,12 @@ export function saveWineBridgeSettings(
   try {
     const baseUrl = normalizeLoopbackBridgeUrl(settings.baseUrl);
     if (!baseUrl) return;
-    const encoded = JSON.stringify({ ...settings, baseUrl, config: settings.config ? sanitizeConfig(settings.config) : null });
+    const encoded = JSON.stringify({
+      ...settings,
+      baseUrl,
+      config: settings.config ? sanitizeConfig(settings.config) : null,
+      schedule: sanitizeSchedule(settings.schedule),
+    });
     if (storage.getItem(WINE_SETTINGS_STORAGE_KEY) !== encoded) {
       storage.setItem(WINE_SETTINGS_STORAGE_KEY, encoded);
     }
@@ -289,6 +331,8 @@ export function saveWineBridgeSettings(
 export const WINE_STOP_REASON_LABELS: Record<string, string> = {
   manual_stop: '手動停止',
   user_clicked_stop: '手動停止',
+  schedule_clock: '已到設定的停機時間',
+  schedule_battles: '已達設定的場數',
   round_trip_limit: '已達來回次數上限',
   timeout: '已達時間上限',
   hp_low: 'HP 低於停機門檻',

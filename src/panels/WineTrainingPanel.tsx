@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { getNotificationPermission, notificationsEnabled, notifyWhenHidden } from '../notify';
 import {
   DEFAULT_BRIDGE_URL,
   DEFAULT_WINE_CONFIG,
+  DEFAULT_WINE_SCHEDULE,
   WineBridgeClient,
   formatWineEventLine,
   formatWineStopReason,
@@ -9,6 +11,7 @@ import {
   MICRO_PATROL_START_X,
   isLoopbackBridgeUrl,
   loadSavedWineBridgeSettings,
+  sanitizeSchedule,
   saveWineBridgeSettings,
   type WineBgConfig,
   type WineBridgeSnapshot,
@@ -19,7 +22,16 @@ import {
   type WineLaunchStatus,
   type WinePreferredAction,
   type WineQuickKey,
+  type WineTrainingSchedule,
 } from '../wine/wineBridgeClient';
+import {
+  formatExpPerHour,
+  formatTrainingHours,
+  scheduleStopDecision,
+  shouldNotifyTrainingStop,
+  trainingStats,
+  trainingStopSignature,
+} from '../wine/trainingDashboard';
 
 const SCENE_LABELS: Record<string, string> = {
   map: '地圖探索',
@@ -88,6 +100,9 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
   const [refreshId, setRefreshId] = useState(0);
   const [frame, setFrame] = useState<{ src: string; info: WineFrameInfo } | null>(null);
   const [previewError, setPreviewError] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const scheduleStopSent = useRef<string | null>(null);
+  const previousStopSignature = useRef<string | null>(null);
 
   useEffect(() => {
     setSnap(client.getSnapshot());
@@ -108,6 +123,8 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
   const connecting = snap.connState === 'CONNECTING';
   const st = snap.status;
   const isRunning = Boolean(connected && st?.running);
+  const schedule = settings.schedule ?? DEFAULT_WINE_SCHEDULE;
+  const stats = trainingStats(connected ? st : null, nowMs);
   const validLoopback = isLoopbackBridgeUrl(urlInput);
 
   useEffect(() => {
@@ -143,6 +160,46 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [client, snap.baseUrl, active, connected, previewEnabled, previewIntervalMs, previewOverlay, refreshId]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [isRunning]);
+
+  useEffect(() => {
+    if (!connected || !st?.running) return;
+    const decision = scheduleStopDecision(schedule, st, Date.now());
+    if (!decision.stop || !decision.reason) return;
+    const signature = `${schedule.armedAtMs}:${decision.reason}:${st.encounters}`;
+    if (scheduleStopSent.current === signature) return;
+    scheduleStopSent.current = signature;
+    void client.stop(decision.reason).catch(err => {
+      setLocalMsg(err instanceof Error ? err.message : String(err));
+    });
+  }, [client, connected, schedule, st]);
+
+  useEffect(() => {
+    const next = trainingStopSignature(connected ? st : null, nowMs);
+    const previous = previousStopSignature.current;
+    previousStopSignature.current = next;
+    if (!shouldNotifyTrainingStop({
+      hidden: typeof document !== 'undefined' && document.hidden,
+      granted: getNotificationPermission() === 'granted',
+      enabled: notificationsEnabled(),
+      previousSignature: previous,
+      nextSignature: next,
+    })) return;
+    const reason = stats.stopReasons.at(-1);
+    notifyWhenHidden('童話家族：視窗練功已停', formatWineStopReason(reason) || '練功已停止');
+  }, [connected, nowMs, st, stats.stopReasons]);
+
+  const patchSchedule = (patch: Partial<WineTrainingSchedule>) => {
+    patchSettings({
+      schedule: sanitizeSchedule({ ...schedule, ...patch, armedAtMs: Date.now() }),
+    });
+    scheduleStopSent.current = null;
+  };
 
   const patchDraft = (patch: Partial<WineBgConfig>) => {
     patchSettings({ config: { ...draft, ...patch } });
@@ -333,6 +390,56 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
           <span>{formatLaunchWindow(st?.launch)}</span>
           <span>{`橋接埠 ${st?.launch?.bridgePort ?? '—'}`}</span>
         </div>
+      </div>
+
+      <section className="wine-dashboard" data-testid="wine-dashboard" aria-label="練功儀表">
+        <div className="wine-dash-card">
+          <span>時數</span>
+          <b data-testid="wine-stat-hours">{formatTrainingHours(stats.hours)}</b>
+        </div>
+        <div className="wine-dash-card">
+          <span>場數</span>
+          <b data-testid="wine-stat-battles">{stats.battles === null ? '—' : String(stats.battles)}</b>
+        </div>
+        <div className="wine-dash-card">
+          <span>每小時經驗</span>
+          <b data-testid="wine-stat-exp-hour">{formatExpPerHour(stats.expPerHour)}</b>
+        </div>
+        <div className="wine-dash-card">
+          <span>吃補次數</span>
+          <b data-testid="wine-stat-potions">{stats.potionUses === null ? '—' : String(stats.potionUses)}</b>
+        </div>
+        <div className="wine-dash-card">
+          <span>停機</span>
+          <b data-testid="wine-stat-stops">
+            {stats.stopCount === null ? '—' : `${stats.stopCount} 次`}
+            {stats.stopReasons.length > 0 ? `（${stats.stopReasons.map(reason => formatWineStopReason(reason)).join('、')}）` : ''}
+          </b>
+        </div>
+      </section>
+      <p className="muted wine-note">時數、場數、吃補與停機只顯示橋接回報。橋接沒有回報經驗時，每小時經驗留空。</p>
+      <div className="wine-schedule" data-testid="wine-schedule">
+        <label>
+          練到幾點
+          <input
+            type="time"
+            data-testid="wine-stop-at"
+            value={schedule.stopAt ?? ''}
+            onChange={e => patchSchedule({ stopAt: e.currentTarget.value || null })}
+          />
+        </label>
+        <label>
+          練幾場
+          <input
+            type="number"
+            min={1}
+            inputMode="numeric"
+            data-testid="wine-max-battles"
+            value={schedule.maxBattles ?? ''}
+            placeholder="不限"
+            onChange={e => patchSchedule({ maxBattles: posIntOrNull(e.currentTarget.value) })}
+          />
+        </label>
       </div>
 
       <div className="wine-preview-box" data-testid="wine-preview-box">
