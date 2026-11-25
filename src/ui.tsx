@@ -10,7 +10,7 @@ import type {
   SnapshotBattleUnitSummary,
 } from './protocol/index';
 import { APPEARANCE_PROVIDERS } from './render/appearance';
-import { GameViewport } from './render/GameViewport';
+import { MultiGameViewport } from './render/MultiGameViewport';
 import type { ViewMode } from './render/viewMode';
 import { STRATEGIES, type BattleStrategy } from './battler';
 import type { DirNpc } from './directory';
@@ -88,6 +88,10 @@ export interface UiAux {
   lanes?: LaneSummary[];
   /** W-FamilyUI：供測試注入或外層共享的本機 Wine 橋接客戶端。 */
   wineClient?: WineBridgeClient;
+  /** F14：每個角色（含背景 FX17 快照）的獨立狀態池。 */
+  characterStates?: Record<string, FamilyState>;
+  /** F14：通知控制器目前並排畫面觀看的角色與焦點。 */
+  setMultiViewWatch?: (charIds: string[], focusId: string | null) => void;
 }
 
 const NO_QUEUE: QueueStatus = { phase: 'IDLE', jobs: [], activeJobIndex: 0, stopReason: null, text: '工作佇列：閒置' };
@@ -868,17 +872,25 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
       )}
 
       <div className="layout-grid">
-        {/* 中上欄（手機分頁：畫面）：PixiJS 原版＋新外觀畫面 */}
+        {/* 中上欄（手機分頁：畫面）：PixiJS 原版＋新外觀畫面（支援 F14 單一／並排切換） */}
         <div className={`col col-stage ${mobileTab !== 'stage' ? 'col-hidden-mobile' : ''}`}>
-          <GameViewport
+          <MultiGameViewport
             state={state}
+            characterStates={aux.characterStates}
             watchCharacterId={effectiveWatchId}
             onSelectWatchCharacter={id => setWatchCharacterId(id)}
+            onSwitchHostCharacter={id => {
+              const name = state.members.find(m => m.characterId === id)?.name ?? id;
+              setWatchCharacterId(id);
+              handleAction(cmdAction({ type: 'SWITCH_VIEW_CHARACTER', characterId: id }, `並排畫面：設為主視角 ${name}`));
+            }}
+            onWatchChange={aux.setMultiViewWatch}
             appearances={aux.appearances}
             viewModes={aux.viewModes}
             onSetViewMode={(characterId, viewMode) =>
               handleAction({ kind: 'CHAR_VIEWMODE_UPDATE', characterId, viewMode, label: `${characterId} 地圖顯示改為${viewMode === 'modern' ? '現代' : '原版'}` })
             }
+            running={running}
           />
           <WorldMapPanel
             graph={state.staticData?.portalGraph ?? null}

@@ -32,6 +32,7 @@ import { parseInput, type UiAction } from './parse';
 import { RecapTracker, type WelcomeRecapSummary } from './dv7_recap';
 import { WorkQueue, type QueueHost, type QueueStatus } from './queue';
 import { CharacterAppearanceStore } from './render/appearanceStore';
+import { tileSnapshotPollMs } from './render/multiViewport';
 import { CharacterViewModeStore, parseViewMode } from './render/viewMode';
 import { addLog, applyMessage, applySent, connectionStatus, initialState, type FamilyState } from './state';
 import type { Transport } from './transport/types';
@@ -42,6 +43,18 @@ interface KvStorage { getItem(k: string): string | null; setItem(k: string, v: s
 
 /** F9c：派給非視角角色時，最多等這麼久取得背景角色快照。 */
 const PENDING_QUEST_TIMEOUT_MS = 15_000;
+/** F14：背景地圖尚未載入完成（GAME_NOT_READY）時的重試延遲。 */
+const MULTI_VIEW_NOT_READY_RETRY_MS = 600;
+/** F14：事件觸發背景快照更新的最短節流間隔。 */
+const MULTI_VIEW_EVENT_SNAPSHOT_THROTTLE_MS = 300;
+const OBSERVED_BG_EVENTS = new Set<string>([
+  'MOVED',
+  'LOCATION_CHANGED',
+  'BATTLE_STARTED',
+  'BATTLE_TURN_READY',
+  'BATTLE_TIMELINE',
+  'BATTLE_ENDED',
+]);
 
 export interface ControllerOptions {
   now?: () => number;
@@ -81,6 +94,14 @@ export class FamilyController {
   private queues = new Map<string, WorkQueue>();
   /** F8：每位角色的派工通道（任務鏈在背景跑，指令直接送給該角色）。 */
   private lanes = new Map<string, CharacterLane>();
+  /** F14：並排觀察的多角色快照池與輪詢狀態。 */
+  private multiViewCharIds: string[] = [];
+  private multiViewFocusId: string | null = null;
+  private watchedStates = new Map<string, FamilyState>();
+  private observerSnapshotRequests = new Map<string, string>();
+  private observerRequestTimes = new Map<string, number>();
+  private observerLastPollAt = new Map<string, number>();
+  private observerPendingRetry = new Set<string>();
   private notifier: WorkNotifier;
   private primaryCharacterId: string | null = null;
   private seq = 0;
@@ -528,21 +549,220 @@ export class FamilyController {
     return out;
   }
 
+  /** F14：設定並排畫面目前正在觀看的角色與焦點角色，驅動 FX17 背景快照輪詢。 */
+  setMultiViewWatch(charIds: string[], focusId: string | null): void {
+    const nextIds = [...new Set(charIds.filter(Boolean))];
+    const nextFocus = focusId && nextIds.includes(focusId) ? focusId : (nextIds[0] ?? null);
+    const sameIds =
+      nextIds.length === this.multiViewCharIds.length &&
+      nextIds.every((id, i) => id === this.multiViewCharIds[i]);
+    if (sameIds && nextFocus === this.multiViewFocusId) return;
+
+    this.multiViewCharIds = nextIds;
+    this.multiViewFocusId = nextFocus;
+    const watchedSet = new Set(nextIds);
+    for (const id of [...this.watchedStates.keys()]) {
+      if (!watchedSet.has(id)) {
+        this.watchedStates.delete(id);
+        this.observerLastPollAt.delete(id);
+      }
+    }
+    for (const id of nextIds) {
+      if (id !== this.state.characterId && !this.watchedStates.has(id)) {
+        this.watchedStates.set(id, this.seedWatchedState(id));
+      }
+    }
+    this.pollMultiViewSnapshots();
+  }
+
+  /** F14：回傳每個角色（主視角＋背景觀察角色＋派工通道）的最新狀態快照。 */
+  characterStates(): Record<string, FamilyState> {
+    const out: Record<string, FamilyState> = {};
+    if (this.state.characterId) {
+      out[this.state.characterId] = this.state;
+    }
+    const candidates = new Set<string>([
+      ...this.multiViewCharIds,
+      ...this.watchedStates.keys(),
+      ...this.lanes.keys(),
+    ]);
+    for (const cid of candidates) {
+      if (!cid || cid === this.state.characterId) continue;
+      const lane = this.lanes.get(cid);
+      const watched = this.watchedStates.get(cid);
+      const laneReady = Boolean(lane?.ready());
+      const laneAt = laneReady ? (lane!.state.snapshotAt ?? 0) : -Infinity;
+      const watchedAt = watched?.snapshot ? (watched.snapshotAt ?? 0) : -Infinity;
+      if (laneReady && laneAt > watchedAt) {
+        out[cid] = this.overlayHostFields(lane!.state, cid);
+      } else if (watched) {
+        out[cid] = this.overlayHostFields(watched, cid);
+      }
+    }
+    return out;
+  }
+
+  private seedWatchedState(cid: string): FamilyState {
+    return this.overlayHostFields({ ...initialState(), characterId: cid, activeCharacterId: cid }, cid);
+  }
+
+  private overlayHostFields(s: FamilyState, cid: string): FamilyState {
+    const membersSource = this.state.members.length > 0 ? this.state.members : s.members;
+    const members =
+      s.snapshot
+        ? membersSource.map(m =>
+            m.characterId === cid
+              ? {
+                  ...m,
+                  mapId: s.snapshot!.mapId,
+                  mapName: s.snapshot!.mapName,
+                  x: s.character?.x ?? s.snapshot!.character.x,
+                  y: s.character?.y ?? s.snapshot!.character.y,
+                  inBattle: s.character?.inBattle ?? (s.battle !== null),
+                }
+              : m,
+          )
+        : membersSource;
+    return {
+      ...s,
+      characterId: cid,
+      activeCharacterId: cid,
+      lastHeartbeatAt: this.state.lastHeartbeatAt,
+      sessionId: this.state.sessionId,
+      stoppedSessionId: this.state.stoppedSessionId,
+      phase: this.state.phase,
+      staticData: this.state.staticData ?? s.staticData,
+      clockOnly: this.state.clockOnly,
+      members,
+    };
+  }
+
+  private pollMultiViewSnapshots(): void {
+    if (this.status() !== 'RUNNING' || this.multiViewCharIds.length === 0) return;
+    const now = this.now();
+    const known = new Set(this.state.members.map(m => m.characterId));
+    for (const cid of this.multiViewCharIds) {
+      if (!cid || cid === this.state.characterId) continue;
+      if (known.size > 0 && !known.has(cid)) continue;
+      const pollMs = tileSnapshotPollMs(cid, this.multiViewFocusId, false);
+      if (pollMs <= 0) continue;
+      if (this.observerPendingRetry.has(cid)) continue;
+      const lane = this.lanes.get(cid);
+      const watched = this.watchedStates.get(cid);
+      const lastSnapAt = Math.max(
+        lane?.ready() ? (lane.state.snapshotAt ?? -Infinity) : -Infinity,
+        watched?.snapshot ? (watched.snapshotAt ?? -Infinity) : -Infinity,
+      );
+      const lastReqAt = this.observerLastPollAt.get(cid) ?? -Infinity;
+      if (now - lastSnapAt >= pollMs && now - lastReqAt >= pollMs) {
+        this.requestWatchedSnapshot(cid, '背景畫面更新');
+      }
+    }
+  }
+
+  private requestWatchedSnapshot(cid: string, why: string): void {
+    const now = this.now();
+    this.observerLastPollAt.set(cid, now);
+    const cmdId = this.sendFor(cid, { type: 'REQUEST_SNAPSHOT' }, `要求快照（${why}）`);
+    if (!cmdId) return;
+    this.observerSnapshotRequests.set(cmdId, cid);
+    this.observerRequestTimes.set(cmdId, now);
+    for (const [id, at] of this.observerRequestTimes) {
+      if (now - at > 30_000) {
+        this.observerRequestTimes.delete(id);
+        this.observerSnapshotRequests.delete(id);
+      }
+    }
+  }
+
+  private scheduleWatchedRetry(cid: string): void {
+    if (this.observerPendingRetry.has(cid)) return;
+    if (!this.multiViewCharIds.includes(cid) || cid === this.state.characterId) return;
+    this.observerPendingRetry.add(cid);
+    this.after(MULTI_VIEW_NOT_READY_RETRY_MS, () => {
+      this.observerPendingRetry.delete(cid);
+      if (this.status() === 'RUNNING' && this.multiViewCharIds.includes(cid) && cid !== this.state.characterId) {
+        this.requestWatchedSnapshot(cid, '背景地圖重試快照');
+      }
+    });
+  }
+
   private receive(raw: unknown): void {
     const now = this.now();
+    if (isPluginMessage(raw) && raw.kind === 'snapshot' && raw.inReplyTo && this.observerSnapshotRequests.has(raw.inReplyTo)) {
+      const expectedCid = this.observerSnapshotRequests.get(raw.inReplyTo)!;
+      this.observerSnapshotRequests.delete(raw.inReplyTo);
+      this.observerRequestTimes.delete(raw.inReplyTo);
+      const cid = raw.characterId || expectedCid;
+      this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
+      if (cid !== this.state.characterId) {
+        const prev = this.watchedStates.get(cid) ?? this.seedWatchedState(cid);
+        const nextWatched = this.overlayHostFields(applyMessage(prev, raw, now), cid);
+        this.watchedStates.set(cid, nextWatched);
+        const lane = this.lanes.get(cid);
+        if (lane?.ownsSnapshotRequest(raw.inReplyTo)) lane.onMessage(raw);
+        this.emit();
+        return;
+      }
+    }
+    if (isPluginMessage(raw) && raw.kind === 'command-result' && this.observerSnapshotRequests.has(raw.commandId)) {
+      const cid = this.observerSnapshotRequests.get(raw.commandId)!;
+      if (raw.status === 'REJECTED') {
+        this.observerSnapshotRequests.delete(raw.commandId);
+        this.observerRequestTimes.delete(raw.commandId);
+        if (raw.reasonCode === 'GAME_NOT_READY') {
+          this.scheduleWatchedRetry(cid);
+        }
+      }
+    }
+    if (isPluginMessage(raw) && raw.kind === 'event' && raw.event.type === 'COMMAND_REJECTED' && this.observerSnapshotRequests.has(raw.event.commandId)) {
+      const cid = this.observerSnapshotRequests.get(raw.event.commandId)!;
+      this.observerSnapshotRequests.delete(raw.event.commandId);
+      this.observerRequestTimes.delete(raw.event.commandId);
+      if (raw.event.reasonCode === 'GAME_NOT_READY') {
+        this.scheduleWatchedRetry(cid);
+      }
+    }
     // F8：派工通道替背景角色要的快照只屬於那條通道，不能蓋掉視角角色的畫面狀態。
     if (isPluginMessage(raw) && raw.kind === 'snapshot' && raw.characterId !== this.state.characterId) {
       const lane = this.lanes.get(raw.characterId);
       if (lane?.ownsSnapshotRequest(raw.inReplyTo)) {
         this.directory.learn(raw.snapshot, this.state.staticData?.portalGraph);
         lane.onMessage(raw);
+        if (this.multiViewCharIds.includes(raw.characterId)) {
+          const prev = this.watchedStates.get(raw.characterId) ?? this.seedWatchedState(raw.characterId);
+          this.watchedStates.set(raw.characterId, this.overlayHostFields(applyMessage(prev, raw, now), raw.characterId));
+        }
         if (lane.active() || this.queues.get(raw.characterId)?.isActive()) this.getOrCreateQueue(raw.characterId).onMessage(raw);
         this.settlePendingLaneQuests();
         this.emit();
         return;
       }
     }
+    const prevViewedId = this.state.characterId;
+    const prevViewedState = this.state;
     this.state = applyMessage(this.state, raw, now);
+    if (prevViewedId && this.state.characterId && this.state.characterId !== prevViewedId && this.multiViewCharIds.includes(prevViewedId) && prevViewedState.snapshot) {
+      this.watchedStates.set(prevViewedId, this.overlayHostFields({ ...prevViewedState, pending: {}, inflight: {} }, prevViewedId));
+    }
+    if (
+      isPluginMessage(raw) &&
+      raw.kind === 'event' &&
+      raw.characterId !== this.state.characterId &&
+      OBSERVED_BG_EVENTS.has(raw.event.type) &&
+      (this.multiViewCharIds.includes(raw.characterId) || this.watchedStates.has(raw.characterId))
+    ) {
+      const prevWatched = this.watchedStates.get(raw.characterId) ?? this.seedWatchedState(raw.characterId);
+      const nextWatched = this.overlayHostFields(applyMessage(prevWatched, raw, now), raw.characterId);
+      this.watchedStates.set(raw.characterId, nextWatched);
+      if (
+        (raw.event.type === 'LOCATION_CHANGED' || raw.event.type === 'BATTLE_ENDED') &&
+        this.multiViewCharIds.includes(raw.characterId) &&
+        now - (this.observerLastPollAt.get(raw.characterId) ?? -Infinity) >= MULTI_VIEW_EVENT_SNAPSHOT_THROTTLE_MS
+      ) {
+        this.requestWatchedSnapshot(raw.characterId, '背景換圖／戰後快照');
+      }
+    }
     const recap = this.recapTracker.evaluateOnState(this.state, now);
     if (recap) this.latestRecap = recap;
     if (this.state.characterId && this.state.characterId !== this.lastTrackedCharacterId) {
@@ -731,6 +951,7 @@ export class FamilyController {
       }
     }
     for (const lane of this.lanes.values()) lane.tick();
+    this.pollMultiViewSnapshots();
     if (this.questChain.isActive()) this.questChain.tick();
     if (this.questModule.isActive()) this.questModule.advance();
     this.automation.syncCoordinator(this.moduleContext());
@@ -747,6 +968,7 @@ export class FamilyController {
       this.lastRequestedSession = this.state.sessionId;
       this.emit();
       this.send(needStatic ? { type: 'REQUEST_SNAPSHOT', includeStatic: true } : { type: 'REQUEST_SNAPSHOT' }, '要求快照（連線）');
+      this.pollMultiViewSnapshots();
       return;
     }
     this.emit();

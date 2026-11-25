@@ -48,7 +48,7 @@ header h1 { font-size: 18px; margin: 0; }
 .col-stage { grid-area: stage; }
 .col-active { grid-area: active; }
 .col-feed { grid-area: feed; }
-.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; max-width: 100%; }
 
 .character-workbench { container-type: inline-size; overflow-wrap: anywhere; }
 .workbench-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
@@ -528,3 +528,30 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 .f10-policy-row, .f10-queue { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
 .f10-policy-row span { margin-right: auto; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .f10-controls { grid-template-columns: minmax(0, 1fr); } }
+
+/* F14 多角色並排畫面（寬版 2 欄 Grid、窄版左右滑動 Carousel） */
+.multiview-shell { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 100%; overflow-x: hidden; }
+.multiview-shell select { min-width: 44px; min-height: 44px; max-width: 100%; }
+.multiview-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.multiview-member-pills { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
+.multiview-toolbar .tab-active,
+.multiview-carousel-nav .tab-active { border-color: var(--acc); background: rgba(124,183,255,.16); color: var(--acc); }
+.multiview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; max-width: 100%; }
+.multiview-grid[data-columns="1"] { grid-template-columns: minmax(0, 1fr); }
+.multiview-carousel { width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; touch-action: pan-y; }
+.multiview-carousel-nav { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; min-width: 0; max-width: 100%; }
+.multiview-carousel-pills { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
+.multiview-tile {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%;
+  padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); cursor: pointer;
+}
+.multiview-tile.is-focused { border-color: var(--acc); box-shadow: 0 0 0 1px rgba(124,183,255,.35); }
+.multiview-tile-hidden { display: none; }
+.multiview-tile-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.multiview-tile-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.multiview-tile-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.stage-panel-compact { padding: 0; border: none; background: transparent; }
+.stage-panel-compact .stage-viewport-wrap { min-height: 180px; max-height: 360px; }
+@media (max-width: 767px) {
+  .multiview-grid { grid-template-columns: minmax(0, 1fr); }
+}

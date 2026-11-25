@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { rasterTerrain } from './terrainRaster';
 import type { FamilyState } from '../state';
+import { FrameThrottle } from './multiViewport';
 import {
   buildModernModel,
   clampCamera,
@@ -19,6 +20,7 @@ export interface ModernSyncInput {
   watchCharacterId: string | null;
   /** 縮放倍率（UI 的 +／－／滾輪改這個值）。 */
   zoom: number;
+  targetFps?: number;
 }
 
 const COLORS: Record<ModernMarker['kind'], number> = {
@@ -50,6 +52,11 @@ export class ModernStageController {
   private lastTick = 0;
   private destroyed = false;
   private manualPan: { x: number; y: number } | null = null;
+  private throttle = new FrameThrottle(60);
+  private resizeObserver: ResizeObserver | null = null;
+  private readonly onWindowResize = (): void => {
+    this.resizeToHost();
+  };
   /** 最近一次畫出的結果，給測試與除錯用。 */
   lastModel: ModernViewModel | null = null;
   frames = 0;
@@ -60,13 +67,24 @@ export class ModernStageController {
   ) {}
 
   async init(): Promise<boolean> {
+    if (this.destroyed) return false;
     if (typeof window === 'undefined' || typeof document === 'undefined') return false;
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
     if (/HappyDOM|jsdom|Node\.js/i.test(ua)) return false;
     if (typeof window.WebGLRenderingContext === 'undefined') return false;
     try {
       const app = new Application();
-      await app.init({ resizeTo: this.hostEl, antialias: true, backgroundAlpha: 1, backgroundColor: 0x0e1520, resolution: Math.min(2, window.devicePixelRatio || 1), autoDensity: true });
+      const initW = Math.max(2, this.hostEl.clientWidth || 320);
+      const initH = Math.max(2, this.hostEl.clientHeight || 200);
+      await app.init({
+        width: initW,
+        height: initH,
+        antialias: true,
+        backgroundAlpha: 1,
+        backgroundColor: 0x0e1520,
+        resolution: Math.min(2, window.devicePixelRatio || 1),
+        autoDensity: true,
+      });
       if (this.destroyed) {
         app.destroy({ removeView: true }, { children: true });
         return false;
@@ -84,8 +102,18 @@ export class ModernStageController {
       this.world.addChild(this.ground, this.gfx);
       app.stage.addChild(this.world, this.miniGround, this.hud, this.notice);
       app.canvas.addEventListener('pointerdown', this.onPointer);
+      if (typeof ResizeObserver === 'function') {
+        const obs = new ResizeObserver(() => this.resizeToHost());
+        obs.observe(this.hostEl);
+        this.resizeObserver = obs;
+      }
+      window.addEventListener('resize', this.onWindowResize);
       app.ticker.add(() => this.renderFrame());
+      this.syncTickerFps();
       this.onStatusChange?.({ ready: true, error: null });
+      if (this.latest && this.throttle.getTargetFps() > 0) {
+        this.renderFrame(true);
+      }
       return true;
     } catch (err) {
       this.onStatusChange?.({ ready: false, error: err instanceof Error ? err.message : String(err) });
@@ -94,8 +122,42 @@ export class ModernStageController {
   }
 
   update(input: ModernSyncInput): void {
-    if (this.latest && this.latest.watchCharacterId !== input.watchCharacterId) this.manualPan = null;
+    const watchChanged = Boolean(this.latest && this.latest.watchCharacterId !== input.watchCharacterId);
+    const zoomChanged = Boolean(this.latest && this.latest.zoom !== input.zoom);
+    if (watchChanged) this.manualPan = null;
     this.latest = input;
+    this.throttle.setTargetFps(input.targetFps ?? 60);
+    if (watchChanged || zoomChanged) {
+      this.throttle.markDirty();
+    }
+    this.syncTickerFps();
+  }
+
+  private syncTickerFps(): void {
+    const app = this.app;
+    if (this.destroyed || !app?.ticker) return;
+    const fps = this.throttle.getTargetFps();
+    if (fps <= 0) {
+      app.stop();
+      return;
+    }
+    app.ticker.maxFPS = fps >= 60 ? 0 : fps;
+    app.start();
+  }
+
+  private resizeToHost(): void {
+    const app = this.app;
+    if (this.destroyed || !app?.renderer) return;
+    const w = this.hostEl.clientWidth;
+    const h = this.hostEl.clientHeight;
+    if (w < 2 || h < 2) return;
+    if (app.screen.width !== w || app.screen.height !== h) {
+      app.renderer.resize(w, h);
+    }
+    this.throttle.markDirty();
+    if (this.throttle.getTargetFps() > 0) {
+      this.renderFrame(true);
+    }
   }
 
   /** 小地圖上點擊：只把鏡頭移過去看，不送任何移動指令。換觀察對象或再點 → 回到跟隨。 */
@@ -113,14 +175,16 @@ export class ModernStageController {
     }
   };
 
-  private renderFrame(): void {
+  private renderFrame(force = false): void {
     const app = this.app;
     const input = this.latest;
-    if (this.destroyed || !app || !input) return;
+    if (this.destroyed || !app?.renderer || !input) return;
+    const W = app.screen.width, H = app.screen.height;
+    if (W < 2 || H < 2) return;
     const nowMs = Date.now();
+    if (!this.throttle.shouldRender(nowMs, force)) return;
     const dt = this.lastTick ? nowMs - this.lastTick : 16;
     this.lastTick = nowMs;
-    const W = app.screen.width, H = app.screen.height;
     const model = buildModernModel(input.state, input.watchCharacterId, nowMs);
     this.lastModel = model;
     this.frames += 1;
@@ -298,11 +362,19 @@ export class ModernStageController {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
     this.destroyed = true;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResize);
+    }
     this.ground.texture = Texture.EMPTY;
     this.miniGround.texture = Texture.EMPTY;
     this.terrainTex?.destroy(true);
     this.terrainTex = null;
+    for (const t of this.labels.values()) t.destroy();
+    this.labels.clear();
     const app = this.app;
     this.app = null;
     if (app) {
