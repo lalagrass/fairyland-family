@@ -58,6 +58,15 @@ export interface WineFrameInfo {
   position: [number, number] | null;
 }
 
+/** Launch settings reported by the Wine bridge `/status` (not the game protocol). */
+export interface WineLaunchStatus {
+  scaleMode: string | null;
+  windowWidth: number | null;
+  windowHeight: number | null;
+  bridgePort: number | null;
+  windowSizeSource?: 'planned' | 'actual' | 'unknown' | null;
+}
+
 export interface WineBridgeStatus {
   ok: boolean;
   connected: boolean;
@@ -76,6 +85,7 @@ export interface WineBridgeStatus {
   stopReason: string | null;
   config: WineBgConfig;
   recentEvents: WineBridgeEvent[];
+  launch?: WineLaunchStatus | null;
 }
 
 export interface WineBridgeWindowInfo {

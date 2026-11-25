@@ -316,6 +316,13 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
       encounters: 1,
       turns: 3,
       actionsSent: 5,
+      launch: {
+        scaleMode: 'fit',
+        windowWidth: 1512,
+        windowHeight: 982,
+        bridgePort: 4189,
+        windowSizeSource: 'actual',
+      },
       recentEvents: [
         { tsMs: 1700000001000, type: 'action', action: { kind: 'move', point: [415, 300] } },
       ],
@@ -325,6 +332,11 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
 
   const metricsText = root.querySelector('[data-testid="wine-metrics"]')?.textContent ?? '';
   assert(metricsText.includes('往返 2 趟') && metricsText.includes('回合 3 次'), `即時戰報計數更新（實際：${metricsText}）`);
+  const launchText = root.querySelector('[data-testid="wine-launch"]')?.textContent ?? '';
+  assert(
+    launchText.includes('縮放 fit') && launchText.includes('1512×982') && launchText.includes('實際') && launchText.includes('4189'),
+    `視窗練功面板顯示橋接啟動設定（實際：${launchText}）`,
+  );
   const logText = root.querySelector('[data-testid="wine-log"]')?.textContent ?? '';
   assert(logText.includes('巡邏移動 (415, 300)'), `動作日誌顯示推播事件（實際：${logText}）`);
 

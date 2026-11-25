@@ -334,7 +334,7 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
   border-radius: 8px; background: var(--panel-soft); border: 1px solid var(--line);
 }
-.wine-status-row, .wine-metrics { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.wine-status-row, .wine-metrics, .wine-launch { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
 .wine-stop-reason { font-size: 12px; color: var(--warn); font-weight: 600; }
 .wine-primary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .wine-start-btn { border-color: rgba(95,211,141,.55); font-weight: 600; padding: 6px 14px; }

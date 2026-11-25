@@ -16,6 +16,7 @@ import {
   type WineBridgeStorageLike,
   type WineFrameInfo,
   type WineHotkey,
+  type WineLaunchStatus,
   type WinePreferredAction,
   type WineQuickKey,
 } from '../wine/wineBridgeClient';
@@ -34,6 +35,12 @@ const PHASE_LABELS: Record<string, string> = {
   stopping: '停止中',
   stopped: '已停止',
 };
+
+function formatLaunchWindow(launch: WineLaunchStatus | null | undefined): string {
+  if (launch?.windowWidth == null || launch.windowHeight == null) return '視窗 —';
+  const source = launch.windowSizeSource === 'actual' ? '（實際）' : launch.windowSizeSource === 'planned' ? '（預計）' : '';
+  return `視窗 ${launch.windowWidth}×${launch.windowHeight}${source}`;
+}
 
 function defaultBrowserStorage(): WineBridgeStorageLike | null {
   try {
@@ -321,6 +328,11 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
             {`停機原因：${stopReasonText}`}
           </div>
         )}
+        <div className="wine-launch" data-testid="wine-launch">
+          <span>{`縮放 ${st?.launch?.scaleMode || '—'}`}</span>
+          <span>{formatLaunchWindow(st?.launch)}</span>
+          <span>{`橋接埠 ${st?.launch?.bridgePort ?? '—'}`}</span>
+        </div>
       </div>
 
       <div className="wine-preview-box" data-testid="wine-preview-box">
