@@ -1,5 +1,5 @@
 // [sync-protocol] 自動產生，請勿手改；改協定請到 fairyland 修改後重新執行 npm run sync-protocol
-// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ e496d17377f6df5eb41c712c375fcbc14b049fb3
+// [sync-protocol] 來源：fairyland/packages/shared/src/protocol/guards.ts @ 49caebf24d2727cb3bb2f0cd58f7c1b90a5cfc19
 /**
  * FX1：協定的執行期檢核（手寫型別守衛，不依賴任何套件）。
  * 宿主與外掛都用同一份：收到的訊息先過守衛，通過才當成型別化資料使用。
@@ -24,6 +24,7 @@ import {
   type SnapshotMessage,
   type StaticDataMessage,
 } from './types.js';
+import { isTerrainShape, unpackBlockedCells } from './terrain.js';
 
 type Rec = Record<string, unknown>;
 
@@ -233,7 +234,8 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
   if (!isRec(n) || !AVAIL.includes(n.status as string) || !isArr(n.reachableMaps)
     || !n.reachableMaps.every(m => isRec(m) && isNonEmptyStr(m.mapId) && strOrNull(m.name) && isNum(m.hops))
     || !numOrNull(n.pixelWidth) || !numOrNull(n.pixelHeight)
-    || (n.portalGraph !== undefined && (!isArr(n.portalGraph) || !n.portalGraph.every(isPortalNode)))) return false;
+    || (n.portalGraph !== undefined && (!isArr(n.portalGraph) || !n.portalGraph.every(isPortalNode)))
+    || (n.terrain !== undefined && !isTerrain(n.terrain))) return false;
   if (!isArr(x.inventory) || !x.inventory.every(i => isRec(i) && isNum(i.itemId) && strOrNull(i.name) && isNum(i.count))) return false;
   if (x.family !== undefined) {
     const f = x.family;
@@ -267,6 +269,12 @@ export function isSceneSnapshot(x: unknown): x is SceneSnapshot {
 
 function isEnvelope(x: unknown): x is Rec & { v: number; characterId: string; ts: number; kind: string } {
   return isRec(x) && isNum(x.v) && isNonEmptyStr(x.characterId) && isNum(x.ts) && isStr(x.kind);
+}
+
+function isTerrain(t: unknown): boolean {
+  if (!isRec(t) || !isNum(t.cols) || !isNum(t.rows) || !isStr(t.blocked)) return false;
+  if (!isTerrainShape(t.cols, t.rows)) return false;
+  return unpackBlockedCells({ cols: t.cols, rows: t.rows, blocked: t.blocked }) !== null;
 }
 
 function isPortalEdge(e: unknown): boolean {

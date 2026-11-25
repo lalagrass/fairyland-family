@@ -9,7 +9,7 @@ import { assert, done, suite } from './helpers';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 suite('vendored protocol examples pass the vendored guards');
-assert(PROTOCOL_VERSION === 7, 'protocol version 7');
+assert(PROTOCOL_VERSION === 8, 'protocol version 8');
 assert(isHeartbeatMessage(ex.heartbeat), 'heartbeat');
 assert(isSnapshotMessage(ex.snapshot), 'snapshot');
 assert(isStaticDataMessage(ex.staticData), 'staticData');
@@ -26,7 +26,7 @@ assert(fx.steps.every((s: any, i: number, a: any[]) => i === 0 || a[i - 1].at <=
 assert(fx.steps.every((s: any) => s.message.characterId === fx.characterId), 'single characterId');
 
 suite('protocol copy headers');
-for (const f of ['types.ts', 'guards.ts', 'idempotency.ts', 'index.ts']) {
+for (const f of ['types.ts', 'guards.ts', 'terrain.ts', 'idempotency.ts', 'index.ts']) {
   const head = fs.readFileSync(path.join(root, 'src/protocol', f), 'utf8').split('\n').slice(0, 2);
   assert(head.every(l => l.startsWith('// [sync-protocol]')) && /@ [0-9a-f]{7,}/.test(head[1]), `${f} records source path and commit`);
 }
