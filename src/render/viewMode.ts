@@ -98,18 +98,33 @@ export interface ModernViewModel {
   terrain: ModernTerrain | null;
 }
 
-let terrainCache: { key: string; cells: Uint8Array } | null = null;
+export const MAX_TERRAIN_CACHE_ENTRIES = 8;
+const terrainCache = new Map<string, Uint8Array>();
+
+export function terrainCacheSize(): number {
+  return terrainCache.size;
+}
 
 function terrainOf(snap: NonNullable<FamilyState['snapshot']>): ModernTerrain | null {
   const t = snap.nav?.terrain;
   if (!t) return null;
   const key = `${t.cols}x${t.rows}:${t.blocked}`;
-  if (!terrainCache || terrainCache.key !== key) {
-    const cells = unpackBlockedCells(t);
-    if (!cells) return null;
-    terrainCache = { key, cells };
+  let cells = terrainCache.get(key);
+  if (cells) {
+    // 命中快取時移到最近使用（Map 尾端）
+    terrainCache.delete(key);
+    terrainCache.set(key, cells);
+  } else {
+    const unpacked = unpackBlockedCells(t);
+    if (!unpacked) return null;
+    cells = unpacked;
+    if (terrainCache.size >= MAX_TERRAIN_CACHE_ENTRIES) {
+      const oldestKey = terrainCache.keys().next().value;
+      if (oldestKey !== undefined) terrainCache.delete(oldestKey);
+    }
+    terrainCache.set(key, cells);
   }
-  return { cols: t.cols, rows: t.rows, blocked: t.blocked, cells: terrainCache.cells };
+  return { cols: t.cols, rows: t.rows, blocked: t.blocked, cells };
 }
 
 const DEFAULT_MAP_SIZE = 8000;
