@@ -11,6 +11,7 @@ import {
 } from './appearance';
 import { observerStatus, showBattleStage } from './observer';
 import type { TimeOfDayMode, WeatherMode } from './environmentFx';
+import type { RuntimeAssetLoader } from './assetLoader';
 
 export interface GameViewportProps {
   state: FamilyState;
@@ -21,6 +22,14 @@ export interface GameViewportProps {
   viewModes?: Record<string, ViewMode>;
   onSetViewMode?: (characterId: string, mode: ViewMode) => void;
   provider?: AppearanceProvider;
+  /** F14：並排格內使用的精簡版畫面（只保留畫布與觀察狀態提示）。 */
+  compact?: boolean;
+  /** F14：目標幀率（60 焦點格／10 非焦點格／0 輪播隱藏格）。 */
+  targetFps?: number;
+  /** F14：多格並排時共用的同源素材／地圖 JSON 載入器。 */
+  sharedLoader?: RuntimeAssetLoader;
+  /** F14：多格模式可加上格別前綴避免 data-testid 衝突；單一模式不傳即維持原樣。 */
+  testIdPrefix?: string;
 }
 
 export function GameViewport({
@@ -31,7 +40,12 @@ export function GameViewport({
   viewModes,
   onSetViewMode,
   provider = originalAppearanceProvider,
+  compact = false,
+  targetFps,
+  sharedLoader,
+  testIdPrefix,
 }: GameViewportProps) {
+  const tid = (name: string) => (testIdPrefix ? `${testIdPrefix}-${name}` : name);
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<PixiStageController | null>(null);
   const modernRef = useRef<ModernStageController | null>(null);
@@ -67,7 +81,7 @@ export function GameViewport({
         if (modernRef.current === ctrl) modernRef.current = null;
       };
     }
-    const ctrl = new PixiStageController(el, info => setStageInfo(info));
+    const ctrl = new PixiStageController(el, info => setStageInfo(info), sharedLoader);
     stageRef.current = ctrl;
     void ctrl.init();
     return () => {
@@ -75,16 +89,16 @@ export function GameViewport({
       if (stageRef.current === ctrl) stageRef.current = null;
       setStageInfo(i => ({ ...i, ready: false }));
     };
-  }, [modern]);
+  }, [modern, sharedLoader]);
 
   useEffect(() => {
     if (modern) return;
-    stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider });
-  }, [state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider, modern]);
+    stageRef.current?.update({ state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider, targetFps });
+  }, [state, watchCharacterId, zoomSetting, appearances, timeOfDay, weather, provider, modern, targetFps]);
 
   useEffect(() => {
-    modernRef.current?.update({ state, watchCharacterId, zoom: modernZoom });
-  }, [state, watchCharacterId, modernZoom, modern, modernReady.ready]);
+    modernRef.current?.update({ state, watchCharacterId, zoom: modernZoom, targetFps });
+  }, [state, watchCharacterId, modernZoom, modern, modernReady.ready, targetFps]);
 
   const watchedProvider = useMemo(() => {
     const id = viewedId;
@@ -96,12 +110,12 @@ export function GameViewport({
   const battleShown = showBattleStage(state, watchCharacterId);
 
   return (
-    <section className="stage-panel" data-testid="game-stage-panel">
-      <div className="stage-hud">
+    <section className={`stage-panel${compact ? ' stage-panel-compact' : ''}`} data-testid={tid('game-stage-panel')}>
+      {!compact && <div className="stage-hud">
         <div className="stage-hud-left">
-          <strong data-testid="stage-map-name">{snap?.mapName ?? '尚未連線到地圖'}</strong>
+          <strong data-testid={tid('stage-map-name')}>{snap?.mapName ?? '尚未連線到地圖'}</strong>
           {target && (
-            <span className="muted" data-testid="stage-camera-target">
+            <span className="muted" data-testid={tid('stage-camera-target')}>
               {`正在看：${target.name}（${target.mapId} ${target.x},${target.y}｜方向 ${target.dir}）`}
             </span>
           )}
@@ -112,7 +126,7 @@ export function GameViewport({
               <span>鏡頭</span>
               <select
                 aria-label="切換觀看角色"
-                data-testid="camera-character-select"
+                data-testid={tid('camera-character-select')}
                 value={watchCharacterId ?? activeId}
                 onChange={e => onSelectWatchCharacter(e.currentTarget.value)}
               >
@@ -128,7 +142,7 @@ export function GameViewport({
             <span>地圖</span>
             <select
               aria-label="切換地圖顯示模式"
-              data-testid="stage-view-mode-select"
+              data-testid={tid('stage-view-mode-select')}
               value={viewMode}
               disabled={!viewedId || !onSetViewMode}
               onChange={e => viewedId && onSetViewMode?.(viewedId, parseViewMode(e.currentTarget.value))}
@@ -141,16 +155,16 @@ export function GameViewport({
           {modern ? (
             <span className="stage-control" role="group" aria-label="現代地圖縮放">
               <span>縮放</span>
-              <button type="button" className="item" aria-label="縮小" data-testid="modern-zoom-out" onClick={() => setModernZoom(z => clampZoom(z / 1.25))}>－</button>
-              <span data-testid="modern-zoom-value">{`${Math.round(modernZoom * 100)}%`}</span>
-              <button type="button" className="item" aria-label="放大" data-testid="modern-zoom-in" onClick={() => setModernZoom(z => clampZoom(z * 1.25))}>＋</button>
+              <button type="button" className="item" aria-label="縮小" data-testid={tid('modern-zoom-out')} onClick={() => setModernZoom(z => clampZoom(z / 1.25))}>－</button>
+              <span data-testid={tid('modern-zoom-value')}>{`${Math.round(modernZoom * 100)}%`}</span>
+              <button type="button" className="item" aria-label="放大" data-testid={tid('modern-zoom-in')} onClick={() => setModernZoom(z => clampZoom(z * 1.25))}>＋</button>
             </span>
           ) : (
           <label className="stage-control">
             <span>縮放</span>
             <select
               aria-label="畫面整數倍縮放"
-              data-testid="stage-zoom-select"
+              data-testid={tid('stage-zoom-select')}
               value={String(zoomSetting)}
               onChange={e => {
                 const v = e.currentTarget.value;
@@ -167,7 +181,7 @@ export function GameViewport({
             <span>時辰</span>
             <select
               aria-label="晝夜顯示切換"
-              data-testid="stage-time-select"
+              data-testid={tid('stage-time-select')}
               value={timeOfDay}
               onChange={e => setTimeOfDay(e.currentTarget.value as TimeOfDayMode)}
             >
@@ -181,7 +195,7 @@ export function GameViewport({
             <span>天氣</span>
             <select
               aria-label="天氣顯示切換"
-              data-testid="stage-weather-select"
+              data-testid={tid('stage-weather-select')}
               value={weather}
               onChange={e => setWeather(e.currentTarget.value as WeatherMode)}
             >
@@ -190,35 +204,35 @@ export function GameViewport({
               <option value="mist">薄霧</option>
             </select>
           </label>
-          <span className="pill mode" data-testid="appearance-badge">
+          <span className="pill mode" data-testid={tid('appearance-badge')}>
             {`外觀：${watchedProvider.label}`}
           </span>
         </div>
-      </div>
+      </div>}
 
-      <div className="stage-viewport-wrap" data-testid="pixi-viewport" data-view-mode={viewMode}>
+      <div className="stage-viewport-wrap" data-testid={tid('pixi-viewport')} data-view-mode={viewMode}>
         <div
           key={viewMode}
           ref={canvasHostRef}
           className={`pixi-host ${modern ? 'pixi-host-modern' : ''}`}
-          data-testid={modern ? 'modern-host' : 'original-host'}
+          data-testid={tid(modern ? 'modern-host' : 'original-host')}
           onWheel={modern ? e => setModernZoom(z => clampZoom(e.deltaY < 0 ? z * 1.1 : z / 1.1)) : undefined}
         />
         {observer.kind !== 'OK' && (
-          <div className="stage-observer-note muted" data-testid="observer-status" data-kind={observer.kind} data-view-mode={viewMode} role="status">
+          <div className="stage-observer-note muted" data-testid={tid('observer-status')} data-kind={observer.kind} data-view-mode={viewMode} role="status">
             {observer.text}
           </div>
         )}
         {modern && modernReady.ready && snap && observer.kind === 'OK' && (
-          <div className="stage-modern-legend muted" data-testid="modern-legend">
+          <div className="stage-modern-legend muted" data-testid={tid('modern-legend')}>
             <span>● 角色</span><span>■ 人物</span><span>◆ 商店</span><span>▲ 出口</span><span>✚ 採集</span>
           </div>
         )}
         {!(modern ? modernReady.ready : stageInfo.ready) && (
-          <div className="stage-fallback" data-testid="stage-fallback">
+          <div className="stage-fallback" data-testid={tid('stage-fallback')}>
             {state.battle && battleShown ? (
               <>
-                <div className="stage-fallback-title" data-testid="stage-battle-badge">
+                <div className="stage-fallback-title" data-testid={tid('stage-battle-badge')}>
                   {`戰鬥舞台 #${state.battle.battleId}${state.battle.round ? ` 第 ${state.battle.round} 回合` : ''}`}
                 </div>
                 <div className="muted">
@@ -234,7 +248,7 @@ export function GameViewport({
                     : '等待角色快照…'}
                 </div>
                 {state.staticData?.assets && (
-                  <div className="muted" data-testid="stage-asset-origin">
+                  <div className="muted" data-testid={tid('stage-asset-origin')}>
                     {`同源素材：${state.staticData.assets.paths.mapScene}`}
                   </div>
                 )}

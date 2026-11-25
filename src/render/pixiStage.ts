@@ -35,6 +35,7 @@ import { chunkMacroCellBounds, MapChunkLruTracker, visibleChunkCoords } from './
 import { showBattleStage } from './observer';
 import { DisplayPool } from './displayPool';
 import { computeSeamlessNeighbors, isSeamlessTransition } from './seamlessNeighbors';
+import { FrameThrottle } from './multiViewport';
 
 const GROUND_CELL_W = 160;
 const GROUND_CELL_H = 80;
@@ -49,6 +50,7 @@ export interface StageSyncInput {
   timeOfDay?: TimeOfDayMode;
   weather?: WeatherMode;
   provider?: AppearanceProvider;
+  targetFps?: number;
 }
 
 /**
@@ -67,7 +69,7 @@ export class PixiStageController {
   private weatherLayer = new Graphics();
   private battleLayer = new Container();
   private uiOverlay = new Container();
-  private loader = new RuntimeAssetLoader();
+  private loader: RuntimeAssetLoader;
   private battleRenderer = new BattleStageRenderer();
   private chunkTracker = new MapChunkLruTracker(48);
   private lastMapId: string | null = null;
@@ -82,13 +84,22 @@ export class PixiStageController {
   private destroyed = false;
   private lastGroundKey = '';
   private pool = new DisplayPool(400);
+  private throttle = new FrameThrottle(60);
+  private resizeObserver: ResizeObserver | null = null;
+  private readonly onWindowResize = (): void => {
+    this.resizeToHost();
+  };
 
   constructor(
     private hostEl: HTMLElement,
     private onStatusChange?: (info: { ready: boolean; error: string | null; integerScale: number }) => void,
-  ) {}
+    loader?: RuntimeAssetLoader,
+  ) {
+    this.loader = loader ?? new RuntimeAssetLoader();
+  }
 
   async init(): Promise<boolean> {
+    if (this.destroyed) return false;
     if (typeof window === 'undefined' || typeof document === 'undefined') return false;
     // HappyDOM / headless DOM 無 WebGL/2D 環境安全退場
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -98,8 +109,11 @@ export class PixiStageController {
     try {
       TextureStyle.defaultOptions.scaleMode = 'nearest';
       const app = new Application();
+      const initW = Math.max(2, this.hostEl.clientWidth || 320);
+      const initH = Math.max(2, this.hostEl.clientHeight || 200);
       await app.init({
-        resizeTo: this.hostEl,
+        width: initW,
+        height: initH,
         roundPixels: true,
         antialias: false,
         backgroundAlpha: 1,
@@ -123,9 +137,20 @@ export class PixiStageController {
       this.battleLayer.visible = false;
       app.stage.addChild(this.worldContainer, this.ambientLayer, this.weatherLayer, this.battleLayer);
 
+      if (typeof ResizeObserver === 'function') {
+        const obs = new ResizeObserver(() => this.resizeToHost());
+        obs.observe(this.hostEl);
+        this.resizeObserver = obs;
+      }
+      window.addEventListener('resize', this.onWindowResize);
+
       app.ticker.add(() => this.renderFrame());
       this.initialized = true;
+      this.syncTickerFps();
       this.onStatusChange?.({ ready: true, error: null, integerScale: this.currentScale });
+      if (this.latestInput && this.throttle.getTargetFps() > 0) {
+        this.renderFrame(true);
+      }
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -135,7 +160,14 @@ export class PixiStageController {
   }
 
   update(input: StageSyncInput): void {
+    const watchChanged = this.latestInput?.watchCharacterId !== input.watchCharacterId;
+    const mapChanged = this.latestInput?.state.snapshot?.mapId !== input.state.snapshot?.mapId;
     this.latestInput = input;
+    this.throttle.setTargetFps(input.targetFps ?? 60);
+    if (watchChanged || mapChanged) {
+      this.throttle.markDirty();
+    }
+    this.syncTickerFps();
     const mapId = input.state.snapshot?.mapId;
     const assets = input.state.staticData?.assets;
     if (mapId) {
@@ -198,8 +230,37 @@ export class PixiStageController {
     return sub;
   }
 
-  private renderFrame(): void {
-    if (!this.initialized || this.destroyed || !this.app || !this.latestInput) return;
+  private syncTickerFps(): void {
+    const app = this.app;
+    if (this.destroyed || !app?.ticker) return;
+    const fps = this.throttle.getTargetFps();
+    if (fps <= 0) {
+      app.stop();
+      return;
+    }
+    app.ticker.maxFPS = fps >= 60 ? 0 : fps;
+    app.start();
+  }
+
+  private resizeToHost(): void {
+    const app = this.app;
+    if (this.destroyed || !app?.renderer) return;
+    const w = this.hostEl.clientWidth;
+    const h = this.hostEl.clientHeight;
+    if (w < 2 || h < 2) return;
+    if (app.screen.width !== w || app.screen.height !== h) {
+      app.renderer.resize(w, h);
+    }
+    this.throttle.markDirty();
+    if (this.throttle.getTargetFps() > 0) {
+      this.renderFrame(true);
+    }
+  }
+
+  private renderFrame(force = false): void {
+    if (!this.initialized || this.destroyed || !this.app?.renderer || !this.latestInput) return;
+    const nowMs = Date.now();
+    if (!this.throttle.shouldRender(nowMs, force)) return;
     const { state, watchCharacterId, zoomSetting, appearances } = this.latestInput;
     const defaultProvider = this.latestInput.provider ?? originalAppearanceProvider;
     const resolveProviderFor = (charId: string) =>
@@ -207,7 +268,6 @@ export class PixiStageController {
     const snap = state.snapshot;
     if (!snap) return;
 
-    const nowMs = Date.now();
     const viewW = Math.max(1, this.app.screen.width);
     const viewH = Math.max(1, this.app.screen.height);
 
@@ -684,8 +744,18 @@ export class PixiStageController {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
     this.destroyed = true;
     this.initialized = false;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResize);
+    }
+    for (const sub of this.subTextureCache.values()) sub.destroy(false);
+    this.subTextureCache.clear();
+    this.textureCache.clear();
+    this.textureInflight.clear();
     if (this.app) {
       // 不傳 true，避免觸發 GlobalResourceRegistry.release() 影響同頁 WorldMapPanel 的 Batch 池
       this.app.destroy({ removeView: true }, { children: true });
