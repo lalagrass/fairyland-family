@@ -1,4 +1,5 @@
 import type { FamilyState } from '../state';
+import { unpackBlockedCells } from '../protocol/terrain';
 import { interpolateMemberPosition, interpolatePath, selectCameraTarget } from './extrapolation';
 import { observerStatus, type ObserverStatus } from './observer';
 
@@ -75,6 +76,14 @@ export interface ModernMarker {
   isTarget?: boolean;
 }
 
+/** 宿主碰撞格。`blocked` 是快照上的 base64，給顯示層當快取鍵；`cells` 是 0／1。 */
+export interface ModernTerrain {
+  cols: number;
+  rows: number;
+  blocked: string;
+  cells: Uint8Array;
+}
+
 export interface ModernViewModel {
   /** 沒有畫面可畫時（未連線、沒快照）的明確狀態；OK 才畫地圖。 */
   status: ObserverStatus;
@@ -85,6 +94,22 @@ export interface ModernViewModel {
   markers: ModernMarker[];
   /** 觀察對象從目前位置到終點的路徑（世界座標）。 */
   path: Array<{ x: number; y: number }>;
+  /** 沒有地形時現代檢視退回底色格線。 */
+  terrain: ModernTerrain | null;
+}
+
+let terrainCache: { key: string; cells: Uint8Array } | null = null;
+
+function terrainOf(snap: NonNullable<FamilyState['snapshot']>): ModernTerrain | null {
+  const t = snap.nav?.terrain;
+  if (!t) return null;
+  const key = `${t.cols}x${t.rows}:${t.blocked}`;
+  if (!terrainCache || terrainCache.key !== key) {
+    const cells = unpackBlockedCells(t);
+    if (!cells) return null;
+    terrainCache = { key, cells };
+  }
+  return { cols: t.cols, rows: t.rows, blocked: t.blocked, cells: terrainCache.cells };
 }
 
 const DEFAULT_MAP_SIZE = 8000;
@@ -92,7 +117,7 @@ const DEFAULT_MAP_SIZE = 8000;
 export function buildModernModel(state: FamilyState, watchCharacterId: string | null, now: number): ModernViewModel {
   const status = observerStatus(state, watchCharacterId, now);
   const snap = state.snapshot;
-  const empty: ModernViewModel = { status, mapName: snap?.mapName ?? '', mapW: DEFAULT_MAP_SIZE, mapH: DEFAULT_MAP_SIZE, target: null, markers: [], path: [] };
+  const empty: ModernViewModel = { status, mapName: snap?.mapName ?? '', mapW: DEFAULT_MAP_SIZE, mapH: DEFAULT_MAP_SIZE, target: null, markers: [], path: [], terrain: snap ? terrainOf(snap) : null };
   if (!snap) return empty;
   const t = selectCameraTarget(state, watchCharacterId, now);
   const markers: ModernMarker[] = [];
@@ -122,6 +147,7 @@ export function buildModernModel(state: FamilyState, watchCharacterId: string | 
     target: t && sameMap ? { characterId: t.characterId, name: t.name, x: t.x, y: t.y } : null,
     markers,
     path: sameMap && t ? remainingPath(state, t.characterId, activeId, now) : [],
+    terrain: terrainOf(snap),
   };
 }
 
