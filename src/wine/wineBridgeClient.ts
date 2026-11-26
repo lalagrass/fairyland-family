@@ -639,6 +639,18 @@ export class WineBridgeClient {
     }
   }
 
+  /** 靜默探測：橋接的 /status 有回應才回 true；不改任何連線狀態，也不留錯誤訊息。 */
+  async probe(rawUrl = this.snapshot.baseUrl): Promise<boolean> {
+    const norm = normalizeLoopbackBridgeUrl(rawUrl);
+    if (!norm) return false;
+    try {
+      await this.requestJson<WineBridgeStatus>(norm, 'GET', '/status');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   disconnect(reason?: string): void {
     this.manualDisconnect = true;
     this.closeWs();

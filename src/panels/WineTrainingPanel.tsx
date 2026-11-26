@@ -99,7 +99,7 @@ export function WineTrainingPanel({
 }: {
   client: WineBridgeClient;
   active: boolean;
-  /** 以前連線成功過（本機有存設定）時，開著面板會自動連線並每 3 秒重試，免去手動按「連線橋接」。 */
+  /** 開著面板會自動連線並每 3 秒重試，免去手動按「連線橋接」。以前連線成功過（本機有存設定）就直接連；第一次先靜默探測 127.0.0.1:4182，橋接有回應才連。 */
   autoConnect?: boolean;
 }) {
   const [storage] = useState(defaultBrowserStorage);
@@ -122,6 +122,7 @@ export function WineTrainingPanel({
   const previousStopSignature = useRef<string | null>(null);
   const userDisconnected = useRef(false);
   const lastAutoConnectAt = useRef(0);
+  const [probeTick, setProbeTick] = useState(0);
 
   useEffect(() => {
     setSnap(client.getSnapshot());
@@ -147,15 +148,36 @@ export function WineTrainingPanel({
   const validLoopback = isLoopbackBridgeUrl(urlInput);
 
   useEffect(() => {
-    if (!autoConnect || !initialLoaded.hasSaved || !active || connected || connecting || userDisconnected.current || !validLoopback) return;
+    if (!autoConnect || !active || connected || connecting || userDisconnected.current || !validLoopback) return;
     // 兩次自動連線至少間隔 3 秒，避免橋接不在時快速重試。
     const wait = Math.max(0, lastAutoConnectAt.current + 3000 - Date.now());
+    let cancelled = false;
     const timer = setTimeout(() => {
       lastAutoConnectAt.current = Date.now();
-      void client.connect(urlInput).catch(() => undefined);
+      if (initialLoaded.hasSaved) {
+        void client.connect(urlInput).catch(() => undefined);
+        return;
+      }
+      // 第一次使用：橋接沒開時不顯示錯誤，只在 3 秒後再探測。
+      void client
+        .probe(urlInput)
+        .then(ok => {
+          if (cancelled) return;
+          if (ok) {
+            void client.connect(urlInput).then(done => {
+              if (done) patchSettings({ baseUrl: urlInput });
+            }).catch(() => undefined);
+          } else {
+            setProbeTick(t => t + 1);
+          }
+        })
+        .catch(() => undefined);
     }, wait);
-    return () => clearTimeout(timer);
-  }, [autoConnect, initialLoaded.hasSaved, active, connected, connecting, validLoopback, urlInput, client, snap]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [autoConnect, initialLoaded.hasSaved, active, connected, connecting, validLoopback, urlInput, client, snap, probeTick]);
 
   useEffect(() => {
     setFrame(null);

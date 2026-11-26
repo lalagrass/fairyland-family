@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
+import { workbenchTabFromLocation, type WorkbenchTab } from './workbenchTab';
 import type {
   PluginCommand,
   SnapshotActiveWork,
@@ -428,7 +429,15 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [inputValue, setInputValue] = useState('');
   const [inputErr, setInputErr] = useState('');
   const [mobileTab, setMobileTab] = useState<MobileTab>('active');
-  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine' | 'path' | 'gather'>('overview');
+  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>(() => workbenchTabFromLocation() ?? 'overview');
+  useEffect(() => {
+    const onHash = () => {
+      const t = workbenchTabFromLocation();
+      if (t) setWorkbenchTab(t);
+    };
+    globalThis.addEventListener?.('hashchange', onHash);
+    return () => globalThis.removeEventListener?.('hashchange', onHash);
+  }, []);
   const defaultWineClient = useMemo(() => new WineBridgeClient(), []);
   const wineClient = aux.wineClient ?? defaultWineClient;
   const gatherRunner = useMemo(() => {
@@ -1069,7 +1078,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             className="character-workbench"
             data-testid="character-workbench"
             value={workbenchTab}
-            onValueChange={v => setWorkbenchTab(v as typeof workbenchTab)}
+            onValueChange={v => setWorkbenchTab(v as WorkbenchTab)}
           >
             <div className="workbench-heading">
               <h2>目前角色工作台</h2>
