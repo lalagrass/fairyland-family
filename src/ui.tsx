@@ -54,6 +54,7 @@ import type { LaneSummary } from './lanes';
 import { WorldMapPanel } from './panels/WorldMapPanel';
 import { WineTrainingPanel } from './panels/WineTrainingPanel';
 import { WinePathPanel } from './panels/WinePathPanel';
+import { WineRosterCard } from './panels/WineRosterCard';
 import { WineGatherPanel, createGatherRunner } from './panels/WineGatherPanel';
 import { WineBridgeClient } from './wine/wineBridgeClient';
 import { pathMapFromSnapshot } from './wine/pathfinding';
@@ -1022,6 +1023,16 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 );
               })
             )}
+          </section>
+          <section data-testid="wine-roster-section">
+            <h2>官方視窗角色</h2>
+            <WineRosterCard
+              client={wineClient}
+              onOpen={() => {
+                setWorkbenchTab('wine');
+                setMobileTab('active');
+              }}
+            />
           </section>
           <DispatchPanel
             members={state.members}
