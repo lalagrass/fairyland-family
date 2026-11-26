@@ -88,6 +88,7 @@ function makeFakeBridge() {
   };
   const sockets: MockWs[] = [];
   let frameFailures = 0;
+  let reachable = true;
 
   class MockWs implements BridgeWebSocketLike {
     readyState = 1;
@@ -116,6 +117,7 @@ function makeFakeBridge() {
   }
 
   const fetchFn: typeof fetch = async (input, init) => {
+    if (!reachable) throw new TypeError('fetch failed');
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
     const rawBody = typeof init?.body === 'string' && init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null;
@@ -167,6 +169,7 @@ function makeFakeBridge() {
     calls,
     sockets,
     failNextFrame: () => { frameFailures++; },
+    setReachable: (v: boolean) => { reachable = v; },
     getStatus: () => status,
     setStatus: (next: WineBridgeStatus) => {
       status = next;
@@ -236,6 +239,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
 // 3. UI 整合測試（mountUi + happy-dom）
 {
   const fake = makeFakeBridge();
+  fake.setReachable(false); // WL-L1：第一次使用時橋接可連就自動連線；這段要驗手動連線，所以先讓橋接連不到
   const client = new WineBridgeClient({ fetchFn: fake.fetchFn, webSocketCtor: fake.MockWs });
   const root = win.document.createElement('div');
   win.document.body.appendChild(root);
@@ -280,6 +284,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   assert(loadSavedWineBridgeSettings(win.localStorage).settings.config === null, '只改連線網址不會儲存預設策略');
   const connectBtn = root.querySelector('[data-testid="wine-connect-btn"]') as unknown as HTMLButtonElement;
   assert(!connectBtn.disabled, '合法 loopback URL 可點擊連線');
+  fake.setReachable(true);
   connectBtn.click();
   await flushUi();
 
@@ -353,10 +358,13 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   await flushUi();
   assert(fake.calls.some(c => c.url.endsWith('/stop')), '點擊停止送出 POST /stop');
 
+  fake.setReachable(false);
   fake.sockets[0].dropUnexpectedly();
   await flushUi();
   assert(root.querySelector('[data-testid="wine-conn-pill"]')?.textContent === '已斷線', '橋接斷線時 UI 即時切回已斷線');
   assert(root.querySelector('[data-testid="wine-error"]') !== null, '橋接斷線時 UI 顯示斷線提示');
+  ui.unmount();
+  client.disconnect();
 }
 
 // 4. W-Live3 (#155): /frame URL, preview toggle, and localStorage persistence across reloads
@@ -395,6 +403,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   // Persist real UI edits, then mount fresh root simulating tab reload
   win.localStorage.clear();
   const fake = makeFakeBridge();
+  fake.setReachable(false);
   const client1 = new WineBridgeClient({ fetchFn: fake.fetchFn, webSocketCtor: fake.MockWs });
   const root1 = win.document.createElement('div');
   win.document.body.appendChild(root1);
@@ -417,6 +426,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   interval.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event);
   fake.failNextFrame();
   await flushUi();
+  fake.setReachable(true);
   (root1.querySelector('[data-testid="wine-connect-btn"]') as unknown as HTMLButtonElement).click();
   await flushUi();
 
@@ -473,6 +483,42 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
   ui1.unmount();
   client2.disconnect();
   client1.disconnect();
+}
+
+// 5. WL-L1：`#tab=wine` 直接進視窗練功；第一次使用時橋接可連就自動連線，連不到不顯示錯誤
+{
+  win.localStorage.clear();
+  Object.assign(globalThis, { location: { hash: '#tab=wine', search: '' } });
+  const fake = makeFakeBridge();
+  fake.setReachable(false);
+  const client = new WineBridgeClient({ fetchFn: fake.fetchFn, webSocketCtor: fake.MockWs });
+  const root = win.document.createElement('div');
+  win.document.body.appendChild(root);
+  const ui = mountUi(root as unknown as HTMLElement, 'TEST', () => null, () => null);
+  ui.render(initialState(), 'STOPPED', {
+    nav: { phase: 'IDLE', goal: null, route: [], text: '導航：閒置', skipped: [] },
+    strategy: 'MANUAL',
+    known: [],
+    wineClient: client,
+  });
+  await flushUi();
+  assert(root.querySelector('[data-testid="wine-training-panel"]') !== null, '#tab=wine 直接切到視窗練功分頁');
+  const activeTab = root.querySelector('[data-testid="character-workbench"] [role="tab"][data-state="active"]');
+  assert(activeTab?.textContent?.includes('視窗練功') === true, `作用中的分頁是視窗練功（實際：${activeTab?.textContent}）`);
+  assert(root.querySelector('[data-testid="wine-conn-pill"]')?.textContent === '已斷線', '橋接沒開時維持已斷線');
+  assert(root.querySelector('[data-testid="wine-error"]') === null, '第一次使用橋接沒開時不顯示連線錯誤');
+  assert(fake.calls.length === 0, '橋接連不到時不留下請求紀錄');
+  assert(win.localStorage.getItem(WINE_SETTINGS_STORAGE_KEY) === null, '橋接沒開時不存設定');
+
+  fake.setReachable(true);
+  await new Promise(resolve => setTimeout(resolve, 3200)); // 面板每 3 秒重新探測
+  assert(root.querySelector('[data-testid="wine-conn-pill"]')?.textContent === '已連線', '橋接開了之後第一次使用也自動連上 127.0.0.1:4182');
+  assert(fake.calls.some(c => c.url === 'http://127.0.0.1:4182/status'), '用預設埠 4182 連線');
+  assert(loadSavedWineBridgeSettings(win.localStorage).hasSaved, '自動連線成功後記住橋接位址');
+
+  ui.unmount();
+  client.disconnect();
+  Object.assign(globalThis, { location: undefined });
 }
 
 done();
