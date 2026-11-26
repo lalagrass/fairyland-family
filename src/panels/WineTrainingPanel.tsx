@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WineDiagnosticsBar } from './WineDiagnosticsBar';
+import { WineInputSelfTest } from './WineInputSelfTest';
 import { getNotificationPermission, notificationsEnabled, notifyWhenHidden } from '../notify';
 import {
   DEFAULT_BRIDGE_URL,
@@ -607,6 +608,7 @@ export function WineTrainingPanel({
       {startBlockedReason(connected, connecting, isRunning) && (
         <div className="muted" data-testid="wine-start-hint">{startBlockedReason(connected, connecting, isRunning)}</div>
       )}
+      <WineInputSelfTest client={client} snap={snap} connected={connected} running={isRunning} />
 
       <div className="wine-config-form" data-testid="wine-config-form">
         <div className="wine-config-head">
@@ -701,8 +703,8 @@ export function WineTrainingPanel({
               value={draft.preferred}
               onChange={e => patchDraft({ preferred: e.currentTarget.value as WinePreferredAction })}
             >
-              <option value="skill">技能優先</option>
-              <option value="attack">普攻優先</option>
+              <option value="attack">普攻優先（預設）</option>
+              <option value="skill">技能優先（要有技能與熱鍵）</option>
             </select>
           </label>
           <label>

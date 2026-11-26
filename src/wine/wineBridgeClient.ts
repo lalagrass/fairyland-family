@@ -28,6 +28,8 @@ export interface WineBgConfig {
   maxRoundTrips: number | null;
   windowTitle: string;
   wid: number | null;
+  /** #210：橋接依輸入自我測試結果選的點擊送法（只讀；不存本機、不隨設定送出，避免蓋掉自我測試的結果）。 */
+  inputDelivery?: string;
 }
 
 export interface WineBridgeStorageLike {
@@ -141,7 +143,40 @@ export interface WineBridgeStatus {
   /** WL-B1：每 tick 辨識耗時（毫秒）。 */
   observeMs?: { last: number; avg: number; max: number } | null;
   /** WL-B1：橋接設定檔狀態（存在使用者資料夾，重啟後保留）。 */
-  configStore?: { path: string; loaded: boolean; savedAt: number | null; error: string | null } | null;
+  configStore?: { path: string; loaded: boolean; savedAt: number | null; error: string | null; migratedFrom?: number | null } | null;
+  /** #210：輸入自我測試進度與報告（橋接較舊時沒有此欄位）。 */
+  inputSelfTest?: WineInputSelfTestStatus | null;
+}
+
+export interface WineInputSelfTestAttempt {
+  id: string;
+  flags: string;
+  label?: string;
+  direction: string;
+  stageSpot: [number, number];
+  moved: boolean;
+  changedFraction?: number;
+  noiseFraction?: number;
+  coordBefore?: [number, number] | null;
+  coordAfter?: [number, number] | null;
+  error?: string | null;
+}
+
+export interface WineInputSelfTestReport {
+  verdict: 'moved' | 'no_variant_moved' | 'aborted';
+  abortReason?: string | null;
+  workingVariant?: string | null;
+  workingFlags?: string | null;
+  attempts: WineInputSelfTestAttempt[];
+  frameDir?: string | null;
+  /** 橋接產生的中文報告全文。 */
+  text: string;
+}
+
+export interface WineInputSelfTestStatus {
+  state: 'idle' | 'running' | 'done';
+  current?: string | null;
+  report: WineInputSelfTestReport | null;
 }
 
 export interface WineBridgeWindowInfo {
@@ -178,6 +213,8 @@ export interface WineBridgeTransport {
 
 export const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:4182';
 export const WINE_SETTINGS_STORAGE_KEY = 'fairyland_family:wine_bridge_settings:v1';
+/** 本機設定格式版本。v1（沒有 `v` 欄位）存的 `preferred` 分不出是使用者選的還是舊預設「技能優先」，載入時改回預設「普攻優先」。 */
+export const WINE_SETTINGS_VERSION = 2;
 export const DEFAULT_PREVIEW_INTERVAL_MS = 1000;
 export const DEFAULT_MICRO_DISTANCE = 25;
 export const MICRO_PATROL_START_X = 390;
@@ -187,7 +224,7 @@ export const DEFAULT_WINE_CONFIG: WineBgConfig = {
   patrolA: [260, 300],
   patrolB: [540, 300],
   hotkey: 'F7',
-  preferred: 'skill',
+  preferred: 'attack',
   healAtPct: 35,
   healHotkey: null,
   healUsesPotion: false,
@@ -328,6 +365,11 @@ export function loadSavedWineBridgeSettings(storage?: WineBridgeStorageLike | nu
     const parsed = JSON.parse(raw) as Partial<WineBridgeSavedSettings>;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { settings: defaults, hasSaved: false };
     const normUrl = typeof parsed.baseUrl === 'string' ? normalizeLoopbackBridgeUrl(parsed.baseUrl) : null;
+    const savedConfig = parsed.config && typeof parsed.config === 'object' && !Array.isArray(parsed.config)
+      ? sanitizeConfig(parsed.config) : null;
+    if (savedConfig && (parsed as { v?: unknown }).v !== WINE_SETTINGS_VERSION) {
+      savedConfig.preferred = DEFAULT_WINE_CONFIG.preferred;
+    }
     const interval =
       typeof parsed.previewIntervalMs === 'number' && [0, 500, 1000, 2000].includes(parsed.previewIntervalMs)
         ? parsed.previewIntervalMs
@@ -336,8 +378,7 @@ export function loadSavedWineBridgeSettings(storage?: WineBridgeStorageLike | nu
       hasSaved: true,
       settings: {
         baseUrl: normUrl ?? DEFAULT_BRIDGE_URL,
-        config: parsed.config && typeof parsed.config === 'object' && !Array.isArray(parsed.config)
-          ? sanitizeConfig(parsed.config) : null,
+        config: savedConfig,
         previewEnabled: typeof parsed.previewEnabled === 'boolean' ? parsed.previewEnabled : true,
         previewOverlay: typeof parsed.previewOverlay === 'boolean' ? parsed.previewOverlay : true,
         previewIntervalMs: interval,
@@ -362,6 +403,7 @@ export function saveWineBridgeSettings(
     if (!baseUrl) return;
     const encoded = JSON.stringify({
       ...settings,
+      v: WINE_SETTINGS_VERSION,
       baseUrl,
       config: settings.config ? sanitizeConfig(settings.config) : null,
       schedule: sanitizeSchedule(settings.schedule),
@@ -443,6 +485,24 @@ export function formatWineEventLine(ev: WineBridgeEvent): string {
     return `${ts} 錯誤：${ev.error ?? '未知錯誤'}`;
   }
   return `${ts} ${ev.type}`;
+}
+
+export function parseInputSelfTest(raw: unknown): WineInputSelfTestStatus | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.state !== 'idle' && r.state !== 'running' && r.state !== 'done') return null;
+  const rep = r.report && typeof r.report === 'object' ? (r.report as Record<string, unknown>) : null;
+  return {
+    state: r.state,
+    current: typeof r.current === 'string' ? r.current : null,
+    report: rep && typeof rep.text === 'string' ? (rep as unknown as WineInputSelfTestReport) : null,
+  };
+}
+
+function withoutInputDelivery(patch: Partial<WineBgConfig>): Record<string, unknown> {
+  const { inputDelivery: _ignored, ...rest } = patch;
+  void _ignored;
+  return rest as Record<string, unknown>;
 }
 
 export class WineBridgeClient {
@@ -688,13 +748,42 @@ export class WineBridgeClient {
   }
 
   async updateConfig(patch: Partial<WineBgConfig>): Promise<WineBridgeStatus> {
-    const st = await this.postAndApply('/config', patch as Record<string, unknown>);
+    const st = await this.postAndApply('/config', withoutInputDelivery(patch));
     return st;
   }
 
   async start(patch?: Partial<WineBgConfig>): Promise<WineBridgeStatus> {
-    const st = await this.postAndApply('/start', (patch ?? {}) as Record<string, unknown>);
+    const st = await this.postAndApply('/start', withoutInputDelivery(patch ?? {}));
     return st;
+  }
+
+  /** #210：在地圖場景依序試各種點擊送法；結果會出現在 `/status` 的 inputSelfTest。 */
+  async inputSelfTestStart(): Promise<WineInputSelfTestStatus> {
+    return this.postSelfTest('/input_selftest');
+  }
+
+  async inputSelfTestStop(): Promise<WineInputSelfTestStatus> {
+    return this.postSelfTest('/input_selftest_stop');
+  }
+
+  private async postSelfTest(path: string): Promise<WineInputSelfTestStatus> {
+    const url = normalizeLoopbackBridgeUrl(this.snapshot.baseUrl);
+    if (!url) {
+      const err = new Error('僅允許本機 loopback 位址');
+      this.emit({ error: err.message });
+      throw err;
+    }
+    try {
+      const parsed = await this.requestJson<Record<string, unknown>>(url, 'POST', path, {});
+      const st = parseInputSelfTest(parsed);
+      const prev = this.snapshot.status;
+      if (prev && st) this.applyStatus({ ...prev, inputSelfTest: st });
+      if (!st) throw new Error('橋接沒有回輸入自我測試狀態');
+      return st;
+    } catch (err) {
+      this.notePostError(err);
+      throw err;
+    }
   }
 
   async stop(reason = 'manual_stop'): Promise<WineBridgeStatus> {

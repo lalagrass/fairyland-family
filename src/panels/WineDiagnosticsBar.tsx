@@ -18,6 +18,9 @@ export function WineDiagnosticsBar({ snap }: { snap: WineBridgeSnapshot }) {
       {isStoppedWithReason(snap) && st && (
         <div className="wine-stop-banner" role="alert" data-testid="wine-stop-banner">
           {`已停機：${formatWineStopReason(st.stopReason)}（${st.stopReason}）`}
+          {typeof st.diagnostics?.hint === 'string' && (
+            <div data-testid="wine-stop-hint">{st.diagnostics.hint}</div>
+          )}
         </div>
       )}
       <button type="button" onClick={onCopy} data-testid="wine-copy-diag">複製診斷報告</button>
