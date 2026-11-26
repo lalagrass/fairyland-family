@@ -219,6 +219,7 @@ try {
         ['目前角色', '系統設定', '[data-testid="f10-view-mode"]', '[data-testid="character-workbench"] [role="tab"]:has-text("設定")'],
         ['目前角色', '任務卡', '[data-testid="quest-cards"]'],
         ['目前角色', '視窗練功', '[data-testid="wine-training-panel"]', '[data-testid="tab-wine"]'],
+        ['目前角色', '視窗尋路', '[data-testid="wine-path-panel"]', '[data-testid="tab-wine-path"]'],
         ['事件流', '事件流', '[data-testid="log"]'],
       ];
       for (const [tab, name, selector, sub] of steps) {
@@ -249,6 +250,9 @@ try {
       await page.locator('[data-testid="tab-wine"]').click();
       await show('[data-testid="wine-training-panel"]');
       await check(await page.locator('[data-testid="wine-training-panel"]').isVisible(), `${width}：視窗練功 點得到`, `panel-${width}-視窗練功`);
+      await page.locator('[data-testid="tab-wine-path"]').click();
+      await show('[data-testid="wine-path-panel"]');
+      await check(await page.locator('[data-testid="wine-path-panel"]').isVisible(), `${width}：視窗尋路 點得到`, `panel-${width}-視窗尋路`);
       await assertTargets(`${width}-panels`);
       await assertNoOverflow(`${width}-panels`);
     }
