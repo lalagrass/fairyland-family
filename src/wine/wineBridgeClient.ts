@@ -233,6 +233,31 @@ export function bridgeWebSocketUrl(baseHttpUrl: string): string | null {
   return norm.replace(/^http/, 'ws') + '/events';
 }
 
+/** /frame answered without an image (503 = the bridge could not capture the window). */
+export class FrameUnavailableError extends Error {
+  constructor(
+    readonly status: number,
+    readonly reason: string | null,
+    readonly screenRecordingSuspected: boolean,
+  ) {
+    super(`HTTP ${status}`);
+    this.name = 'FrameUnavailableError';
+  }
+}
+
+/** Chinese hint for the preview box; null when the error is not a known /frame failure. */
+export function frameErrorHint(err: unknown): string | null {
+  if (!(err instanceof FrameUnavailableError)) return null;
+  if (err.status === 503 && err.screenRecordingSuspected) {
+    return '橋接抓不到遊戲畫面（/frame 503）：多半是 macOS 缺少「螢幕錄製」權限。'
+      + '請開 系統設定 → 隱私權與安全性 → 螢幕與系統錄音，打開啟動橋接的程式（「終端機」或 FairylandLauncher），'
+      + '然後重新啟動遊戲。'
+      + (err.reason ? `（橋接回報：${err.reason}）` : '');
+  }
+  if (err.status === 503 && err.reason) return `橋接目前沒有影格（${err.reason}），請確認遊戲視窗已開啟。`;
+  return null;
+}
+
 export function framePreviewUrl(
   baseHttpUrl: string,
   overlay: boolean,
@@ -695,7 +720,18 @@ export class WineBridgeClient {
     const url = framePreviewUrl(this.snapshot.baseUrl, overlay);
     if (!url) throw new Error('橋接位址無效');
     const response = await this.fetchFn(url, { signal, cache: 'no-store', redirect: 'error' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      let body: { reason?: unknown; screenRecordingSuspected?: unknown } | null = null;
+      try { body = await response.json(); } catch { /* not JSON: keep the plain HTTP error */ }
+      if (response.status === 503) {
+        throw new FrameUnavailableError(
+          response.status,
+          typeof body?.reason === 'string' ? body.reason : null,
+          body?.screenRecordingSuspected === true,
+        );
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
     const image = await response.blob();
     if (!['image/png', 'image/jpeg'].includes(image.type)) throw new Error('橋接回應缺少預覽圖片');
     const getPercent = (header: string) => {

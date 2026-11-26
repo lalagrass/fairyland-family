@@ -8,6 +8,7 @@ import {
   WineBridgeClient,
   formatWineEventLine,
   formatWineStopReason,
+  frameErrorHint,
   MAX_MICRO_DISTANCE,
   MICRO_PATROL_START_X,
   isLoopbackBridgeUrl,
@@ -118,6 +119,7 @@ export function WineTrainingPanel({
   const [refreshId, setRefreshId] = useState(0);
   const [frame, setFrame] = useState<{ src: string; info: WineFrameInfo } | null>(null);
   const [previewError, setPreviewError] = useState(false);
+  const [previewHint, setPreviewHint] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scheduleStopSent = useRef<string | null>(null);
   const previousStopSignature = useRef<string | null>(null);
@@ -183,6 +185,7 @@ export function WineTrainingPanel({
   useEffect(() => {
     setFrame(null);
     setPreviewError(false);
+    setPreviewHint(null);
     if (!active || !connected || !previewEnabled) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -195,10 +198,12 @@ export function WineTrainingPanel({
         objectUrl = URL.createObjectURL(image);
         setFrame({ src: objectUrl, info });
         setPreviewError(false);
-      } catch {
+        setPreviewHint(null);
+      } catch (err) {
         if (!controller.signal.aborted) {
           setFrame(null);
           setPreviewError(true);
+          setPreviewHint(frameErrorHint(err));
         }
       } finally {
         if (!controller.signal.aborted && previewIntervalMs > 0) {
@@ -566,7 +571,7 @@ export function WineTrainingPanel({
             <div className="wine-preview-empty muted" data-testid="wine-preview-empty">
               {!connected ? '連線本機橋接後即可預覽背景視窗。'
                 : !previewEnabled ? '預覽已暫停'
-                : previewError ? '尚未取得視窗影格，請確認目標視窗與螢幕錄製權限。'
+                : previewError ? (previewHint ?? '尚未取得視窗影格，請確認目標視窗與螢幕錄製權限。')
                 : '正在讀取畫面…'}
             </div>
           )}
