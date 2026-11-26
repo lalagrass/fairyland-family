@@ -25,6 +25,9 @@ export function buildDiagnosticReport(snap: WineBridgeSnapshot, now: number = Da
   L.push(st.stopReason ? `停機原因：${formatWineStopReason(st.stopReason)}（${st.stopReason}）` : '停機原因：無');
   L.push(`狀態：running=${st.running} phase=${st.phase} scene=${st.scene}`);
   const d = st.diagnostics ?? null;
+  if (d && typeof d.hint === 'string') {
+    L.push(`提示：${d.hint}${typeof d.hintCode === 'string' ? `（${d.hintCode}）` : ''}`);
+  }
   L.push('== 診斷 ==');
   if (d) {
     L.push(`畫面尺寸：${val(d.source_size)}`);
@@ -32,11 +35,18 @@ export function buildDiagnosticReport(snap: WineBridgeSnapshot, now: number = Da
     L.push(`unknown_for_ms：${val(d.unknown_for_ms)}`);
     L.push(`targets_detected：${val(d.targets_detected)}`);
     L.push(`phase：${val(d.phase ?? st.phase)}`);
-    const known = new Set(['source_size', 'stage_scale', 'unknown_for_ms', 'targets_detected', 'phase']);
+    const known = new Set(['source_size', 'stage_scale', 'unknown_for_ms', 'targets_detected', 'phase', 'hint']);
     for (const [k, v] of Object.entries(d)) if (!known.has(k)) L.push(`${k}：${val(v)}`);
   } else {
     L.push('（橋接沒有附診斷）');
   }
+  L.push('');
+  L.push('== 輸入自我測試 ==');
+  const stt = st.inputSelfTest;
+  if (!stt || stt.state === 'idle') L.push('（還沒測過；停機原因是 stalled 或點擊沒反應時請先按「輸入自我測試」）');
+  else if (stt.state === 'running') L.push(`測試中（${stt.current ?? '…'}）`);
+  else L.push(stt.report?.text ?? '（沒有報告）');
+  L.push(`目前點擊送法 inputDelivery：${val((st.config as { inputDelivery?: string } | undefined)?.inputDelivery)}`);
   L.push('');
   L.push('== 數字 ==');
   L.push(`往返 ${st.roundTrips}／遭遇 ${st.encounters}／回合 ${st.turns}／動作 ${st.actionsSent}／tick ${st.ticks}`);
