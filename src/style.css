@@ -609,3 +609,11 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
 @media (max-width: 767px) {
   .multiview-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* F19：官方 Wine 角色名冊卡片 */
+.wine-roster-card { display: flex; gap: 10px; align-items: flex-start; width: 100%; min-width: 0; box-sizing: border-box; text-align: left; padding: 8px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); color: inherit; font: inherit; cursor: pointer; }
+.wine-roster-card:hover, .wine-roster-card:focus-visible { border-color: var(--acc); }
+.wine-roster-thumb { flex: 0 0 96px; width: 96px; height: 72px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 6px; border: 1px solid var(--line); background: #11161d; font-size: 11px; }
+.wine-roster-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.wine-roster-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; overflow-wrap: anywhere; }
+.wine-roster-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

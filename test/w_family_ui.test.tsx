@@ -467,6 +467,8 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
       (root2.querySelector('[data-testid="wine-patrol-bx"]') as unknown as HTMLInputElement).value === '422',
     '重開分頁還原微移距離及套用後的巡邏點 B',
   );
+  // F19：名冊卡片在有存檔設定時會自動連線，結束前中斷，避免預覽輪詢讓行程無法結束。
+  client2.disconnect();
 }
 
 done();
