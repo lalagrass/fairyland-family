@@ -250,7 +250,7 @@ assert(bridgeWebSocketUrl('http://127.0.0.1:4182') === 'ws://127.0.0.1:4182/even
 
   assert(fake.calls.length === 0, '掛載 UI 時不應自動發起橋接連線');
   const workbenchTabs = root.querySelectorAll('[data-testid="character-workbench"] [role="tab"]');
-  assert(workbenchTabs.length === 5, `工作台應保留原本 4 頁籤並新增第 5 頁籤（實際：${workbenchTabs.length}）`);
+  assert(workbenchTabs.length === 6, `工作台應保留原本 5 頁籤並新增第 6 頁籤「視窗尋路」（實際：${workbenchTabs.length}）`);
   const mobileTabs = root.querySelectorAll('[data-testid="mobile-tabs"] [role="tab"]');
   assert(mobileTabs.length === 4, '手機版主分頁列維持 4 個分頁');
 

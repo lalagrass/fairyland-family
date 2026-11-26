@@ -53,7 +53,9 @@ import { DispatchPanel } from './panels/DispatchPanel';
 import type { LaneSummary } from './lanes';
 import { WorldMapPanel } from './panels/WorldMapPanel';
 import { WineTrainingPanel } from './panels/WineTrainingPanel';
+import { WinePathPanel } from './panels/WinePathPanel';
 import { WineBridgeClient } from './wine/wineBridgeClient';
+import { pathMapFromSnapshot } from './wine/pathfinding';
 import { QuestCards } from './panels/QuestCards';
 import { ShopBuyList } from './panels/ShopBuyList';
 import { questCardModels } from './panels/questCardModel';
@@ -424,7 +426,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [inputValue, setInputValue] = useState('');
   const [inputErr, setInputErr] = useState('');
   const [mobileTab, setMobileTab] = useState<MobileTab>('active');
-  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine'>('overview');
+  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine' | 'path'>('overview');
   const defaultWineClient = useMemo(() => new WineBridgeClient(), []);
   const wineClient = aux.wineClient ?? defaultWineClient;
   const [watchCharacterId, setWatchCharacterId] = useState<string | null>(null);
@@ -776,6 +778,17 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
           >
             視窗練功
           </button>
+          <button
+            type="button"
+            className={`item ${workbenchTab === 'path' ? 'tab-active' : ''}`}
+            data-testid="header-wine-path-btn"
+            onClick={() => {
+              setWorkbenchTab('path');
+              setMobileTab('active');
+            }}
+          >
+            視窗尋路
+          </button>
           {notifyPerm !== 'unsupported' && (
             <button
               type="button"
@@ -1040,6 +1053,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               <Tabs.Trigger value="inventory" className="item">物品欄</Tabs.Trigger>
               <Tabs.Trigger value="settings" className="item">設定</Tabs.Trigger>
               <Tabs.Trigger value="wine" className="item" data-testid="tab-wine">視窗練功</Tabs.Trigger>
+              <Tabs.Trigger value="path" className="item" data-testid="tab-wine-path">視窗尋路</Tabs.Trigger>
             </Tabs.List>
             {/* 保留篩選與捲動狀態；未選頁面用 CSS 從視覺和鍵盤動線一起移除。 */}
             <Tabs.Content value="overview" forceMount className="workbench-pane">
@@ -1291,6 +1305,9 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             </Tabs.Content>
             <Tabs.Content value="wine" forceMount className="workbench-pane">
               <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} />
+            </Tabs.Content>
+            <Tabs.Content value="path" forceMount className="workbench-pane">
+              <WinePathPanel client={wineClient} active={workbenchTab === 'path'} map={pathMapFromSnapshot(snap)} />
             </Tabs.Content>
           </Tabs.Root>
 

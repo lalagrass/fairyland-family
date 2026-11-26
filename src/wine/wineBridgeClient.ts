@@ -1,4 +1,7 @@
 /** W-FamilyUI (#149): Loopback-only HTTP + WebSocket client for Wine background training bridge. */
+import { parseNavStatus, type WalkToCommand, type WineNavStatus } from './pathfinding';
+
+export type { WalkToCommand, WineNavStatus };
 
 export type WineHotkey = 'F7' | 'F8';
 export type WineQuickKey = 'F1' | 'F2' | 'F3' | 'F4' | 'F5' | 'F6' | 'F7' | 'F8';
@@ -121,6 +124,8 @@ export interface WineBridgeStatus {
   config: WineBgConfig;
   recentEvents: WineBridgeEvent[];
   launch?: WineLaunchStatus | null;
+  /** W-Nav：同一條 `/status` 裡的尋路進度。沒有這個欄位代表橋接還沒回。 */
+  nav?: WineNavStatus | null;
 }
 
 export interface WineBridgeWindowInfo {
@@ -436,13 +441,68 @@ export class WineBridgeClient {
     } else if (extraEvent) {
       events = [...events, extraEvent].slice(-MAX_CLIENT_EVENTS);
     }
+    const status: WineBridgeStatus = st.nav === undefined ? st : { ...st, nav: parseNavStatus(st.nav) };
     this.emit({
       connState: 'CONNECTED',
-      status: st,
+      status,
       events,
       error: null,
       lastUpdatedAt: Date.now(),
     });
+  }
+
+  private mergeNav(nav: WineNavStatus): void {
+    const prev = this.snapshot.status;
+    if (!prev) return;
+    this.applyStatus({ ...prev, nav });
+  }
+
+  async walkTo(command: WalkToCommand): Promise<WineNavStatus> {
+    const url = normalizeLoopbackBridgeUrl(this.snapshot.baseUrl);
+    if (!url) {
+      const err = new Error('僅允許本機 loopback 位址');
+      this.emit({ error: err.message });
+      throw err;
+    }
+    try {
+      const parsed = await this.requestJson<Record<string, unknown>>(url, 'POST', '/walk_to', command);
+      const nav = parseNavStatus(parsed);
+      if (!nav) throw new Error('橋接沒有回尋路狀態');
+      this.mergeNav(nav);
+      return nav;
+    } catch (err) {
+      this.notePostError(err);
+      throw err;
+    }
+  }
+
+  async walkStop(reason = 'user_stopped'): Promise<WineNavStatus> {
+    const url = normalizeLoopbackBridgeUrl(this.snapshot.baseUrl);
+    if (!url) {
+      const err = new Error('僅允許本機 loopback 位址');
+      this.emit({ error: err.message });
+      throw err;
+    }
+    try {
+      const parsed = await this.requestJson<Record<string, unknown>>(url, 'POST', '/walk_stop', { reason });
+      const nav = parseNavStatus(parsed);
+      if (!nav) throw new Error('橋接沒有回尋路狀態');
+      this.mergeNav(nav);
+      return nav;
+    } catch (err) {
+      this.notePostError(err);
+      throw err;
+    }
+  }
+
+  private notePostError(err: unknown): void {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ECONNREFUSED')) {
+      this.closeWs();
+      this.emit({ connState: 'DISCONNECTED', error: `橋接連線中斷（${msg}）` });
+    } else {
+      this.emit({ error: msg });
+    }
   }
 
   async connect(rawUrl = this.snapshot.baseUrl): Promise<boolean> {
@@ -574,7 +634,7 @@ export class WineBridgeClient {
     baseUrl: string,
     method: 'GET' | 'POST',
     path: string,
-    body?: Record<string, unknown>,
+    body?: object,
   ): Promise<T> {
     const resp = await this.fetchFn(`${baseUrl}${path}`, {
       method,
