@@ -1,4 +1,5 @@
 /** W-FamilyUI (#149): Loopback-only HTTP + WebSocket client for Wine background training bridge. */
+import { parseGatherStatus, type WineGatherStatus } from './gatherLoop';
 import { parseNavStatus, type WalkToCommand, type WineNavStatus } from './pathfinding';
 
 export type { WalkToCommand, WineNavStatus };
@@ -126,6 +127,8 @@ export interface WineBridgeStatus {
   launch?: WineLaunchStatus | null;
   /** W-Nav：同一條 `/status` 裡的尋路進度。沒有這個欄位代表橋接還沒回。 */
   nav?: WineNavStatus | null;
+  /** F16：同一條 `/status` 裡的採集進度。沒有這個欄位代表橋接還沒提供採集。 */
+  gather?: WineGatherStatus | null;
 }
 
 export interface WineBridgeWindowInfo {
@@ -441,7 +444,11 @@ export class WineBridgeClient {
     } else if (extraEvent) {
       events = [...events, extraEvent].slice(-MAX_CLIENT_EVENTS);
     }
-    const status: WineBridgeStatus = st.nav === undefined ? st : { ...st, nav: parseNavStatus(st.nav) };
+    const status: WineBridgeStatus = {
+      ...st,
+      ...(st.nav === undefined ? {} : { nav: parseNavStatus(st.nav) }),
+      ...(st.gather === undefined ? {} : { gather: parseGatherStatus(st.gather) }),
+    };
     this.emit({
       connState: 'CONNECTED',
       status,
@@ -491,6 +498,36 @@ export class WineBridgeClient {
       return nav;
     } catch (err) {
       this.notePostError(err);
+      throw err;
+    }
+  }
+
+  /** F16：開始在目前位置採集。橋接沒有這個指令時回 404（`not found`）。 */
+  async gatherStart(spot: { mapId: string; x: number; y: number }): Promise<WineGatherStatus> {
+    return this.postGather('/gather_start', { mapId: spot.mapId, targetX: spot.x, targetY: spot.y });
+  }
+
+  async gatherStop(reason = 'user_stopped'): Promise<WineGatherStatus> {
+    return this.postGather('/gather_stop', { reason });
+  }
+
+  private async postGather(path: string, body: Record<string, unknown>): Promise<WineGatherStatus> {
+    const url = normalizeLoopbackBridgeUrl(this.snapshot.baseUrl);
+    if (!url) {
+      const err = new Error('僅允許本機 loopback 位址');
+      this.emit({ error: err.message });
+      throw err;
+    }
+    try {
+      const parsed = await this.requestJson<Record<string, unknown>>(url, 'POST', path, body);
+      const gather = parseGatherStatus(parsed);
+      if (!gather) throw new Error('橋接沒有回採集狀態');
+      const prev = this.snapshot.status;
+      if (prev) this.applyStatus({ ...prev, gather });
+      return gather;
+    } catch (err) {
+      // 橋接沒有採集指令是能力缺口，由循環顯示停止原因，不當成連線錯誤。
+      if (!(err instanceof Error && err.message === 'not found')) this.notePostError(err);
       throw err;
     }
   }

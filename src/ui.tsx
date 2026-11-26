@@ -54,6 +54,7 @@ import type { LaneSummary } from './lanes';
 import { WorldMapPanel } from './panels/WorldMapPanel';
 import { WineTrainingPanel } from './panels/WineTrainingPanel';
 import { WinePathPanel } from './panels/WinePathPanel';
+import { WineGatherPanel, createGatherRunner } from './panels/WineGatherPanel';
 import { WineBridgeClient } from './wine/wineBridgeClient';
 import { pathMapFromSnapshot } from './wine/pathfinding';
 import { QuestCards } from './panels/QuestCards';
@@ -426,9 +427,14 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
   const [inputValue, setInputValue] = useState('');
   const [inputErr, setInputErr] = useState('');
   const [mobileTab, setMobileTab] = useState<MobileTab>('active');
-  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine' | 'path'>('overview');
+  const [workbenchTab, setWorkbenchTab] = useState<'overview' | 'skills' | 'inventory' | 'settings' | 'wine' | 'path' | 'gather'>('overview');
   const defaultWineClient = useMemo(() => new WineBridgeClient(), []);
   const wineClient = aux.wineClient ?? defaultWineClient;
+  const gatherRunner = useMemo(() => {
+    let storage: Storage | null = null;
+    try { storage = typeof localStorage === 'undefined' ? null : localStorage; } catch { storage = null; }
+    return createGatherRunner(wineClient, storage);
+  }, [wineClient]);
   const [watchCharacterId, setWatchCharacterId] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -788,6 +794,17 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             }}
           >
             視窗尋路
+          </button>
+          <button
+            type="button"
+            className={`item ${workbenchTab === 'gather' ? 'tab-active' : ''}`}
+            data-testid="header-wine-gather-btn"
+            onClick={() => {
+              setWorkbenchTab('gather');
+              setMobileTab('active');
+            }}
+          >
+            視窗採集
           </button>
           {notifyPerm !== 'unsupported' && (
             <button
@@ -1308,6 +1325,15 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
             </Tabs.Content>
             <Tabs.Content value="path" forceMount className="workbench-pane">
               <WinePathPanel client={wineClient} active={workbenchTab === 'path'} map={pathMapFromSnapshot(snap)} />
+            </Tabs.Content>
+            <Tabs.Content value="gather" forceMount className="workbench-pane">
+              <WineGatherPanel
+                client={wineClient}
+                active={workbenchTab === 'gather'}
+                runner={gatherRunner}
+                current={snap && snap.mapId && Number.isFinite(snap.character?.x) && Number.isFinite(snap.character?.y)
+                  ? { mapId: snap.mapId, x: snap.character.x, y: snap.character.y } : null}
+              />
             </Tabs.Content>
           </Tabs.Root>
 
