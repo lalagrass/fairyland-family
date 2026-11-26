@@ -1332,7 +1332,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               })()}
             </Tabs.Content>
             <Tabs.Content value="wine" forceMount className="workbench-pane">
-              <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} />
+              <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} autoConnect />
             </Tabs.Content>
             <Tabs.Content value="path" forceMount className="workbench-pane">
               <WinePathPanel client={wineClient} active={workbenchTab === 'path'} map={pathMapFromSnapshot(snap)} />
@@ -2007,5 +2007,10 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   }
 
   render(initialState(), 'STOPPED');
-  return { render };
+  /** 卸載 React 樹（測試收尾用：停掉面板的自動連線計時器）。 */
+  function unmount() {
+    reactRoot?.unmount();
+    reactRoot = null;
+  }
+  return { render, unmount };
 }

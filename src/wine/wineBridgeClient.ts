@@ -132,6 +132,14 @@ export interface WineBridgeStatus {
   gather?: WineGatherStatus | null;
   /** F17：同一條 `/status` 裡的補給進度與藥水數量。沒有這個欄位代表橋接還沒提供補給。 */
   supply?: WineSupplyStatus | null;
+  /** WL-B1：停機或未知場景時橋接附上的診斷（來源尺寸、縮放、辨識耗時等）。 */
+  diagnostics?: Record<string, unknown> | null;
+  /** WL-B1：每場戰鬥各階段時間（文字，橋接產生）。 */
+  battleReport?: string[] | null;
+  /** WL-B1：每 tick 辨識耗時（毫秒）。 */
+  observeMs?: { last: number; avg: number; max: number } | null;
+  /** WL-B1：橋接設定檔狀態（存在使用者資料夾，重啟後保留）。 */
+  configStore?: { path: string; loaded: boolean; savedAt: number | null; error: string | null } | null;
 }
 
 export interface WineBridgeWindowInfo {
@@ -361,6 +369,19 @@ export const WINE_STOP_REASON_LABELS: Record<string, string> = {
   frames_exhausted: '測試影格結束',
   bridge_shutdown: '橋接服務已關閉',
   bridge_error: '橋接執行錯誤',
+  unrecognized_scene: '畫面無法辨識（不是地圖也不是戰鬥）',
+  unknown_scene: '畫面無法辨識',
+  unknown_target: '戰鬥中找不到可點選的敵人',
+  unknown_vitals: '戰鬥中讀不到血魔量',
+  unknown_phase: '戰鬥階段無法判斷',
+  unknown_turn: '回合數異常',
+  unknown_battle: '戰鬥編號異常',
+  unexpected_battle: '戰鬥狀態不符預期',
+  missing_result: '戰鬥結束後沒看到結算畫面',
+  unknown_result: '結算畫面無法判斷勝負',
+  unexpected_result: '沒有戰鬥卻出現結算畫面',
+  no_available_action: '沒有可用的戰鬥動作',
+  defeat: '戰敗停機',
 };
 
 export function formatWineStopReason(reason: string | null | undefined): string {
