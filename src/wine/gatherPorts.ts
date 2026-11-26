@@ -12,6 +12,11 @@ export function observeClient(client: WineBridgeClient, now: () => number = Date
     scene: st?.scene ?? null,
     nav: st?.nav ?? null,
     gather: st?.gather ?? null,
+    supply: st?.supply ?? null,
+    here: st?.nav?.mapId && st.nav.currentPos
+      ? { mapId: st.nav.mapId, x: st.nav.currentPos[0], y: st.nav.currentPos[1] }
+      : null,
+    trainingStopReason: st?.stopReason ?? null,
     trainingRunning: Boolean(st?.running),
   };
 }
@@ -23,5 +28,8 @@ export function clientGatherPorts(client: WineBridgeClient, now: () => number = 
     walkStop: () => client.walkStop('user_stopped'),
     gatherStart: spot => client.gatherStart(spot),
     gatherStop: () => client.gatherStop('user_stopped'),
+    huntStart: () => client.start(),
+    huntStop: () => client.stop('resupply'),
+    resupply: plan => client.resupplyStart(plan),
   };
 }

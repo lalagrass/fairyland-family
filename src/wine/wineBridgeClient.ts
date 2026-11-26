@@ -1,5 +1,6 @@
 /** W-FamilyUI (#149): Loopback-only HTTP + WebSocket client for Wine background training bridge. */
 import { parseGatherStatus, type WineGatherStatus } from './gatherLoop';
+import { parseSupplyStatus, type ResupplyPlan, type WineSupplyStatus } from './resupplyLoop';
 import { parseNavStatus, type WalkToCommand, type WineNavStatus } from './pathfinding';
 
 export type { WalkToCommand, WineNavStatus };
@@ -129,6 +130,8 @@ export interface WineBridgeStatus {
   nav?: WineNavStatus | null;
   /** F16：同一條 `/status` 裡的採集進度。沒有這個欄位代表橋接還沒提供採集。 */
   gather?: WineGatherStatus | null;
+  /** F17：同一條 `/status` 裡的補給進度與藥水數量。沒有這個欄位代表橋接還沒提供補給。 */
+  supply?: WineSupplyStatus | null;
 }
 
 export interface WineBridgeWindowInfo {
@@ -448,6 +451,7 @@ export class WineBridgeClient {
       ...st,
       ...(st.nav === undefined ? {} : { nav: parseNavStatus(st.nav) }),
       ...(st.gather === undefined ? {} : { gather: parseGatherStatus(st.gather) }),
+      ...(st.supply === undefined ? {} : { supply: parseSupplyStatus(st.supply) }),
     };
     this.emit({
       connState: 'CONNECTED',
@@ -509,6 +513,48 @@ export class WineBridgeClient {
 
   async gatherStop(reason = 'user_stopped'): Promise<WineGatherStatus> {
     return this.postGather('/gather_stop', { reason });
+  }
+
+  /** F17：在商店買藥賣物。橋接沒有這個指令時回 404（`not found`）。 */
+  async resupplyStart(plan: ResupplyPlan): Promise<WineSupplyStatus> {
+    return this.postSupply('/resupply_start', { buy: plan.buy, sell: plan.sellItemIds });
+  }
+
+  async resupplyStop(reason = 'user_stopped'): Promise<WineSupplyStatus> {
+    return this.postSupply('/resupply_stop', { reason });
+  }
+
+  private async postSupply(path: string, body: Record<string, unknown>): Promise<WineSupplyStatus> {
+    const url = normalizeLoopbackBridgeUrl(this.snapshot.baseUrl);
+    if (!url) {
+      const err = new Error('僅允許本機 loopback 位址');
+      this.emit({ error: err.message });
+      throw err;
+    }
+    try {
+      const parsed = await this.requestJson<Record<string, unknown>>(url, 'POST', path, body);
+      const supply = parseSupplyStatus(parsed);
+      if (!supply) throw new Error('橋接沒有回補給狀態');
+      const prev = this.snapshot.status;
+      if (prev) {
+        // 指令回應不一定帶藥水與金額，讀不到的欄位沿用上一次的 `/status` 回報。
+        const old = prev.supply;
+        const merged = old
+          ? {
+              ...supply,
+              potionCount: supply.potionCount ?? old.potionCount,
+              gold: supply.gold ?? old.gold,
+              bagUsed: supply.bagUsed ?? old.bagUsed,
+              bagCap: supply.bagCap ?? old.bagCap,
+            }
+          : supply;
+        this.applyStatus({ ...prev, supply: merged });
+      }
+      return supply;
+    } catch (err) {
+      if (!(err instanceof Error && err.message === 'not found')) this.notePostError(err);
+      throw err;
+    }
   }
 
   private async postGather(path: string, body: Record<string, unknown>): Promise<WineGatherStatus> {

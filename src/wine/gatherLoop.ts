@@ -9,6 +9,16 @@
  * 採集）不會同時搶視窗：開始前與執行中都檢查橋接回報的 running 旗標。
  */
 import type { WineNavStatus } from './pathfinding';
+import {
+  DEFAULT_RESUPPLY,
+  SUPPLY_STOP_LABELS,
+  buildResupplyPlan,
+  potionsLow,
+  resupplyConfigured,
+  type ResupplyConfig,
+  type ResupplyPlan,
+  type WineSupplyStatus,
+} from './resupplyLoop';
 
 export interface WorkPoint {
   mapId: string;
@@ -18,9 +28,16 @@ export interface WorkPoint {
 
 export type GatherBagAction = 'return_home' | 'stop';
 
+export type WorkActivity = 'gather' | 'hunt';
+
 export interface GatherLoopConfig {
+  /** `gather`：採集循環；`hunt`：練功時藥水不足或背包快滿就回村補給再回原地（F17）。 */
+  activity: WorkActivity;
+  /** F17：補給設定（沿用 F10 角色策略）。 */
+  resupply: ResupplyConfig;
+  resupplyTimeoutMs: number;
   spot: WorkPoint | null;
-  /** 回村卸貨的位置。`onBagFull` 是 `return_home` 時必填。 */
+  /** 回村卸貨／補給的位置（商店旁）。`onBagFull` 是 `return_home` 或練功補給時必填。 */
   home: WorkPoint | null;
   onBagFull: GatherBagAction;
   /** 背包使用率達到這個百分比視為滿。 */
@@ -37,6 +54,9 @@ export interface GatherLoopConfig {
 }
 
 export const DEFAULT_GATHER_CONFIG: GatherLoopConfig = {
+  activity: 'gather',
+  resupply: { ...DEFAULT_RESUPPLY },
+  resupplyTimeoutMs: 180_000,
   spot: null,
   home: null,
   onBagFull: 'return_home',
@@ -91,7 +111,15 @@ export function bagPct(gather: Pick<WineGatherStatus, 'bagUsed' | 'bagCap'> | nu
   return Math.max(0, Math.min(100, (gather.bagUsed / gather.bagCap) * 100));
 }
 
-export type WorkPhase = 'idle' | 'to_spot' | 'working' | 'to_home' | 'unloading' | 'stopped';
+export type WorkPhase =
+  | 'idle'
+  | 'to_spot'
+  | 'working'
+  | 'hunting'
+  | 'to_home'
+  | 'unloading'
+  | 'to_origin'
+  | 'stopped';
 
 export interface WorkObservation {
   nowMs: number;
@@ -101,8 +129,14 @@ export interface WorkObservation {
   scene: string | null;
   nav: WineNavStatus | null;
   gather: WineGatherStatus | null;
+  /** F17：補給進度與藥水、背包。沒有就是橋接還沒提供。 */
+  supply?: WineSupplyStatus | null;
+  /** F17：練功時的目前地圖與位置（橋接回報），用來記住「原地」。 */
+  here?: WorkPoint | null;
   /** 練功循環正在跑。 */
   trainingRunning: boolean;
+  /** 練功循環上一次停下的原因。 */
+  trainingStopReason?: string | null;
 }
 
 export interface GatherLoopState {
@@ -116,11 +150,15 @@ export interface GatherLoopState {
   sawWorking: boolean;
   /** 完成的採集次數。 */
   gathers: number;
-  /** 完成的回村卸貨次數。 */
+  /** 完成的回村卸貨／補給次數。 */
   unloads: number;
   popupStreak: number;
   stopReason: string | null;
   lastDurationMs: number | null;
+  /** F17：練功時記住的原地，補給完走回來。 */
+  origin: WorkPoint | null;
+  /** F17：這趟回村的原因。 */
+  trigger: 'potions' | 'bag' | null;
 }
 
 export type GatherEffect =
@@ -128,7 +166,10 @@ export type GatherEffect =
   | { kind: 'walk_stop' }
   | { kind: 'gather_start'; spot: WorkPoint }
   | { kind: 'gather_stop' }
-  | { kind: 'unload' };
+  | { kind: 'unload' }
+  | { kind: 'hunt_start' }
+  | { kind: 'hunt_stop' }
+  | { kind: 'resupply'; plan: ResupplyPlan };
 
 export interface StepResult {
   state: GatherLoopState;
@@ -148,6 +189,8 @@ export function idleGatherState(nowMs = 0): GatherLoopState {
     popupStreak: 0,
     stopReason: null,
     lastDurationMs: null,
+    origin: null,
+    trigger: null,
   };
 }
 
@@ -158,16 +201,33 @@ function stopped(state: GatherLoopState, reason: string, nowMs: number, effects:
   };
 }
 
-function validPoint(p: WorkPoint | null): p is WorkPoint {
+function validPoint(p: WorkPoint | null | undefined): p is WorkPoint {
   return !!p && typeof p.mapId === 'string' && p.mapId.trim() !== '' && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+/** 背包讀數：採集狀態優先，沒有就用補給狀態。 */
+function bagSource(obs: Pick<WorkObservation, 'gather' | 'supply'>): Pick<WineGatherStatus, 'bagUsed' | 'bagCap'> | null {
+  if (bagPct(obs.gather) !== null) return obs.gather;
+  return obs.supply ?? obs.gather;
+}
+
+function supplyOn(cfg: GatherLoopConfig): boolean {
+  return resupplyConfigured(cfg.resupply) || cfg.resupply.potionMin > 0;
 }
 
 /** 開始前檢查。回 null 表示可以開始；否則是停止原因。 */
 export function gatherStartBlocker(cfg: GatherLoopConfig, obs: WorkObservation): string | null {
   if (!obs.connected) return 'disconnected';
-  if (!validPoint(cfg.spot)) return 'no_spot';
-  if (cfg.onBagFull === 'return_home' && !validPoint(cfg.home)) return 'no_home';
-  if (obs.trainingRunning || obs.nav?.running || obs.gather?.running) return 'busy';
+  if (cfg.activity === 'gather') {
+    if (!validPoint(cfg.spot)) return 'no_spot';
+    if (cfg.onBagFull === 'return_home' && !validPoint(cfg.home)) return 'no_home';
+    if (obs.trainingRunning || obs.nav?.running || obs.gather?.running || obs.supply?.running) return 'busy';
+    return null;
+  }
+  // 練功補給：商店（回村點）必填；練功循環可以已經在跑，由這個循環接手。
+  if (!validPoint(cfg.home)) return 'no_home';
+  if (!supplyOn(cfg)) return 'no_supply_rule';
+  if (obs.nav?.running || obs.gather?.running || obs.supply?.running) return 'busy';
   return null;
 }
 
@@ -175,6 +235,9 @@ export function startGather(cfg: GatherLoopConfig, obs: WorkObservation): StepRe
   const base = idleGatherState(obs.nowMs);
   const blocker = gatherStartBlocker(cfg, obs);
   if (blocker) return stopped(base, blocker, obs.nowMs);
+  if (cfg.activity === 'hunt') {
+    return { state: { ...base, phase: 'hunting', commandIssued: obs.trainingRunning, sawWorking: obs.trainingRunning }, effects: [] };
+  }
   return { state: { ...base, phase: 'to_spot' }, effects: [] };
 }
 
@@ -196,10 +259,25 @@ function walkOutcome(nav: WineNavStatus | null, target: WorkPoint): WalkOutcome 
   return { kind: 'wait' };
 }
 
-function bagIsFull(g: WineGatherStatus | null, cfg: GatherLoopConfig): boolean | null {
+function bagIsFull(g: Pick<WineGatherStatus, 'bagUsed' | 'bagCap'> | null, cfg: GatherLoopConfig): boolean | null {
   const pct = bagPct(g);
   return pct === null ? null : pct >= cfg.bagFullPct;
 }
+
+/** 補給觸發：藥水不足優先，其次背包滿（只有設定回村才算）。讀不到藥水回 'unreadable'。 */
+export function supplyTrigger(
+  cfg: GatherLoopConfig,
+  obs: Pick<WorkObservation, 'gather' | 'supply'>,
+): 'potions' | 'bag' | 'unreadable' | null {
+  const low = potionsLow(cfg.resupply, obs.supply ?? null);
+  if (low === true) return 'potions';
+  if (low === null) return 'unreadable';
+  if (cfg.onBagFull === 'return_home' && bagIsFull(bagSource(obs), cfg) === true) return 'bag';
+  return null;
+}
+
+const SUPPLY_WAIT_IDLE_MS = 15_000;
+const NON_POPUP_SCENES = new Set(['map', 'battle', 'result']);
 
 /**
  * 一個 tick。純函式：輸入狀態與觀察，回新狀態與要送出的指令。
@@ -213,23 +291,28 @@ export function stepGather(
 ): StepResult {
   const now = obs.nowMs;
   if (state.phase === 'idle' || state.phase === 'stopped') return { state, effects: [] };
+  const hunt = cfg.activity === 'hunt';
 
   const cleanup: GatherEffect[] = [];
-  if (state.phase === 'to_spot' || state.phase === 'to_home') cleanup.push({ kind: 'walk_stop' });
+  if (state.phase === 'to_spot' || state.phase === 'to_home' || state.phase === 'to_origin') cleanup.push({ kind: 'walk_stop' });
   if (state.phase === 'working') cleanup.push({ kind: 'gather_stop' });
+  if (state.phase === 'hunting' && stopRequested) cleanup.push({ kind: 'hunt_stop' });
 
   if (stopRequested) return stopped(state, stopRequested, now, cleanup);
 
   // 全域條件
   if (!obs.connected) return stopped(state, 'disconnected', now, []);
   if (cfg.maxMinutes !== null && now - state.startedAtMs >= cfg.maxMinutes * 60_000) {
-    return stopped(state, 'timeout', now, cleanup);
+    return stopped(state, 'timeout', now, state.phase === 'hunting' ? [{ kind: 'hunt_stop' }] : cleanup);
   }
-  if (obs.scene === 'battle') return stopped(state, 'entered_battle', now, cleanup);
+  // 練功時遇敵是常態；採集時遇敵就停。
+  if (!hunt && obs.scene === 'battle') return stopped(state, 'entered_battle', now, cleanup);
   let popupStreak = 0;
-  if (obs.scene !== null && obs.scene !== 'map') popupStreak = state.popupStreak + 1;
-  if (popupStreak >= cfg.popupTicks) return stopped(state, 'unexpected_popup', now, cleanup);
-  if (obs.trainingRunning) return stopped(state, 'busy', now, cleanup);
+  if (obs.scene !== null && (hunt ? !NON_POPUP_SCENES.has(obs.scene) : obs.scene !== 'map')) popupStreak = state.popupStreak + 1;
+  if (popupStreak >= cfg.popupTicks) {
+    return stopped(state, 'unexpected_popup', now, state.phase === 'hunting' ? [{ kind: 'hunt_stop' }] : cleanup);
+  }
+  if (!hunt && obs.trainingRunning) return stopped(state, 'busy', now, cleanup);
   let s: GatherLoopState = { ...state, popupStreak };
 
   const enter = (phase: WorkPhase, patch: Partial<GatherLoopState> = {}): GatherLoopState => ({
@@ -242,19 +325,29 @@ export function stepGather(
     sawWorking: false,
   });
   const elapsed = now - s.phaseSinceMs;
+  const shop = cfg.home;
+
+  /** 走去 `target`。回 walk effect、等待、到達或失敗。練功循環還沒停乾淨時先等。 */
+  const walkStep = (target: WorkPoint, onArrive: () => StepResult): StepResult => {
+    if (!s.commandIssued) {
+      if (hunt && obs.trainingRunning) {
+        if (elapsed >= SUPPLY_WAIT_IDLE_MS) return stopped(s, 'busy', now, [{ kind: 'hunt_stop' }]);
+        return { state: s, effects: [] };
+      }
+      return { state: { ...s, commandIssued: true }, effects: [{ kind: 'walk_to', target }] };
+    }
+    const out = walkOutcome(obs.nav, target);
+    if (out.kind === 'failed') return stopped(s, out.reason, now);
+    if (out.kind === 'arrived') return onArrive();
+    if (elapsed >= cfg.walkTimeoutMs) return stopped(s, 'timeout', now, [{ kind: 'walk_stop' }]);
+    return { state: s, effects: [] };
+  };
 
   switch (s.phase) {
     case 'to_spot': {
       const spot = cfg.spot;
       if (!validPoint(spot)) return stopped(s, 'no_spot', now);
-      if (!s.commandIssued) {
-        return { state: { ...s, commandIssued: true }, effects: [{ kind: 'walk_to', target: spot }] };
-      }
-      const out = walkOutcome(obs.nav, spot);
-      if (out.kind === 'failed') return stopped(s, out.reason, now);
-      if (out.kind === 'arrived') return { state: enter('working'), effects: [] };
-      if (elapsed >= cfg.walkTimeoutMs) return stopped(s, 'timeout', now, [{ kind: 'walk_stop' }]);
-      return { state: s, effects: [] };
+      return walkStep(spot, () => ({ state: enter('working'), effects: [] }));
     }
     case 'working': {
       const spot = cfg.spot;
@@ -280,11 +373,14 @@ export function stepGather(
         const lastDurationMs = g?.lastDurationMs ?? now - s.phaseSinceMs;
         const done = { ...s, gathers, lastDurationMs };
         if (cfg.maxCycles !== null && gathers >= cfg.maxCycles) return stopped(done, 'max_cycles', now);
-        const full = bagIsFull(g, cfg);
+        const full = bagIsFull(bagSource(obs), cfg);
         if (full === null) return stopped(done, 'bag_unreadable', now);
-        if (full) {
-          if (cfg.onBagFull === 'stop') return stopped(done, 'bag_full', now);
-          return { state: { ...enter('to_home', done) }, effects: [] };
+        const trig = supplyOn(cfg) ? supplyTrigger(cfg, obs) : null;
+        if (trig === 'unreadable') return stopped(done, 'potion_unreadable', now);
+        if (full || trig === 'potions') {
+          if (!full && cfg.onBagFull === 'stop') return stopped(done, 'potions_low', now);
+          if (full && cfg.onBagFull === 'stop') return stopped(done, 'bag_full', now);
+          return { state: enter('to_home', { ...done, trigger: full ? 'bag' : 'potions' }), effects: [] };
         }
         // 繼續採同一個點。
         return { state: { ...done, phaseSinceMs: now, commandIssued: false, workBaseline: null, sawWorking: false }, effects: [] };
@@ -292,32 +388,78 @@ export function stepGather(
       if (elapsed >= cfg.workTimeoutMs) return stopped(s, 'work_timeout', now, [{ kind: 'gather_stop' }]);
       return { state: s, effects: [] };
     }
-    case 'to_home': {
-      const home = cfg.home;
-      if (!validPoint(home)) return stopped(s, 'no_home', now);
+    case 'hunting': {
       if (!s.commandIssued) {
-        return { state: { ...s, commandIssued: true }, effects: [{ kind: 'walk_to', target: home }] };
+        return { state: { ...s, commandIssued: true, sawWorking: false }, effects: [{ kind: 'hunt_start' }] };
       }
-      const out = walkOutcome(obs.nav, home);
-      if (out.kind === 'failed') return stopped(s, out.reason, now);
-      if (out.kind === 'arrived') return { state: enter('unloading'), effects: [] };
-      if (elapsed >= cfg.walkTimeoutMs) return stopped(s, 'timeout', now, [{ kind: 'walk_stop' }]);
-      return { state: s, effects: [] };
+      if (obs.trainingRunning) s = { ...s, sawWorking: true };
+      if (s.sawWorking && !obs.trainingRunning) return stopped(s, obs.trainingStopReason || 'training_stopped', now);
+      if (!s.sawWorking && elapsed >= SUPPLY_WAIT_IDLE_MS) return stopped(s, obs.trainingStopReason || 'training_stopped', now);
+      // 戰鬥中不打斷，等回到地圖再判斷。
+      if (obs.scene !== 'map') return { state: s, effects: [] };
+      const trig = supplyTrigger(cfg, obs);
+      if (trig === 'unreadable') return stopped(s, 'potion_unreadable', now, [{ kind: 'hunt_stop' }]);
+      if (trig === null) return { state: s, effects: [] };
+      if (!validPoint(obs.here)) return stopped(s, 'origin_unknown', now, [{ kind: 'hunt_stop' }]);
+      if (!validPoint(shop)) return stopped(s, 'no_home', now, [{ kind: 'hunt_stop' }]);
+      return {
+        state: enter('to_home', { origin: { ...obs.here }, trigger: trig }),
+        effects: [{ kind: 'hunt_stop' }],
+      };
+    }
+    case 'to_home': {
+      if (!validPoint(shop)) return stopped(s, 'no_home', now);
+      return walkStep(shop, () => ({ state: enter('unloading'), effects: [] }));
     }
     case 'unloading': {
       const effects: GatherEffect[] = [];
+      const useSupply = supplyOn(cfg);
+      const sup = obs.supply ?? null;
       if (!s.commandIssued) {
-        s = { ...s, commandIssued: true };
-        effects.push({ kind: 'unload' });
+        s = { ...s, commandIssued: true, workBaseline: sup?.completedCount ?? null, sawWorking: false };
+        effects.push(useSupply ? { kind: 'resupply', plan: buildResupplyPlan(cfg.resupply) } : { kind: 'unload' });
+        return { state: s, effects };
       }
-      const pct = bagPct(obs.gather);
-      if (pct === null) return stopped(s, 'bag_unreadable', now, effects);
-      if (pct <= cfg.unloadBelowPct) {
-        const unloads = s.unloads + 1;
-        return { state: enter('to_spot', { unloads }), effects };
+      if (useSupply) {
+        if (sup?.stopReason && !sup.running && (sup.state === 'stopped' || sup.state === 'error')) {
+          return stopped(s, sup.stopReason, now);
+        }
+        if (sup?.running) s = { ...s, sawWorking: true };
+        const finished = !!sup && !sup.running && (
+          sup.completedCount !== null && s.workBaseline !== null
+            ? sup.completedCount > s.workBaseline
+            : s.sawWorking && (sup.state === 'done' || sup.state === 'idle')
+        );
+        if (!finished) {
+          if (elapsed >= cfg.resupplyTimeoutMs) return stopped(s, 'resupply_timeout', now, [{ kind: 'walk_stop' }]);
+          return { state: s, effects: [] };
+        }
+        // 補完後再讀一次：藥水還是不足就停，不在原地反覆補。
+        if (s.trigger === 'potions' && potionsLow(cfg.resupply, sup) !== false) {
+          return stopped(s, 'resupply_failed', now);
+        }
+        const pctAfter = bagPct(bagSource(obs));
+        if (hunt === false && pctAfter !== null && pctAfter > cfg.unloadBelowPct && s.trigger === 'bag') {
+          return stopped(s, 'bag_still_full', now);
+        }
+      } else {
+        const pct = bagPct(bagSource(obs));
+        if (pct === null) return stopped(s, 'bag_unreadable', now);
+        if (pct > cfg.unloadBelowPct) {
+          if (elapsed >= cfg.unloadTimeoutMs) return stopped(s, 'bag_still_full', now);
+          return { state: s, effects: [] };
+        }
       }
-      if (elapsed >= cfg.unloadTimeoutMs) return stopped(s, 'bag_still_full', now, effects);
-      return { state: s, effects };
+      const unloads = s.unloads + 1;
+      if (hunt) {
+        return { state: enter('to_origin', { unloads }), effects: [] };
+      }
+      return { state: enter('to_spot', { unloads }), effects: [] };
+    }
+    case 'to_origin': {
+      const origin = s.origin;
+      if (!validPoint(origin)) return stopped(s, 'origin_unknown', now);
+      return walkStep(origin, () => ({ state: enter('hunting', { origin: null, trigger: null }), effects: [] }));
     }
     default:
       return { state: s, effects: [] };
@@ -328,6 +470,8 @@ export const GATHER_STOP_LABELS: Record<string, string> = {
   disconnected: '遊戲連線中斷安全停機',
   no_spot: '還沒設定採集點',
   no_home: '還沒設定回村點',
+  no_supply_rule: '還沒設定補給條件',
+  potions_low: '藥水不足',
   busy: '練功、尋路或採集已有一項在跑',
   bag_full: '背包已滿',
   bag_unreadable: '讀不到背包狀態',
@@ -350,15 +494,17 @@ export const GATHER_STOP_LABELS: Record<string, string> = {
 
 export function formatGatherStopReason(reason: string | null | undefined): string {
   if (!reason) return '';
-  return GATHER_STOP_LABELS[reason] ?? reason;
+  return GATHER_STOP_LABELS[reason] ?? SUPPLY_STOP_LABELS[reason] ?? reason;
 }
 
 export const WORK_PHASE_LABELS: Record<WorkPhase, string> = {
   idle: '尚未開始',
   to_spot: '前往採集點',
   working: '採集中',
+  hunting: '練功中',
   to_home: '回村中',
-  unloading: '卸貨中',
+  unloading: '補給／卸貨中',
+  to_origin: '回原地中',
   stopped: '已停下',
 };
 
@@ -372,6 +518,11 @@ export interface GatherPorts {
   gatherStop(): Promise<unknown>;
   /** 回村後的卸貨動作（賣出、存倉）。沒提供就只等背包使用率降下來。 */
   unload?(): Promise<unknown>;
+  /** F17：停止練功循環／重新開始。 */
+  huntStart?(): Promise<unknown>;
+  huntStop?(): Promise<unknown>;
+  /** F17：在商店買藥賣物。沒提供就停在 `bridge_unsupported`。 */
+  resupply?(plan: ResupplyPlan): Promise<unknown>;
 }
 
 export interface GatherRunnerSnapshot {
@@ -477,6 +628,9 @@ export class GatherLoopRunner {
       case 'gather_start': return this.ports.gatherStart(eff.spot);
       case 'gather_stop': return this.ports.gatherStop();
       case 'unload': return this.ports.unload ? this.ports.unload() : Promise.resolve(null);
+      case 'hunt_start': return this.ports.huntStart ? this.ports.huntStart() : Promise.reject(new Error('not found'));
+      case 'hunt_stop': return this.ports.huntStop ? this.ports.huntStop() : Promise.resolve(null);
+      case 'resupply': return this.ports.resupply ? this.ports.resupply(eff.plan) : Promise.reject(new Error('not found'));
     }
   }
 }

@@ -804,7 +804,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               setMobileTab('active');
             }}
           >
-            視窗採集
+            採集補給
           </button>
           {notifyPerm !== 'unsupported' && (
             <button
@@ -1331,6 +1331,9 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
                 client={wineClient}
                 active={workbenchTab === 'gather'}
                 runner={gatherRunner}
+                strategy={state.characterId && aux.charStrategies?.[state.characterId]
+                  ? { inventoryPolicy: aux.charStrategies[state.characterId]!.inventoryPolicy, bagFullPolicy: aux.charStrategies[state.characterId]!.bagFullPolicy }
+                  : null}
                 current={snap && snap.mapId && Number.isFinite(snap.character?.x) && Number.isFinite(snap.character?.y)
                   ? { mapId: snap.mapId, x: snap.character.x, y: snap.character.y } : null}
               />
