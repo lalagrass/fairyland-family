@@ -134,6 +134,8 @@ export interface WineBridgeStatus {
   supply?: WineSupplyStatus | null;
   /** WL-B1：停機或未知場景時橋接附上的診斷（來源尺寸、縮放、辨識耗時等）。 */
   diagnostics?: Record<string, unknown> | null;
+  /** F20：這次練功存幀的資料夾路徑（橋接較舊時沒有此欄位；選填）。 */
+  frameDumpDir?: string | null;
   /** WL-B1：每場戰鬥各階段時間（文字，橋接產生）。 */
   battleReport?: string[] | null;
   /** WL-B1：每 tick 辨識耗時（毫秒）。 */
