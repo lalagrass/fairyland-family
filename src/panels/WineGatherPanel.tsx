@@ -11,6 +11,9 @@ import {
   type WorkPoint,
 } from '../wine/gatherLoop';
 import { clientGatherPorts } from '../wine/gatherPorts';
+import { resupplyFromStrategy, sanitizeResupply } from '../wine/resupplyLoop';
+import type { BagFullPolicy, InventoryPolicy } from '../automation/strategyStore';
+import { bagFullActionFromPolicy } from '../wine/gatherLoop';
 
 export const GATHER_CONFIG_STORAGE_KEY = 'fairyland_family:wine_gather_config:v1';
 const TICK_MS = 1000;
@@ -40,6 +43,8 @@ export function sanitizeGatherConfig(raw: unknown): GatherLoopConfig {
     onBagFull: r.onBagFull === 'stop' ? 'stop' : 'return_home',
     bagFullPct: num(r.bagFullPct, 1, 100, base.bagFullPct),
     unloadBelowPct: num(r.unloadBelowPct, 0, 99, base.unloadBelowPct),
+    activity: r.activity === 'hunt' ? 'hunt' : 'gather',
+    resupply: sanitizeResupply(r.resupply),
     maxMinutes: r.maxMinutes === null ? null : typeof r.maxMinutes === 'number' && r.maxMinutes > 0 ? r.maxMinutes : base.maxMinutes,
     maxCycles: r.maxCycles === null || r.maxCycles === undefined ? null : typeof r.maxCycles === 'number' && r.maxCycles >= 1 ? Math.round(r.maxCycles) : null,
   };
@@ -95,12 +100,15 @@ export function WineGatherPanel({
   client,
   runner,
   current,
+  strategy,
 }: {
   client: WineBridgeClient;
   active: boolean;
   runner: GatherLoopRunner;
   /** 宿主快照上的目前地圖與位置。沒有就不能用「用目前位置」。 */
   current: WorkPoint | null;
+  /** F10 角色策略。補給設定沿用它的補藥道具、賣出清單與背包滿策略。 */
+  strategy?: { inventoryPolicy?: Pick<InventoryPolicy, 'hpItem' | 'deposit'>; bagFullPolicy: BagFullPolicy } | null;
 }) {
   const [bridge, setBridge] = useState<WineBridgeSnapshot>(() => client.getSnapshot());
   const [snap, setSnap] = useState<GatherRunnerSnapshot>(() => runner.getSnapshot());
@@ -136,20 +144,69 @@ export function WineGatherPanel({
 
   const connected = bridge.connState === 'CONNECTED';
   const gather = connected ? bridge.status?.gather ?? null : null;
-  const pct = bagPct(gather);
+  const supply = connected ? bridge.status?.supply ?? null : null;
+  const pct = bagPct(gather) ?? bagPct(supply);
+  const hunt = cfg.activity === 'hunt';
+  const rs = cfg.resupply;
+  const numField = (raw: string) => (raw.trim() === '' ? 0 : Number(raw));
   const st = snap.state;
 
   return (
     <section className="wine-panel" data-testid="wine-gather-panel">
       <div className="wine-head">
-        <h2>視窗自動採集</h2>
+        <h2>視窗自動採集與補給</h2>
       </div>
       <p className="muted wine-note">
-        走到採集點、開始工作、等完成；背包滿了回村卸貨再回來。只送指令，與練功、尋路互斥。
+        採集循環：走到採集點、開始工作、等完成。練功補給：藥水不足或背包快滿就回村買藥賣物，再走回原地繼續。只送指令，與練功、尋路互斥。
       </p>
       {!connected && <p className="muted" data-testid="wine-gather-offline">尚未連上視窗橋接。請先在「視窗練功」連線。</p>}
-      <PointRow label="採集點" value={cfg.spot} current={current} testId="wine-gather-spot" onChange={spot => patch({ spot })} />
-      <PointRow label="回村點" value={cfg.home} current={current} testId="wine-gather-home" onChange={home => patch({ home })} />
+      <label className="wine-gather-activity">
+        活動
+        <select data-testid="wine-gather-activity" value={cfg.activity} disabled={running}
+          onChange={e => patch({ activity: e.target.value === 'hunt' ? 'hunt' : 'gather' })}>
+          <option value="gather">採集循環</option>
+          <option value="hunt">練功補給（回村補給再回原地）</option>
+        </select>
+      </label>
+      {!hunt && <PointRow label="採集點" value={cfg.spot} current={current} testId="wine-gather-spot" onChange={spot => patch({ spot })} />}
+      <PointRow label={hunt ? '商店旁（回村點）' : '回村點'} value={cfg.home} current={current} testId="wine-gather-home" onChange={home => patch({ home })} />
+      <section className="wine-gather-supply" data-testid="wine-supply-config">
+        <div className="wine-head">
+          <h3>補給條件</h3>
+          <button type="button" className="item" data-testid="wine-supply-from-strategy" disabled={running || !strategy}
+            onClick={() => {
+              if (!strategy) return;
+              patch({
+                resupply: resupplyFromStrategy(strategy.inventoryPolicy, strategy.bagFullPolicy, rs),
+                onBagFull: bagFullActionFromPolicy(strategy.bagFullPolicy),
+              });
+            }}>
+            沿用角色策略
+          </button>
+        </div>
+        <div className="wine-form-grid wine-gather-grid">
+          <label>
+            藥水道具編號
+            <input type="number" min={0} value={rs.potionItemId ?? ''} disabled={running} data-testid="wine-supply-potion-id"
+              onChange={e => patch({ resupply: { ...rs, potionItemId: e.target.value.trim() === '' ? null : Number(e.target.value) } })} />
+          </label>
+          <label>
+            低於幾個就回村（0＝關）
+            <input type="number" min={0} value={rs.potionMin} disabled={running} data-testid="wine-supply-potion-min"
+              onChange={e => patch({ resupply: { ...rs, potionMin: numField(e.target.value) } })} />
+          </label>
+          <label>
+            補到幾個
+            <input type="number" min={0} value={rs.potionTarget} disabled={running} data-testid="wine-supply-potion-target"
+              onChange={e => patch({ resupply: { ...rs, potionTarget: numField(e.target.value) } })} />
+          </label>
+          <label>
+            要賣的道具編號（逗號分隔）
+            <input type="text" value={rs.sellItemIds.join(',')} disabled={running} data-testid="wine-supply-sell"
+              onChange={e => patch({ resupply: { ...rs, sellItemIds: e.target.value.split(',').map(t => t.trim()).filter(Boolean).map(Number) } })} />
+          </label>
+        </div>
+      </section>
       <div className="wine-form-grid wine-gather-grid">
         <label>
           背包滿時
@@ -186,6 +243,8 @@ export function WineGatherPanel({
           <span>採集 <b data-testid="wine-gather-count">{st.gathers}</b> 次</span>
           <span>回村 <b data-testid="wine-gather-unloads">{st.unloads}</b> 趟</span>
           <span>背包 <b data-testid="wine-gather-bag">{pct === null ? '—' : `${Math.round(pct)}%`}</b></span>
+          <span>藥水 <b data-testid="wine-supply-potions">{supply?.potionCount ?? '—'}</b></span>
+          <span>金額 <b data-testid="wine-supply-gold">{supply?.gold ?? '—'}</b></span>
         </div>
         {st.stopReason && (
           <div className="wine-stop-reason" data-testid="wine-gather-stop-reason">停下原因：{formatGatherStopReason(st.stopReason)}</div>
@@ -195,7 +254,7 @@ export function WineGatherPanel({
         <button type="button" className="item wine-start-btn" data-testid="wine-gather-start"
           disabled={!connected || running}
           onClick={() => { runner.start(); }}>
-          開始採集
+          開始
         </button>
         <button type="button" className="item wine-stop-btn" data-testid="wine-gather-stop"
           disabled={!running} onClick={() => { runner.requestStop(); void runner.tick(); }}>
