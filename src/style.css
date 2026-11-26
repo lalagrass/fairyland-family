@@ -12,6 +12,44 @@
   --acc: #7cb7ff;
   --purple: #b892ff;
   --teal: #5fd3c7;
+  --map-bg: #0e1520;
+  --map-walk: #1e4a3a;
+  --map-block: #0e141e;
+  --map-grid: #22344a;
+  --map-border: #35506b;
+  --map-member: #5fd0ff;
+  --map-member-target: #ffffff;
+  --map-npc: #f2c14e;
+  --map-shop: #ff9a5c;
+  --map-exit: #8be28b;
+  --map-exit-unimported: #8b99ab;
+  --map-gather: #b08cff;
+  --map-route-walk: #5fd0ff;
+  --map-route-dest: #ffffff;
+  --map-label-fg: #e8eef6;
+  --map-mini-bg: rgba(10, 16, 24, 0.84);
+  --map-mini-border: #5a7391;
+  --map-mini-view: #ffffff;
+}
+[data-map-theme="high-contrast"] {
+  --map-bg: #05070b;
+  --map-walk: #1a3a2f;
+  --map-block: #020408;
+  --map-grid: #3b5570;
+  --map-border: #9bc4f0;
+  --map-member: #00e5ff;
+  --map-member-target: #ffffff;
+  --map-npc: #ffd400;
+  --map-shop: #ff7b00;
+  --map-exit: #3dff7a;
+  --map-exit-unimported: #ff6b6b;
+  --map-gather: #cf99ff;
+  --map-route-walk: #00e5ff;
+  --map-route-dest: #ffffff;
+  --map-label-fg: #ffffff;
+  --map-mini-bg: rgba(0, 0, 0, 0.92);
+  --map-mini-border: #9bc4f0;
+  --map-mini-view: #ffffff;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", sans-serif; }

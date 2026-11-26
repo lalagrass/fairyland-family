@@ -16,6 +16,11 @@ export interface TerrainRaster {
 export const TERRAIN_WALK_RGBA: readonly [number, number, number, number] = [30, 74, 58, 255];
 export const TERRAIN_BLOCK_RGBA: readonly [number, number, number, number] = [14, 20, 30, 255];
 
+export interface TerrainPalette {
+  walk: readonly [number, number, number, number];
+  block: readonly [number, number, number, number];
+}
+
 export function rasterTerrain(
   cells: Uint8Array,
   cols: number,
@@ -23,7 +28,10 @@ export function rasterTerrain(
   mapW: number,
   mapH: number,
   maxSide = 1024,
+  palette?: TerrainPalette,
 ): TerrainRaster {
+  const walkColor = palette?.walk ?? TERRAIN_WALK_RGBA;
+  const blockColor = palette?.block ?? TERRAIN_BLOCK_RGBA;
   const longSide = Math.max(1, mapW, mapH);
   const side = Math.max(1, Math.min(maxSide, longSide));
   const scale = longSide / side;
@@ -38,7 +46,7 @@ export function rasterTerrain(
       const wx = ((px + 0.5) / width) * mapW;
       const { cx, cy } = worldToTerrainCell(wx, wy);
       const block = terrainCellBlocked(cells, cols, rows, cx, cy);
-      const c = block ? TERRAIN_BLOCK_RGBA : TERRAIN_WALK_RGBA;
+      const c = block ? blockColor : walkColor;
       const o = (py * width + px) * 4;
       rgba[o] = c[0];
       rgba[o + 1] = c[1];

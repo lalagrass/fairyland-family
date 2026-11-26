@@ -4,6 +4,7 @@ import { selectCameraTarget } from './extrapolation';
 import { PixiStageController, type ZoomSetting } from './pixiStage';
 import { ModernStageController } from './modernStage';
 import { VIEW_MODES, clampZoom, parseViewMode, type ViewMode } from './viewMode';
+import { parseMapThemePreset, readMapThemePreset, writeMapThemePreset, type MapThemePreset } from './modernTheme';
 import {
   getAppearanceProvider,
   originalAppearanceProvider,
@@ -50,6 +51,7 @@ export function GameViewport({
   const stageRef = useRef<PixiStageController | null>(null);
   const modernRef = useRef<ModernStageController | null>(null);
   const [modernZoom, setModernZoom] = useState(0.5);
+  const [mapTheme, setMapTheme] = useState<MapThemePreset>(() => readMapThemePreset(typeof localStorage === 'undefined' ? null : localStorage));
   const [modernReady, setModernReady] = useState<{ ready: boolean; error: string | null }>({ ready: false, error: null });
   const [zoomSetting, setZoomSetting] = useState<ZoomSetting>('auto');
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDayMode>('day');
@@ -98,7 +100,12 @@ export function GameViewport({
 
   useEffect(() => {
     modernRef.current?.update({ state, watchCharacterId, zoom: modernZoom, targetFps });
-  }, [state, watchCharacterId, modernZoom, modern, modernReady.ready, targetFps]);
+  }, [state, watchCharacterId, modernZoom, modern, modernReady.ready, targetFps, mapTheme]);
+
+  useEffect(() => {
+    canvasHostRef.current?.setAttribute('data-map-theme', mapTheme);
+    if (typeof document !== 'undefined') document.documentElement.setAttribute('data-map-theme', mapTheme);
+  }, [mapTheme, modern, modernReady.ready]);
 
   const watchedProvider = useMemo(() => {
     const id = viewedId;
@@ -176,6 +183,23 @@ export function GameViewport({
               <option value="2">2x 整數放大</option>
             </select>
           </label>
+          )}
+          {modern && (
+            <label className="stage-control">
+              <span>配色</span>
+              <select
+                aria-label="現代地圖配色"
+                data-testid={tid('modern-map-theme')}
+                value={mapTheme}
+                onChange={e => {
+                  const next = writeMapThemePreset(parseMapThemePreset(e.currentTarget.value), typeof localStorage === 'undefined' ? null : localStorage);
+                  setMapTheme(next);
+                }}
+              >
+                <option value="default">預設</option>
+                <option value="high-contrast">高對比</option>
+              </select>
+            </label>
           )}
           <label className="stage-control">
             <span>時辰</span>
