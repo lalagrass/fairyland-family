@@ -1321,7 +1321,7 @@ function FamilyApp({ modeLabel, state, conn, aux, perform, submit, strategyRef }
               })()}
             </Tabs.Content>
             <Tabs.Content value="wine" forceMount className="workbench-pane">
-              <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} />
+              <WineTrainingPanel client={wineClient} active={workbenchTab === 'wine'} autoConnect />
             </Tabs.Content>
             <Tabs.Content value="path" forceMount className="workbench-pane">
               <WinePathPanel client={wineClient} active={workbenchTab === 'path'} map={pathMapFromSnapshot(snap)} />

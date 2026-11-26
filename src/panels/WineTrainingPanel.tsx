@@ -84,7 +84,24 @@ function posFloatOrNull(raw: string): number | null {
   return Number(n.toFixed(2));
 }
 
-export function WineTrainingPanel({ client, active }: { client: WineBridgeClient; active: boolean }) {
+/** 為什麼「一鍵開始」現在按不了；可以按時回傳 null。 */
+export function startBlockedReason(connected: boolean, connecting: boolean, running: boolean): string | null {
+  if (running) return '背景練功進行中，要重跑請先停止。';
+  if (connecting) return '正在連線本機橋接…';
+  if (!connected) return '尚未連上本機橋接：請先開啟官方視窗（FairylandLauncher），或按「連線橋接」。';
+  return null;
+}
+
+export function WineTrainingPanel({
+  client,
+  active,
+  autoConnect = false,
+}: {
+  client: WineBridgeClient;
+  active: boolean;
+  /** 以前連線成功過（本機有存設定）時，開著面板會自動連線並每 3 秒重試，免去手動按「連線橋接」。 */
+  autoConnect?: boolean;
+}) {
   const [storage] = useState(defaultBrowserStorage);
   const [initialLoaded] = useState(() => loadSavedWineBridgeSettings(storage));
   const [snap, setSnap] = useState<WineBridgeSnapshot>(() => client.getSnapshot());
@@ -103,6 +120,8 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scheduleStopSent = useRef<string | null>(null);
   const previousStopSignature = useRef<string | null>(null);
+  const userDisconnected = useRef(false);
+  const lastAutoConnectAt = useRef(0);
 
   useEffect(() => {
     setSnap(client.getSnapshot());
@@ -126,6 +145,17 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
   const schedule = settings.schedule ?? DEFAULT_WINE_SCHEDULE;
   const stats = trainingStats(connected ? st : null, nowMs);
   const validLoopback = isLoopbackBridgeUrl(urlInput);
+
+  useEffect(() => {
+    if (!autoConnect || !initialLoaded.hasSaved || !active || connected || connecting || userDisconnected.current || !validLoopback) return;
+    // 兩次自動連線至少間隔 3 秒，避免橋接不在時快速重試。
+    const wait = Math.max(0, lastAutoConnectAt.current + 3000 - Date.now());
+    const timer = setTimeout(() => {
+      lastAutoConnectAt.current = Date.now();
+      void client.connect(urlInput).catch(() => undefined);
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [autoConnect, initialLoaded.hasSaved, active, connected, connecting, validLoopback, urlInput, client, snap]);
 
   useEffect(() => {
     setFrame(null);
@@ -210,9 +240,10 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
   const handleConnect = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setLocalMsg(null);
+    userDisconnected.current = false;
     setBusy(true);
     try {
-      await client.connect(urlInput);
+      if (await client.connect(urlInput) && isLoopbackBridgeUrl(urlInput)) patchSettings({ baseUrl: urlInput });
     } finally {
       setBusy(false);
     }
@@ -220,6 +251,7 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
 
   const handleDisconnect = () => {
     setLocalMsg(null);
+    userDisconnected.current = true;
     client.disconnect();
   };
 
@@ -383,6 +415,18 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
         {stopReasonText && (
           <div className="wine-stop-reason" data-testid="wine-stop-reason">
             {`停機原因：${stopReasonText}`}
+            {st?.diagnostics?.source_size ? `（畫面 ${JSON.stringify(st.diagnostics.source_size)}，縮放 ${String(st.diagnostics.stage_scale ?? '?')}）` : ''}
+          </div>
+        )}
+        {st?.observeMs && (
+          <div className="muted" data-testid="wine-observe-ms">{`辨識耗時 平均 ${st.observeMs.avg} ms／最長 ${st.observeMs.max} ms`}</div>
+        )}
+        {st?.battleReport && st.battleReport.length > 0 && (
+          <pre className="wine-battle-report" data-testid="wine-battle-report">{st.battleReport.slice(-10).join('\n')}</pre>
+        )}
+        {st?.configStore && (
+          <div className="muted" data-testid="wine-config-store">
+            {st.configStore.error ? `設定檔：${st.configStore.error}` : st.configStore.loaded ? '設定已從橋接設定檔還原' : '設定會自動存到橋接設定檔'}
           </div>
         )}
         <div className="wine-launch" data-testid="wine-launch">
@@ -528,6 +572,9 @@ export function WineTrainingPanel({ client, active }: { client: WineBridgeClient
           停止背景練功
         </button>
       </div>
+      {startBlockedReason(connected, connecting, isRunning) && (
+        <div className="muted" data-testid="wine-start-hint">{startBlockedReason(connected, connecting, isRunning)}</div>
+      )}
 
       <div className="wine-config-form" data-testid="wine-config-form">
         <div className="wine-config-head">
