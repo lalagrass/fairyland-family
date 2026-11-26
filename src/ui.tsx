@@ -2007,5 +2007,10 @@ export function mountUi(root: HTMLElement, modeLabel: string, perform: Perform, 
   }
 
   render(initialState(), 'STOPPED');
-  return { render };
+  /** 卸載 React 樹（測試收尾用：停掉面板的自動連線計時器）。 */
+  function unmount() {
+    reactRoot?.unmount();
+    reactRoot = null;
+  }
+  return { render, unmount };
 }
