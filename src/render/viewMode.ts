@@ -74,6 +74,92 @@ export interface ModernMarker {
   x: number;
   y: number;
   isTarget?: boolean;
+  /** 傳送點的目的地圖尚未匯入。只改顏色，不改座標。 */
+  unimported?: boolean;
+}
+
+/** 標記來源。座標原樣來自快照或 STATIC_DATA，這裡不換算、不補預設點。 */
+export interface OverlayMarkerSource {
+  mapId: string;
+  exits?: ReadonlyArray<{ id: string; name: string; x: number; y: number }>;
+  npcs?: ReadonlyArray<{ id: string; name: string; x: number; y: number; isShop?: boolean }>;
+  gatherPoints?: ReadonlyArray<{ id: string; name: string; mapId?: string; x: number; y: number }>;
+  portals?: ReadonlyArray<{ id: string; name: string; x?: number; y?: number; targetStatus?: string }>;
+}
+
+export interface RoutePolyline {
+  kind: 'walk';
+  points: Array<{ x: number; y: number }>;
+}
+
+function finite(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n);
+}
+
+/**
+ * 傳送點、NPC、採集點。x／y 與傳入值相同，對得上原版檢視用的世界座標。
+ * 已在 exits 出現的傳送點不重複畫；圖上多出來、且自帶座標的點才補上。
+ */
+export function overlayMarkers(source: OverlayMarkerSource): ModernMarker[] {
+  const markers: ModernMarker[] = [];
+  const seenExit = new Set<string>();
+  for (const e of source.exits ?? []) {
+    if (!finite(e.x) || !finite(e.y)) continue;
+    seenExit.add(e.id);
+    const edge = source.portals?.find(p => p.id === e.id);
+    markers.push({
+      id: `exit:${e.id}`,
+      kind: 'exit',
+      name: e.name,
+      x: e.x,
+      y: e.y,
+      unimported: edge?.targetStatus === 'NOT_IMPORTED',
+    });
+  }
+  for (const edge of source.portals ?? []) {
+    if (seenExit.has(edge.id) || !finite(edge.x) || !finite(edge.y)) continue;
+    markers.push({
+      id: `exit:${edge.id}`,
+      kind: 'exit',
+      name: edge.name,
+      x: edge.x,
+      y: edge.y,
+      unimported: edge.targetStatus === 'NOT_IMPORTED',
+    });
+  }
+  for (const n of source.npcs ?? []) {
+    if (!finite(n.x) || !finite(n.y)) continue;
+    markers.push({ id: `npc:${n.id}`, kind: n.isShop ? 'shop' : 'npc', name: n.name, x: n.x, y: n.y });
+  }
+  for (const g of source.gatherPoints ?? []) {
+    if (g.mapId && g.mapId !== source.mapId) continue;
+    if (!finite(g.x) || !finite(g.y)) continue;
+    markers.push({ id: `gather:${g.id}`, kind: 'gather', name: g.name, x: g.x, y: g.y });
+  }
+  return markers;
+}
+
+/** 走路路徑。少於兩點就不畫線。點的順序與座標都不改。 */
+export function routePolylines(path: ReadonlyArray<{ x: number; y: number }>): RoutePolyline[] {
+  return path.length >= 2 ? [{ kind: 'walk', points: path.map(p => ({ x: p.x, y: p.y })) }] : [];
+}
+
+/**
+ * 現代鏡頭：世界座標投到舞台像素。鏡頭是視野中心（已夾限）。
+ * `screen = view/2 + (world - camera) * zoom`。
+ */
+export function worldToStagePoint(
+  world: { x: number; y: number },
+  camera: { x: number; y: number },
+  zoom: number,
+  viewW: number,
+  viewH: number,
+): { x: number; y: number } {
+  const z = clampZoom(zoom);
+  return {
+    x: viewW / 2 + (world.x - camera.x) * z,
+    y: viewH / 2 + (world.y - camera.y) * z,
+  };
 }
 
 /** 宿主碰撞格。`blocked` 是快照上的 base64，給顯示層當快取鍵；`cells` 是 0／1。 */
@@ -135,12 +221,15 @@ export function buildModernModel(state: FamilyState, watchCharacterId: string | 
   const empty: ModernViewModel = { status, mapName: snap?.mapName ?? '', mapW: DEFAULT_MAP_SIZE, mapH: DEFAULT_MAP_SIZE, target: null, markers: [], path: [], terrain: snap ? terrainOf(snap) : null };
   if (!snap) return empty;
   const t = selectCameraTarget(state, watchCharacterId, now);
-  const markers: ModernMarker[] = [];
-  for (const e of snap.exits ?? []) markers.push({ id: `exit:${e.id}`, kind: 'exit', name: e.name, x: e.x, y: e.y });
-  for (const n of snap.npcs ?? []) markers.push({ id: `npc:${n.id}`, kind: n.isShop ? 'shop' : 'npc', name: n.name, x: n.x, y: n.y });
-  for (const g of snap.gatherPoints?.points ?? []) {
-    if (!g.mapId || g.mapId === snap.mapId) markers.push({ id: `gather:${g.id}`, kind: 'gather', name: g.name, x: g.x, y: g.y });
-  }
+  const graph = snap.nav?.portalGraph ?? state.staticData?.portalGraph ?? [];
+  const portals = graph.find(n => n.mapId === snap.mapId)?.portals ?? [];
+  const markers: ModernMarker[] = overlayMarkers({
+    mapId: snap.mapId,
+    exits: snap.exits,
+    npcs: snap.npcs,
+    gatherPoints: snap.gatherPoints?.points,
+    portals,
+  });
   const activeId = state.activeCharacterId ?? state.characterId ?? snap.family?.activeCharacterId ?? null;
   for (const m of state.members) {
     if (m.mapId !== snap.mapId) continue;

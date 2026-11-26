@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js
 import { rasterTerrain } from './terrainRaster';
 import type { FamilyState } from '../state';
 import { FrameThrottle } from './multiViewport';
+import { resolveModernTheme, themePixel, type ModernMapTheme } from './modernTheme';
 import {
   buildModernModel,
   clampCamera,
@@ -9,6 +10,7 @@ import {
   minimapPoint,
   minimapToWorld,
   modernLayout,
+  routePolylines,
   stepCamera,
   type CameraState,
   type ModernMarker,
@@ -23,14 +25,16 @@ export interface ModernSyncInput {
   targetFps?: number;
 }
 
-const COLORS: Record<ModernMarker['kind'], number> = {
-  member: 0x5fd0ff,
-  npc: 0xf2c14e,
-  shop: 0xff9a5c,
-  exit: 0x8be28b,
-  gather: 0xb08cff,
-};
 const GRID = 400;
+
+function markerColor(theme: ModernMapTheme, mk: ModernMarker): number {
+  if (mk.kind === 'exit' && mk.unimported) return theme.exitUnimported.hex;
+  if (mk.kind === 'member') return theme.member.hex;
+  if (mk.kind === 'npc') return theme.npc.hex;
+  if (mk.kind === 'shop') return theme.shop.hex;
+  if (mk.kind === 'exit') return theme.exit.hex;
+  return theme.gather.hex;
+}
 
 /**
  * 現代地圖顯示（PixiJS v8）。只用 Graphics／Text 畫色塊、線條與簡單圖示，不載入任何素材。
@@ -45,6 +49,7 @@ export class ModernStageController {
   private hud = new Graphics();
   private terrainTex: Texture | null = null;
   private terrainKey = '';
+  private theme: ModernMapTheme = resolveModernTheme(null);
   private labels = new Map<string, Text>();
   private notice = new Text({ text: '', style: { fill: 0xe8eef6, fontSize: 14, align: 'center', wordWrap: true, wordWrapWidth: 300 } });
   private latest: ModernSyncInput | null = null;
@@ -208,6 +213,7 @@ export class ModernStageController {
       return;
     }
     this.notice.visible = false;
+    this.theme = resolveModernTheme(this.hostEl);
 
     this.syncTerrain(model);
     const zoom = clampZoom(input.zoom);
@@ -219,7 +225,8 @@ export class ModernStageController {
     this.world.position.set(W / 2 - c.x * zoom, H / 2 - c.y * zoom);
 
     // 有宿主地形就畫那張點陣圖；沒有才退回程式格線。兩種都不載入素材。
-    g.rect(0, 0, model.mapW, model.mapH).fill({ color: 0x16212e }).stroke({ width: 4 / zoom, color: 0x35506b });
+    const theme = this.theme;
+    g.rect(0, 0, model.mapW, model.mapH).fill({ color: theme.bg.hex }).stroke({ width: 4 / zoom, color: theme.border.hex });
     if (!this.ground.visible) {
       const x0 = Math.max(0, Math.floor((c.x - W / zoom / 2) / GRID) * GRID);
       const x1 = Math.min(model.mapW, c.x + W / zoom / 2);
@@ -227,16 +234,15 @@ export class ModernStageController {
       const y1 = Math.min(model.mapH, c.y + H / zoom / 2);
       for (let x = x0; x <= x1; x += GRID) g.moveTo(x, y0).lineTo(x, y1);
       for (let y = y0; y <= y1; y += GRID) g.moveTo(x0, y).lineTo(x1, y);
-      g.stroke({ width: 1 / zoom, color: 0x22344a, alpha: 0.8 });
+      g.stroke({ width: 1 / zoom, color: theme.grid.hex, alpha: theme.grid.alpha });
     }
 
-    // 路徑線
-    if (model.path.length >= 2) {
-      g.moveTo(model.path[0].x, model.path[0].y);
-      for (const p of model.path.slice(1)) g.lineTo(p.x, p.y);
-      g.stroke({ width: 5 / zoom, color: 0x5fd0ff, alpha: 0.85 });
-      const end = model.path[model.path.length - 1];
-      g.circle(end.x, end.y, 9 / zoom).stroke({ width: 3 / zoom, color: 0xffffff });
+    for (const route of routePolylines(model.path)) {
+      g.moveTo(route.points[0].x, route.points[0].y);
+      for (const p of route.points.slice(1)) g.lineTo(p.x, p.y);
+      g.stroke({ width: 5 / zoom, color: theme.routeWalk.hex, alpha: theme.routeWalk.alpha });
+      const end = route.points[route.points.length - 1];
+      g.circle(end.x, end.y, 9 / zoom).stroke({ width: 3 / zoom, color: theme.routeDest.hex });
     }
 
     // 標記：自製簡單圖示
@@ -248,13 +254,14 @@ export class ModernStageController {
         seen.add(mk.id);
         let t = this.labels.get(mk.id);
         if (!t) {
-          t = new Text({ text: mk.name, style: { fill: 0xe8eef6, fontSize: 12 } });
+          t = new Text({ text: mk.name, style: { fill: theme.labelFg.hex, fontSize: 12 } });
           t.anchor.set(0.5, 0);
           this.world.addChild(t);
           this.labels.set(mk.id, t);
         }
         t.visible = true;
         if (t.text !== mk.name) t.text = mk.name;
+        t.style.fill = theme.labelFg.hex;
         t.scale.set(lay.fontSize / 12 / zoom);
         t.position.set(mk.x, mk.y + iconR * 1.3);
       }
@@ -265,10 +272,11 @@ export class ModernStageController {
   }
 
   private drawMarker(g: Graphics, mk: ModernMarker, r: number, zoom: number): void {
-    const color = COLORS[mk.kind];
+    const theme = this.theme;
+    const color = markerColor(theme, mk);
     switch (mk.kind) {
       case 'member':
-        g.circle(mk.x, mk.y, r * (mk.isTarget ? 1.35 : 1)).fill({ color }).stroke({ width: 2 / zoom, color: mk.isTarget ? 0xffffff : 0x0e1520 });
+        g.circle(mk.x, mk.y, r * (mk.isTarget ? 1.35 : 1)).fill({ color }).stroke({ width: 2 / zoom, color: mk.isTarget ? theme.memberTarget.hex : theme.bg.hex });
         if (mk.isTarget) g.circle(mk.x, mk.y, r * 2.1).stroke({ width: 2 / zoom, color, alpha: 0.5 });
         break;
       case 'npc':
@@ -295,7 +303,8 @@ export class ModernStageController {
 
   private drawMinimap(g: Graphics, m: ModernViewModel, lay: ReturnType<typeof modernLayout>, W: number, H: number, cam: { x: number; y: number }, zoom: number): void {
     const ox = W - lay.margin - lay.miniW, oy = H - lay.margin - lay.miniH;
-    g.rect(ox, oy, lay.miniW, lay.miniH).fill({ color: 0x0a1018, alpha: 0.82 }).stroke({ width: 1, color: 0x5a7391 });
+    const theme = this.theme;
+    g.rect(ox, oy, lay.miniW, lay.miniH).fill({ color: theme.miniBg.hex, alpha: theme.miniBg.alpha }).stroke({ width: 1, color: theme.miniBorder.hex });
     if (this.miniGround.visible) {
       this.miniGround.position.set(ox, oy);
       this.miniGround.width = lay.miniW;
@@ -306,23 +315,23 @@ export class ModernStageController {
       const a = P(m.path[0].x, m.path[0].y);
       g.moveTo(ox + a.x, oy + a.y);
       for (const p of m.path.slice(1)) { const q = P(p.x, p.y); g.lineTo(ox + q.x, oy + q.y); }
-      g.stroke({ width: 1.5, color: 0x5fd0ff });
+      g.stroke({ width: 1.5, color: theme.routeWalk.hex });
     }
     for (const mk of m.markers) {
       const p = P(mk.x, mk.y);
-      g.circle(ox + p.x, oy + p.y, mk.kind === 'member' ? (mk.isTarget ? 3.5 : 2.5) : 1.5).fill({ color: COLORS[mk.kind] });
+      g.circle(ox + p.x, oy + p.y, mk.kind === 'member' ? (mk.isTarget ? 3.5 : 2.5) : 1.5).fill({ color: markerColor(theme, mk) });
     }
     // 目前視野框
     const vw = (W / zoom / m.mapW) * lay.miniW, vh = (H / zoom / m.mapH) * lay.miniH;
     const c = P(cam.x, cam.y);
     const rx = Math.max(ox, ox + c.x - vw / 2), ry = Math.max(oy, oy + c.y - vh / 2);
-    g.rect(rx, ry, Math.min(vw, lay.miniW), Math.min(vh, lay.miniH)).stroke({ width: 1, color: 0xffffff, alpha: 0.8 });
+    g.rect(rx, ry, Math.min(vw, lay.miniW), Math.min(vh, lay.miniH)).stroke({ width: 1, color: theme.miniView.hex, alpha: theme.miniView.alpha });
   }
 
   /** 地形沒變就沿用同一張貼圖。換地圖或快照沒帶地形時清掉。 */
   private syncTerrain(model: ModernViewModel): void {
     const t = model.terrain;
-    const key = t ? `${t.cols}x${t.rows}:${model.mapW}x${model.mapH}:${t.blocked}` : '';
+    const key = t ? `${t.cols}x${t.rows}:${model.mapW}x${model.mapH}:${t.blocked}:${this.theme.key}` : '';
     if (key === this.terrainKey) {
       const on = !!this.terrainTex;
       this.ground.visible = on;
@@ -339,7 +348,10 @@ export class ModernStageController {
       this.miniGround.visible = false;
       return;
     }
-    const raster = rasterTerrain(t.cells, t.cols, t.rows, model.mapW, model.mapH);
+    const raster = rasterTerrain(t.cells, t.cols, t.rows, model.mapW, model.mapH, 1024, {
+      walk: themePixel(this.theme.walk),
+      block: themePixel(this.theme.block),
+    });
     const canvas = document.createElement('canvas');
     canvas.width = raster.width;
     canvas.height = raster.height;
