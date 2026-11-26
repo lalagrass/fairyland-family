@@ -437,6 +437,9 @@ select { background: #10141a; color: var(--fg); border: 1px solid var(--line); b
   background: #10141a; border: 1px solid var(--line);
   font: 12px/1.5 ui-monospace, Menlo, monospace; overflow-wrap: anywhere;
 }
+.wine-gather-point { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; min-width: 0; }
+.wine-gather-point b { min-width: 0; overflow-wrap: anywhere; }
+.wine-gather-grid select, .wine-gather-grid input { max-width: 100%; min-width: 0; }
 .wine-preview-box {
   display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
   border-radius: 8px; border: 1px solid var(--line); background: var(--panel-soft);
