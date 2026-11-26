@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { WineDiagnosticsBar } from './WineDiagnosticsBar';
 import { getNotificationPermission, notificationsEnabled, notifyWhenHidden } from '../notify';
 import {
   DEFAULT_BRIDGE_URL,
@@ -434,6 +435,7 @@ export function WineTrainingPanel({
           <span>{`回合 ${st?.turns ?? 0} 次`}</span>
           <span>{`動作 ${st?.actionsSent ?? 0} 次`}</span>
         </div>
+        <WineDiagnosticsBar snap={snap} />
         {stopReasonText && (
           <div className="wine-stop-reason" data-testid="wine-stop-reason">
             {`停機原因：${stopReasonText}`}
@@ -444,7 +446,10 @@ export function WineTrainingPanel({
           <div className="muted" data-testid="wine-observe-ms">{`辨識耗時 平均 ${st.observeMs.avg} ms／最長 ${st.observeMs.max} ms`}</div>
         )}
         {st?.battleReport && st.battleReport.length > 0 && (
-          <pre className="wine-battle-report" data-testid="wine-battle-report">{st.battleReport.slice(-10).join('\n')}</pre>
+          <details open data-testid="wine-battle-details">
+            <summary>最近戰報</summary>
+            <pre className="wine-battle-report" data-testid="wine-battle-report">{st.battleReport.slice(-10).join('\n')}</pre>
+          </details>
         )}
         {st?.configStore && (
           <div className="muted" data-testid="wine-config-store">
